@@ -198,20 +198,21 @@ class WhatsAppService:
                     draft_text = rec.get("draft")
                     break
 
-            # Fallback message template if no custom draft
+            # Fallback message template if no custom draft - always English,
+            # regardless of what language the call itself was conducted in.
             if not draft_text:
                 if timeline:
                     draft_text = (
-                        f"नमस्ते {customer_name}! {company_name} की तरफ से धन्यवाद।\n\n"
-                        f"आपकी {offering} की सीट कन्फर्म हो गई है:\n"
-                        f"🗓 समय: {timeline}\n\n"
-                        f"हम आपसे सत्र में मिलने के लिए उत्सुक हैं! यदि कोई प्रश्न हो तो इस संदेश का उत्तर दें।"
+                        f"Hi {customer_name}! Thank you for speaking with {company_name}.\n\n"
+                        f"Your {offering} session is confirmed:\n"
+                        f"🗓 Time: {timeline}\n\n"
+                        f"We look forward to seeing you! Reply to this message if you have any questions."
                     )
                 else:
                     draft_text = (
-                        f"नमस्ते {customer_name}! {company_name} की तरफ से धन्यवाद।\n\n"
-                        f"आपके अनुरोध के अनुसार {offering} की सभी जानकारी और विवरण यहाँ साझा किए जा रहे हैं।\n\n"
-                        f"कृपया हमें बताएं यदि आप किसी अन्य सहायता की आवश्यकता है!"
+                        f"Hi {customer_name}! Thank you for speaking with {company_name}.\n\n"
+                        f"As requested, here are all the details about {offering}.\n\n"
+                        f"Let us know if you need any further assistance!"
                     )
 
             # If Meta Cloud API keys are configured, send real message

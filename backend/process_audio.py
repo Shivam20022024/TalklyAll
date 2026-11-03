@@ -102,6 +102,7 @@ Focus heavily on identifying buyer/prospect intent, specific requirements, and i
 CRITICAL SCORING RULES:
 1. If the customer states they are busy, hangs up quickly, expresses no interest, or does not explicitly engage in the conversation, you MUST set the `lead_score` below 30, set `conversion_probability` below 10, and set `lead_temperature` to "Cold". Do not assume high intent without evidence.
 2. Conversely, if the customer provides explicit requirements (e.g., product/service desired, budget, timeline, location, or scheduling preference) AND states an immediate or very urgent timeline (e.g., "tomorrow", "immediately", "this week", "book an appointment", "schedule demo"), you MUST set `lead_score` above 80, set `conversion_probability` above 70, and set `lead_temperature` to "Hot".
+3. For any `follow_up_recommendations` entry of type "WhatsApp", always write its `draft` text in English - regardless of what language the call itself was conducted in (Hindi, Hinglish, or any other language). This is a fixed platform rule, not dependent on `detected_language`/`preferred_language`.
 
 The JSON schema must be:
 {
