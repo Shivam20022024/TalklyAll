@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: talkly-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: BOLNA_AGENT_ID
+        sync: false
+      - key: BOLNA_API_KEY
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_ENVIRONMENT
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: TALKLY_SHARED_NUMBER
+        sync: false
+      - key: TALKLY_SHARED_LABEL
+        sync: false
+      - key: PLIVO_AUTH_ID
+        sync: false
+      - key: PLIVO_AUTH_TOKEN
+        sync: false
+      - key: PLIVO_PHONE_NUMBER
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
