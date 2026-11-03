@@ -550,8 +550,9 @@ function LeadsContent() {
                 </div>
               )}
 
-              {/* Promise to Pay - shown clearly regardless of outcome, not as raw JSON */}
-              {selectedCall?.analysis?.promise_to_pay && (
+              {/* Promise to Pay - collections calls only; this field exists on every
+                  call's analysis now, but only means something for a collections call */}
+              {selectedCall?.industry === 'collections' && selectedCall?.analysis?.promise_to_pay && (
                 <div className={`rounded-xl border p-4 shadow-sm ${selectedCall.analysis.promise_to_pay.promised ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/50 bg-card'}`}>
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                     <CircleDollarSign size={14} className={selectedCall.analysis.promise_to_pay.promised ? 'text-emerald-500' : 'text-muted-foreground'} /> Promise to Pay

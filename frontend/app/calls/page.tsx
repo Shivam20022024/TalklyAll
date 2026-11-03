@@ -328,7 +328,7 @@ export default function CallsPage() {
               </div>
 
               <div className="space-y-6">
-                {selectedCall.analysis?.promise_to_pay?.promised && (
+                {selectedCall.industry === 'collections' && selectedCall.analysis?.promise_to_pay?.promised && (
                   <div>
                     <h3 className="mb-3 flex items-center gap-2 text-sm font-bold tracking-tight text-foreground">
                       <CircleDollarSign size={16} className="text-emerald-500" /> Promise to Pay
