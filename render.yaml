@@ -2,6 +2,7 @@ services:
   - type: web
     name: talkly-backend
     runtime: docker
+    region: singapore
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: free
