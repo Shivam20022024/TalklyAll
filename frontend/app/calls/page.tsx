@@ -12,7 +12,8 @@ import {
   MessageSquare,
   Clock,
   Activity,
-  Trash2
+  Trash2,
+  CircleDollarSign
 } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi, fetchBlob, downloadBlob } from '@/lib/api'
@@ -327,6 +328,26 @@ export default function CallsPage() {
               </div>
 
               <div className="space-y-6">
+                {selectedCall.analysis?.promise_to_pay?.promised && (
+                  <div>
+                    <h3 className="mb-3 flex items-center gap-2 text-sm font-bold tracking-tight text-foreground">
+                      <CircleDollarSign size={16} className="text-emerald-500" /> Promise to Pay
+                    </h3>
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-sm">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Amount</div>
+                          <div className="text-sm font-bold text-foreground">{selectedCall.analysis.promise_to_pay.amount || '-'}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Date</div>
+                          <div className="text-sm font-bold text-foreground">{selectedCall.analysis.promise_to_pay.date || '-'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <h3 className="mb-3 flex items-center gap-2 text-sm font-bold tracking-tight text-foreground">
                     <Sparkles size={16} className="text-primary" /> Call Summary

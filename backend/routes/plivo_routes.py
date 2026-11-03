@@ -295,7 +295,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "healthcare": "doctor appointment consultation",
             "edtech": "online certification program",
             "bfsi": "loan options",
-            "general_sales": "AI calling services"
+            "general_sales": "AI calling services",
+            "collections": "loan EMI payment"
         }
         offering = industry_fallbacks.get(call_industry, "AI calling services")
 
@@ -395,6 +396,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n6. AUTOMATIC HANGUP: Immediately after concluding your goodbye, invoke the end_call function."
         "\n7. HANDLE UNCLEAR INPUT: If what the customer said does not logically fit the conversation, sounds garbled, or like background noise rather than a real answer, DO NOT guess or respond as if you understood it. This includes a random name, place, or short phrase with no logical connection to the question you just asked (e.g. you asked for a day/time and the answer is an unrelated proper noun) - NEVER interpret that as agreement, enthusiasm, or a valid choice. If you offered specific named options (e.g. 'loan, insurance, or something else?') and their answer does not clearly and unambiguously match ONE of those options, do NOT default to the option that sounds closest or was mentioned first/most recently in the conversation - treat it exactly like unclear input, not a selection. Politely ask them to repeat instead - Hindi: 'माफ कीजिए, क्या आप फिर से बता सकते हैं?' / English: 'Sorry, could you repeat that?' Only move forward once you get a clear, relevant answer to your last question. (Note: a coherent but off-topic remark is covered by rule 3, not this rule.)"
         "\n8. SERVICE MISMATCH - DON'T FORCE-FIT THE CALLER INTO YOUR SCRIPT: If the customer's very first clearly-stated need is for a different kind of business or service than what your company actually offers (e.g. they ask for a doctor's appointment but you are a loan/insurance company, or they ask about a property but you are a clinic), do NOT ignore what they said and funnel them into your own Key Objectives categories anyway. Briefly and politely clarify in one short sentence what your company actually does (using its name, from your role description above), and ask if that's what they meant or if there's something in that area you can help with. If they confirm they wanted something else entirely, politely let them know this may be the wrong number, wish them well in whichever language they've been using, and execute the end_call function - do not keep asking your scripted qualification questions (budget, loan amount, configuration, etc.) about a need they never actually expressed."
+        "\n9. NEVER READ SLASHES OR PLACEHOLDERS OUT LOUD: Your welcome message or prompt text may occasionally contain a slash-separated pair meant as shorthand for a human editor (e.g. 'बोल रहा/रही हूँ', 'he/she', 'Mr./Ms.') rather than literal words to speak. If you see a pattern like this, NEVER say both options or the slash itself out loud - silently pick the single grammatically correct form that matches your own voice (for a female-sounding voice, use the feminine form; for a male-sounding voice, use the masculine form) and speak only that, even when an instruction elsewhere says to speak a line 'verbatim' - verbatim means deliver the message naturally, not recite formatting artifacts."
     )
 
     # Collections compliance directive - opt-in only (companies.collections_mode),
@@ -567,13 +569,33 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
         openai_ws_url = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
         openai_headers = {"Authorization": f"Bearer {openai_key}"}
 
-        ws_cm = websockets.connect(openai_ws_url, additional_headers=openai_headers)
-        openai_ws = await asyncio.wait_for(ws_cm.__aenter__(), timeout=8.0)
-        await asyncio.wait_for(openai_ws.recv(), timeout=8.0)  # session.created
+        async def _connect_openai():
+            ws_cm = websockets.connect(openai_ws_url, additional_headers=openai_headers)
+            openai_ws = await asyncio.wait_for(ws_cm.__aenter__(), timeout=8.0)
+            await asyncio.wait_for(openai_ws.recv(), timeout=8.0)  # session.created
+            text_only = ctx["voice_engine"] == "sarvam"
+            session_update = _openai_session_update_payload(ctx["system_prompt"], ctx["transcription_lang"], text_only=text_only)
+            await openai_ws.send(json.dumps(session_update))
+            return ws_cm, openai_ws
 
-        text_only = ctx["voice_engine"] == "sarvam"
-        session_update = _openai_session_update_payload(ctx["system_prompt"], ctx["transcription_lang"], text_only=text_only)
-        await openai_ws.send(json.dumps(session_update))
+        async def _connect_sarvam():
+            # Runs concurrently with the OpenAI connect below, not after it -
+            # previously this only happened in /stream, serially, right before
+            # the greeting, adding a full extra websocket-connect-plus-configure
+            # round trip to Sarvam on top of everything else before the
+            # customer heard anything. Prewarming it here in parallel removes
+            # that wait from the hot path entirely for the common case.
+            if ctx["voice_engine"] != "sarvam" or not SARVAM_API_KEY:
+                return None
+            try:
+                session = SarvamTTSSession(SARVAM_API_KEY, ctx["sarvam_speaker"], ctx["sarvam_language_code"])
+                await asyncio.wait_for(session.__aenter__(), timeout=8.0)
+                return session
+            except Exception as e:
+                safe_print(f"[PREWARM ERROR]: Sarvam prewarm failed for call_id={call_id}: {e}")
+                return None
+
+        (ws_cm, openai_ws), sarvam_session = await asyncio.gather(_connect_openai(), _connect_sarvam())
 
         OPENAI_PREWARM_CACHE[call_id] = {
             "ws_cm": ws_cm,
@@ -584,6 +606,7 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             "voice_engine": ctx["voice_engine"],
             "sarvam_speaker": ctx["sarvam_speaker"],
             "sarvam_language_code": ctx["sarvam_language_code"],
+            "sarvam_session": sarvam_session,
         }
         safe_print(f"[PREWARM]: OpenAI Realtime session ready ahead of stream connect for call_id={call_id}")
 
@@ -595,6 +618,11 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
                     await entry["ws_cm"].__aexit__(None, None, None)
                 except Exception:
                     pass
+                if entry.get("sarvam_session"):
+                    try:
+                        await entry["sarvam_session"].__aexit__(None, None, None)
+                    except Exception:
+                        pass
                 safe_print(f"[PREWARM]: Expired unclaimed session for call_id={call_id}")
         asyncio.create_task(_expire())
 
@@ -743,6 +771,8 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     Provides sub-400ms latency, lifelike human voice, and instant barge-in interruption.
     """
     await websocket.accept()
+    stream_connect_time = time.time()
+    greeting_audio_logged = False
     logger.info(f"Plivo Media Stream connected for call_id={call_id}")
     db = mongodb.get_db()
 
@@ -796,7 +826,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     sarvam_worker_task = None
 
     async def sarvam_tts_worker():
-        nonlocal last_speech_stopped_time
+        nonlocal last_speech_stopped_time, greeting_audio_logged
         try:
             while True:
                 chunk = await sarvam_queue.get()
@@ -804,6 +834,10 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                     continue
                 try:
                     async for audio_b64 in sarvam_session.speak(chunk):
+                        if not greeting_audio_logged:
+                            greeting_audio_logged = True
+                            greet_lat_ms = int((time.time() - stream_connect_time) * 1000)
+                            safe_print(f"[LATENCY METRIC][SARVAM]: Greeting audio started {greet_lat_ms}ms after stream connect!")
                         if last_speech_stopped_time is not None:
                             turn_lat_ms = int((time.time() - last_speech_stopped_time) * 1000)
                             safe_print(f"[LATENCY METRIC][SARVAM]: First audio chunk arrived in {turn_lat_ms}ms!")
@@ -898,8 +932,14 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
             await openai_ws.send(json.dumps(session_update))
 
         if voice_engine == "sarvam":
-            sarvam_session = SarvamTTSSession(SARVAM_API_KEY, sarvam_speaker, sarvam_language_code)
-            await sarvam_session.__aenter__()
+            if prewarmed_usable and prewarmed.get("sarvam_session"):
+                # Already connected and configured in parallel with the OpenAI
+                # prewarm at /answer time - nothing to wait on here.
+                sarvam_session = prewarmed["sarvam_session"]
+            else:
+                # Cold path (no usable prewarm): connect now, same as before.
+                sarvam_session = SarvamTTSSession(SARVAM_API_KEY, sarvam_speaker, sarvam_language_code)
+                await sarvam_session.__aenter__()
             sarvam_worker_task = asyncio.create_task(sarvam_tts_worker())
 
         # Brief shield so the click/pop from the line connecting isn't fed to
@@ -962,7 +1002,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                 logger.error(f"Error in plivo_to_openai: {e}")
 
         async def openai_to_plivo():
-            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task
+            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task, greeting_audio_logged
             text_accum_buffer = ""
             full_response_text = ""
             try:
@@ -980,6 +1020,10 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             continue
                         delta = event.get("delta")
                         if delta:
+                            if not greeting_audio_logged:
+                                greeting_audio_logged = True
+                                greet_lat_ms = int((time.time() - stream_connect_time) * 1000)
+                                safe_print(f"[LATENCY METRIC]: Greeting audio started {greet_lat_ms}ms after stream connect!")
                             if last_speech_stopped_time is not None:
                                 turn_lat_ms = int((time.time() - last_speech_stopped_time) * 1000)
                                 safe_print(f"[LATENCY METRIC]: First audio chunk arrived in {turn_lat_ms}ms!")

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, Suspense } from 'react'
-import { Download, MoreHorizontal, Phone, Search, Upload, Loader2, Plus, X, User, MapPin, Home, Briefcase, Sparkles, MessageSquare, Clock, ArrowRight, Trash2 } from 'lucide-react'
+import { Download, MoreHorizontal, Phone, Search, Upload, Loader2, Plus, X, User, MapPin, Home, Briefcase, Sparkles, MessageSquare, Clock, ArrowRight, Trash2, CircleDollarSign } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi, getAuthToken, API_BASE_URL } from '@/lib/api'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -283,6 +283,7 @@ function LeadsContent() {
               <option value="bfsi">BFSI & Lending ({leads.filter(l => l.industry === 'bfsi').length})</option>
               <option value="healthcare">Healthcare ({leads.filter(l => l.industry === 'healthcare').length})</option>
               <option value="edtech">EdTech ({leads.filter(l => l.industry === 'edtech').length})</option>
+              <option value="collections">Collections ({leads.filter(l => l.industry === 'collections').length})</option>
             </select>
             {campaignId && (
               <button 
@@ -549,11 +550,29 @@ function LeadsContent() {
                 </div>
               )}
 
+              {/* Promise to Pay - shown clearly regardless of outcome, not as raw JSON */}
+              {selectedCall?.analysis?.promise_to_pay && (
+                <div className={`rounded-xl border p-4 shadow-sm ${selectedCall.analysis.promise_to_pay.promised ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/50 bg-card'}`}>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                    <CircleDollarSign size={14} className={selectedCall.analysis.promise_to_pay.promised ? 'text-emerald-500' : 'text-muted-foreground'} /> Promise to Pay
+                  </div>
+                  {selectedCall.analysis.promise_to_pay.promised ? (
+                    <div className="text-sm font-bold text-foreground">
+                      Committed to pay {selectedCall.analysis.promise_to_pay.amount || 'an unspecified amount'} by {selectedCall.analysis.promise_to_pay.date || 'an unspecified date'}
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium text-muted-foreground">
+                      No confirmed commitment yet - the customer did not give a clear amount and date during this call.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Dynamic Extracted Fields from AI Analysis */}
-              {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status'].includes(k)).length > 0 && (
+              {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay'].includes(k)).length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {Object.keys(selectedCall.analysis)
-                    .filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status'].includes(k))
+                    .filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay'].includes(k))
                     .map(key => (
                       <div key={key} className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">

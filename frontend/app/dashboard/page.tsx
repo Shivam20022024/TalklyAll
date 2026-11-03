@@ -20,6 +20,7 @@ import {
   Target,
   TrendingUp,
   Users,
+  Banknote,
 } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { MetricCard } from '@/components/ui/MetricCard'
@@ -34,6 +35,7 @@ const INDUSTRY_ICONS: Record<IndustryKey, any> = {
   edtech: GraduationCap,
   bfsi: CreditCard,
   general_sales: Briefcase,
+  collections: Banknote,
 }
 
 export default function DashboardPage() {

@@ -13,10 +13,11 @@ import {
   CalendarCheck,
   Award,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  Banknote
 } from 'lucide-react'
 
-export type IndustryKey = 'real_estate' | 'healthcare' | 'edtech' | 'bfsi' | 'general_sales'
+export type IndustryKey = 'real_estate' | 'healthcare' | 'edtech' | 'bfsi' | 'general_sales' | 'collections'
 
 export interface IndustryConfig {
   id: IndustryKey
@@ -235,5 +236,44 @@ export const INDUSTRY_CONFIGS: Record<IndustryKey, IndustryConfig> = {
       { objection: 'Implementation timeline concerns', frequency: '16%', aiHandling: 'Demonstrates 10-minute zero-code campaign setup with pre-built vertical templates' },
     ],
     keyExtractionFields: ['Company Size & Team Volume', 'Current Tooling / CRM', 'Primary Bottleneck (Answer Rates / Agent Time)', 'Decision Timeline']
+  },
+
+  collections: {
+    id: 'collections',
+    label: 'Collections & EMI Recovery',
+    shortLabel: 'Collections',
+    tagline: 'Overdue EMI Reminders & Promise-to-Pay Recovery',
+    iconName: 'Banknote',
+    offeringName: 'Loan / Account Type',
+    leadTerm: 'Overdue Borrowers',
+    conversionGoal: 'Promises to Pay Secured',
+    metrics: {
+      total_leads: { label: 'Overdue Accounts', icon: Users, tone: 'blue', desc: 'Accounts in the recovery queue' },
+      calls_made: { label: 'Reminder Calls', icon: Phone, tone: 'violet', desc: 'AI recovery calls placed' },
+      connected_calls: { label: 'Connected Borrowers', icon: Activity, tone: 'green', desc: 'Reached the account holder' },
+      qualified_leads: { label: 'Identity Verified', icon: Target, tone: 'orange', desc: 'Confirmed speaking with borrower' },
+      interested_leads: { label: 'Promises to Pay', icon: Sparkles, tone: 'blue', desc: 'Specific amount & date committed' },
+      conversion_rate: { label: 'Recovery Rate', icon: TrendingUp, tone: 'green', desc: 'Promises kept vs overdue accounts' },
+    },
+    funnelStages: [
+      'Overdue Accounts Queued',
+      'Reminder Calls Dialed',
+      'Connected Borrowers',
+      'Identity Verified',
+      'Promise to Pay Secured',
+      'Payment Received'
+    ],
+    intentDistribution: [
+      { label: 'Personal Loan EMI', pct: 40, color: 'bg-blue-500' },
+      { label: 'Credit Card Dues', pct: 27, color: 'bg-emerald-500' },
+      { label: 'Business Loan EMI', pct: 20, color: 'bg-amber-500' },
+      { label: 'Vehicle Loan EMI', pct: 13, color: 'bg-purple-500' },
+    ],
+    topObjections: [
+      { objection: 'Financial Hardship / Job Loss', frequency: '34%', aiHandling: 'Acknowledges with empathy and escalates to a human recovery specialist rather than negotiating terms itself' },
+      { objection: 'Dispute Over Amount Owed', frequency: '26%', aiHandling: 'Does not argue the figure - offers to connect with a specialist who can review the statement' },
+      { objection: 'Already Paid / Payment Pending', frequency: '19%', aiHandling: 'Notes the claim for verification instead of repeating the payment demand on the same call' },
+    ],
+    keyExtractionFields: ['Overdue Amount', 'Due Date', 'Promise to Pay Date', 'Promise to Pay Amount']
   }
 }

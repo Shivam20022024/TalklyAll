@@ -458,6 +458,7 @@ export default function CampaignsPage() {
                   <option value="edtech">EdTech & Academies</option>
                   <option value="real_estate">Real Estate & Developers</option>
                   <option value="general_sales">B2B Sales & Outreach</option>
+                  <option value="collections">Collections & EMI Recovery</option>
                 </select>
                 <p className="text-[11px] text-muted-foreground mt-1">Configures speech intelligence, AI persona, and objections.</p>
               </div>
