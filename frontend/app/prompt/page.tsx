@@ -355,7 +355,7 @@ export default function PromptPage() {
         body: JSON.stringify({
           phone_number: testPhone,
           lead_id: 'test-agent-call',
-          campaign_language: 'English',
+          campaign_language: 'Hinglish',
           industry: selectedIndustry
         })
       })

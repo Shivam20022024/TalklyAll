@@ -123,7 +123,7 @@ function LeadsContent() {
           phone_number: quickCallNumber,
           customer_name: quickCallName.trim(),
           lead_id: 'quick-call-' + Date.now(),
-          campaign_language: 'English',
+          campaign_language: 'Hinglish',
           industry: activeIndustry === 'all' ? (user?.industry || 'general_sales') : activeIndustry
         })
       })
@@ -197,7 +197,7 @@ function LeadsContent() {
           phone_number: lead.phone,
           customer_name: lead.name,
           lead_id: lead.lead_id || 'manual-lead',
-          campaign_language: 'English',
+          campaign_language: lead.language || 'Hinglish',
           industry: lead.industry || 'general_sales',
           offering: lead.offering || lead.property || '',
           location: lead.location || ''

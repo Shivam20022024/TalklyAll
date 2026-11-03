@@ -1008,6 +1008,8 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
             nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task, greeting_audio_logged
             text_accum_buffer = ""
             full_response_text = ""
+            current_response_id = None
+            sentences_flushed_this_response = 0
             try:
                 while True:
                     msg = await openai_ws.recv()
@@ -1044,24 +1046,54 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
 
                     elif etype == "response.output_text.delta" and voice_engine == "sarvam":
                         delta = event.get("delta", "")
+                        # Never let two overlapping OpenAI responses (e.g. an
+                        # explicit response.create racing a server-auto-created
+                        # one from turn_detection.create_response) mix their
+                        # text into the same buffer - previously this had no
+                        # response_id tracking at all, so deltas from a stale/
+                        # concurrent response could get silently interleaved
+                        # into whatever was currently accumulating, producing
+                        # incoherent or repeated speech. If this field is ever
+                        # absent, resp_id stays falsy and this is a no-op -
+                        # falls back to the old (unguarded) behavior rather
+                        # than breaking anything.
+                        resp_id = event.get("response_id")
+                        if resp_id and resp_id != current_response_id:
+                            current_response_id = resp_id
+                            text_accum_buffer = ""
+                            full_response_text = ""
+                            sentences_flushed_this_response = 0
                         if delta:
                             text_accum_buffer += delta
                             full_response_text += delta
-                            # Flush on a sentence boundary so Sarvam can start
-                            # synthesizing before the whole response has arrived,
-                            # instead of waiting for response.output_text.done.
-                            while True:
+                            # Only flush the FIRST sentence early, for a fast
+                            # initial response - flushing every sentence as its
+                            # own independent Sarvam synthesis call fragmented
+                            # delivery into many separately-synthesized clips
+                            # with disconnected prosody between them, which is
+                            # what made longer responses sound choppy/robotic.
+                            # Everything after the first sentence accumulates
+                            # and goes out as one larger, more natural chunk at
+                            # response.output_text.done instead.
+                            if sentences_flushed_this_response == 0:
                                 m = re.search(r'^(.*?[.!?।])\s*', text_accum_buffer, re.DOTALL)
-                                if not m or len(m.group(1)) < 6:
-                                    break
-                                sentence = m.group(1)
-                                text_accum_buffer = text_accum_buffer[m.end():]
-                                await sarvam_queue.put(sentence)
+                                if m and len(m.group(1)) >= 6:
+                                    sentence = m.group(1)
+                                    text_accum_buffer = text_accum_buffer[m.end():]
+                                    await sarvam_queue.put(sentence)
+                                    sentences_flushed_this_response += 1
 
                     elif etype == "response.output_text.done" and voice_engine == "sarvam":
+                        resp_id = event.get("response_id")
+                        if resp_id and resp_id != current_response_id:
+                            # A stale/abandoned response finishing late - its
+                            # text was already dropped when the newer response
+                            # started above, so there's nothing left to flush.
+                            continue
                         if text_accum_buffer.strip():
                             await sarvam_queue.put(text_accum_buffer.strip())
                         text_accum_buffer = ""
+                        sentences_flushed_this_response = 0
                         text = (event.get("text") or full_response_text).strip()
                         full_response_text = ""
                         if text:
