@@ -19,6 +19,7 @@ import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/providers/AuthProvider'
 import LiveVoicePlayground from '@/components/voice/LiveVoicePlayground'
+import FlowBuilder from '@/components/prompt/FlowBuilder'
 
 interface IndustryTemplate {
   id: string
@@ -492,11 +493,11 @@ export default function PromptPage() {
                   ? 'The master AI persona, objection handling scripts, and conversation flow.'
                   : 'How your agent handles an incoming call - what to listen for, how to answer, and when to offer a next step.'}
               </p>
-              <textarea
+              <FlowBuilder
+                key={activeDirection}
                 value={activeDirection === 'outbound' ? promptText : inboundPromptText}
-                onChange={(e) => activeDirection === 'outbound' ? setPromptText(e.target.value) : setInboundPromptText(e.target.value)}
-                className="w-full h-[420px] resize-none rounded-lg border border-border bg-background p-4 text-sm font-mono outline-none focus:ring-2 focus:ring-primary leading-relaxed"
-                placeholder={activeDirection === 'outbound' ? "Enter your system prompt here..." : "Enter your inbound call-handling prompt here..."}
+                onChange={(next) => activeDirection === 'outbound' ? setPromptText(next) : setInboundPromptText(next)}
+                placeholderRole={`You are a professional representative for {{company_name}}, handling ${activeDirection === 'outbound' ? 'outbound' : 'inbound'} calls.`}
               />
             </div>
           </div>

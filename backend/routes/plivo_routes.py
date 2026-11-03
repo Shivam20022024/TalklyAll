@@ -24,7 +24,9 @@ from telephony.plivo_provider import PlivoProvider
 from process_audio import analyze_transcript_text
 from services.crm_service import crm_service
 from services.billing_service import billing_service
+from services.sarvam_tts import SarvamTTSSession, sarvam_voice_for
 from industry_templates import INDUSTRY_TEMPLATES
+import re
 import requests
 import sys
 from dotenv import load_dotenv
@@ -60,6 +62,7 @@ logger = logging.getLogger("talkly-plivo-streaming")
 plivo_router = APIRouter()
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
 
 # Known Whisper "silence hallucination" phrases - fabricated, fluent-sounding
 # text the model emits when fed near-silent/low-energy audio instead of real
@@ -390,7 +393,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n   - Step 5: Once agreed or concluded, say a warm goodbye in whichever language the customer has been using (Hindi: 'बहुत-बहुत धन्यवाद, आपका दिन शुभ हो! अलविदा।' / English: 'Thank you so much, have a great day! Goodbye.'), and execute the end_call function."
         "\n5. ONE QUESTION PER TURN: Ask strictly ONE question per turn. Never speak two questions back-to-back. Never answer your own questions."
         "\n6. AUTOMATIC HANGUP: Immediately after concluding your goodbye, invoke the end_call function."
-        "\n7. HANDLE UNCLEAR INPUT: If what the customer said does not logically fit the conversation, sounds garbled, or like background noise rather than a real answer, DO NOT guess or respond as if you understood it. This includes a random name, place, or short phrase with no logical connection to the question you just asked (e.g. you asked for a day/time and the answer is an unrelated proper noun) - NEVER interpret that as agreement, enthusiasm, or a valid choice. Politely ask them to repeat instead - Hindi: 'माफ कीजिए, क्या आप फिर से बता सकते हैं?' / English: 'Sorry, could you repeat that?' Only move forward once you get a clear, relevant answer to your last question. (Note: a coherent but off-topic remark is covered by rule 3, not this rule.)"
+        "\n7. HANDLE UNCLEAR INPUT: If what the customer said does not logically fit the conversation, sounds garbled, or like background noise rather than a real answer, DO NOT guess or respond as if you understood it. This includes a random name, place, or short phrase with no logical connection to the question you just asked (e.g. you asked for a day/time and the answer is an unrelated proper noun) - NEVER interpret that as agreement, enthusiasm, or a valid choice. If you offered specific named options (e.g. 'loan, insurance, or something else?') and their answer does not clearly and unambiguously match ONE of those options, do NOT default to the option that sounds closest or was mentioned first/most recently in the conversation - treat it exactly like unclear input, not a selection. Politely ask them to repeat instead - Hindi: 'माफ कीजिए, क्या आप फिर से बता सकते हैं?' / English: 'Sorry, could you repeat that?' Only move forward once you get a clear, relevant answer to your last question. (Note: a coherent but off-topic remark is covered by rule 3, not this rule.)"
+        "\n8. SERVICE MISMATCH - DON'T FORCE-FIT THE CALLER INTO YOUR SCRIPT: If the customer's very first clearly-stated need is for a different kind of business or service than what your company actually offers (e.g. they ask for a doctor's appointment but you are a loan/insurance company, or they ask about a property but you are a clinic), do NOT ignore what they said and funnel them into your own Key Objectives categories anyway. Briefly and politely clarify in one short sentence what your company actually does (using its name, from your role description above), and ask if that's what they meant or if there's something in that area you can help with. If they confirm they wanted something else entirely, politely let them know this may be the wrong number, wish them well in whichever language they've been using, and execute the end_call function - do not keep asking your scripted qualification questions (budget, loan amount, configuration, etc.) about a need they never actually expressed."
     )
     system_prompt = indian_accent_directive + natural_speech_directive + system_prompt + conversation_rules
 
@@ -416,15 +420,31 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     }
     transcription_lang = WHISPER_LANGUAGE_CODES.get(str(call_lang).strip().lower())
 
+    # Sarvam voice pilot: opt-in per company (companies.use_sarvam_voice),
+    # and only for languages actually validated against Sarvam so far
+    # (English, Hindi/Hinglish). Falls back to OpenAI's native voice for
+    # every other company/language rather than guessing on a live call.
+    voice_engine = "openai"
+    sarvam_voice = None
+    if company and company.get("use_sarvam_voice") and SARVAM_API_KEY:
+        sarvam_voice = sarvam_voice_for(transcription_lang)
+        if sarvam_voice:
+            voice_engine = "sarvam"
+        else:
+            safe_print(f"[SARVAM]: use_sarvam_voice is on but language '{call_lang}' isn't validated yet - using OpenAI voice.")
+
     return {
         "system_prompt": system_prompt,
         "welcome_text": welcome_text,
         "transcription_lang": transcription_lang,
         "company": company,
+        "voice_engine": voice_engine,
+        "sarvam_speaker": sarvam_voice["speaker"] if sarvam_voice else None,
+        "sarvam_language_code": sarvam_voice["language_code"] if sarvam_voice else None,
     }
 
 
-def _openai_session_update_payload(system_prompt: str, transcription_lang: str = None) -> dict:
+def _openai_session_update_payload(system_prompt: str, transcription_lang: str = None, text_only: bool = False) -> dict:
     # Reverted from gpt-4o-mini-transcribe back to whisper-1 (2026-10-27):
     # gpt-4o-mini-transcribe has a well-documented community-reported bug
     # where it ignores the `language` hint entirely - confirmed live here too,
@@ -438,62 +458,75 @@ def _openai_session_update_payload(system_prompt: str, transcription_lang: str =
         # resolve_call_voice_context.
         transcription_config["language"] = transcription_lang
 
+    audio_config = {
+        "input": {
+            "format": {"type": "audio/pcmu"},
+            "transcription": transcription_config,
+            # Suppresses background/ambient noise before it reaches the
+            # transcriber and the turn-detector - "near_field" fits a
+            # phone call (mic close to the speaker's mouth), unlike
+            # "far_field" which targets laptop/conference-room mics.
+            # Confirmed via OpenAI's official SDK reference docs. Watch
+            # for added turn-taking latency on the next test call - one
+            # community report flagged this as a real tradeoff.
+            "noise_reduction": {"type": "near_field"},
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.65,
+                # Wider than before on purpose: short/fragmented audio
+                # clips are what push Whisper into hallucinating fluent
+                # but unrelated text instead of transcribing accurately.
+                # More lead-in and more silence before cutting a turn
+                # gives it fuller, less ambiguous utterances to work with.
+                "prefix_padding_ms": 500,
+                "silence_duration_ms": 1000,
+                "create_response": True,
+                "interrupt_response": True
+            }
+        }
+    }
+    if not text_only:
+        audio_config["output"] = {
+            "format": {"type": "audio/pcmu"},
+            "voice": "coral",
+            "speed": 1.0
+        }
+
+    session = {
+        "type": "realtime",
+        "instructions": system_prompt,
+        "audio": audio_config,
+        "tools": [
+            {
+                "type": "function",
+                "name": "end_call",
+                "description": "Hang up and terminate the call immediately when the conversation is finished, after the appointment or inquiry has been confirmed and you have said a polite goodbye.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "Reason for ending the call (e.g. appointment_confirmed, customer_ended)"
+                        }
+                    },
+                    "required": ["reason"]
+                }
+            }
+        ],
+        "tool_choice": "auto"
+    }
+    if text_only:
+        # Sarvam voice pilot: no audio generated by OpenAI at all - we only
+        # want its transcription + LLM turns, and synthesize speech
+        # ourselves via Sarvam. (OpenAI's docs note audio can occasionally
+        # leak through even in text-only mode - the stream handler below
+        # drops any such delta defensively rather than trusting this flag
+        # alone.)
+        session["output_modalities"] = ["text"]
+
     return {
         "type": "session.update",
-        "session": {
-            "type": "realtime",
-            "instructions": system_prompt,
-            "audio": {
-                "input": {
-                    "format": {"type": "audio/pcmu"},
-                    "transcription": transcription_config,
-                    # Suppresses background/ambient noise before it reaches the
-                    # transcriber and the turn-detector - "near_field" fits a
-                    # phone call (mic close to the speaker's mouth), unlike
-                    # "far_field" which targets laptop/conference-room mics.
-                    # Confirmed via OpenAI's official SDK reference docs. Watch
-                    # for added turn-taking latency on the next test call - one
-                    # community report flagged this as a real tradeoff.
-                    "noise_reduction": {"type": "near_field"},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "threshold": 0.65,
-                        # Wider than before on purpose: short/fragmented audio
-                        # clips are what push Whisper into hallucinating fluent
-                        # but unrelated text instead of transcribing accurately.
-                        # More lead-in and more silence before cutting a turn
-                        # gives it fuller, less ambiguous utterances to work with.
-                        "prefix_padding_ms": 500,
-                        "silence_duration_ms": 1000,
-                        "create_response": True,
-                        "interrupt_response": True
-                    }
-                },
-                "output": {
-                    "format": {"type": "audio/pcmu"},
-                    "voice": "coral",
-                    "speed": 1.0
-                }
-            },
-            "tools": [
-                {
-                    "type": "function",
-                    "name": "end_call",
-                    "description": "Hang up and terminate the call immediately when the conversation is finished, after the appointment or inquiry has been confirmed and you have said a polite goodbye.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "reason": {
-                                "type": "string",
-                                "description": "Reason for ending the call (e.g. appointment_confirmed, customer_ended)"
-                            }
-                        },
-                        "required": ["reason"]
-                    }
-                }
-            ],
-            "tool_choice": "auto"
-        }
+        "session": session
     }
 
 
@@ -521,7 +554,8 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
         openai_ws = await asyncio.wait_for(ws_cm.__aenter__(), timeout=8.0)
         await asyncio.wait_for(openai_ws.recv(), timeout=8.0)  # session.created
 
-        session_update = _openai_session_update_payload(ctx["system_prompt"], ctx["transcription_lang"])
+        text_only = ctx["voice_engine"] == "sarvam"
+        session_update = _openai_session_update_payload(ctx["system_prompt"], ctx["transcription_lang"], text_only=text_only)
         await openai_ws.send(json.dumps(session_update))
 
         OPENAI_PREWARM_CACHE[call_id] = {
@@ -530,6 +564,9 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             "system_prompt": ctx["system_prompt"],
             "welcome_text": ctx["welcome_text"],
             "company": ctx["company"],
+            "voice_engine": ctx["voice_engine"],
+            "sarvam_speaker": ctx["sarvam_speaker"],
+            "sarvam_language_code": ctx["sarvam_language_code"],
         }
         safe_print(f"[PREWARM]: OpenAI Realtime session ready ahead of stream connect for call_id={call_id}")
 
@@ -588,8 +625,20 @@ async def plivo_answer_call(request: Request, call_id: str = Query(None), compan
                 if comp and comp.get("company_id"):
                     company_id = comp["company_id"]
             if not company_id:
-                # Default active tenant
-                company_id = "209cb85e-5ce7-449e-b32c-ad5ca4c6c635"
+                # No company owns this number - reject rather than silently
+                # routing (and billing) an unregistered/misconfigured number
+                # to some other tenant. Previously defaulted to a hardcoded
+                # company_id here, which meant a number that was never
+                # properly registered in db.phone_numbers/companies.telephony
+                # would silently hand the call, its transcript, and its
+                # billing to an unrelated company.
+                logger.warning(f"Inbound call to unregistered number {clean_to} rejected - no company owns it.")
+                unmatched_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Speak>Sorry, this number is not currently in service.</Speak>
+    <Hangup/>
+</Response>"""
+                return Response(content=unmatched_xml.encode("utf-8"), media_type="text/xml; charset=utf-8")
 
         # Block the AI agent from picking up if this company is out of free
         # trial minutes and has no wallet balance - still answer the call
@@ -691,6 +740,9 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         welcome_text = prewarmed["welcome_text"]
         company = prewarmed["company"]
         transcription_lang = None  # unused on the reuse path - session is already configured
+        voice_engine = prewarmed["voice_engine"]
+        sarvam_speaker = prewarmed["sarvam_speaker"]
+        sarvam_language_code = prewarmed["sarvam_language_code"]
         safe_print(f"[PREWARM]: Reusing warm OpenAI session for call_id={call_id} - skipping cold connect")
     else:
         if prewarmed:
@@ -703,6 +755,12 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         welcome_text = ctx["welcome_text"]
         company = ctx["company"]
         transcription_lang = ctx["transcription_lang"]
+        voice_engine = ctx["voice_engine"]
+        sarvam_speaker = ctx["sarvam_speaker"]
+        sarvam_language_code = ctx["sarvam_language_code"]
+
+    if voice_engine == "sarvam":
+        safe_print(f"[SARVAM]: Voice pilot active for call_id={call_id} (speaker={sarvam_speaker}, language={sarvam_language_code})")
 
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip() or OPENAI_API_KEY
     openai_ws_url = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
@@ -714,6 +772,38 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     last_speech_stopped_time = None
     customer_speaking = False
     turn_rms_samples = []
+
+    # Sarvam voice pilot plumbing - unused entirely when voice_engine == "openai"
+    sarvam_session = None
+    sarvam_queue: "asyncio.Queue" = asyncio.Queue()
+    sarvam_worker_task = None
+
+    async def sarvam_tts_worker():
+        nonlocal last_speech_stopped_time
+        try:
+            while True:
+                chunk = await sarvam_queue.get()
+                if not chunk:
+                    continue
+                try:
+                    async for audio_b64 in sarvam_session.speak(chunk):
+                        if last_speech_stopped_time is not None:
+                            turn_lat_ms = int((time.time() - last_speech_stopped_time) * 1000)
+                            safe_print(f"[LATENCY METRIC][SARVAM]: First audio chunk arrived in {turn_lat_ms}ms!")
+                            last_speech_stopped_time = None
+                        play_msg = {
+                            "event": "playAudio",
+                            "media": {
+                                "contentType": "audio/x-mulaw",
+                                "sampleRate": 8000,
+                                "payload": audio_b64
+                            }
+                        }
+                        await websocket.send_text(json.dumps(play_msg))
+                except Exception as tts_e:
+                    safe_print(f"[SARVAM TTS ERROR]: {tts_e}")
+        except asyncio.CancelledError:
+            pass
 
     async def trigger_auto_hangup(delay_seconds: float = 3.5):
         nonlocal hangup_triggered
@@ -787,8 +877,13 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
             init_event = await openai_ws.recv()
 
             # Update session: interrupt_response is True, protected during greeting by plivo_to_openai shield
-            session_update = _openai_session_update_payload(system_prompt, transcription_lang)
+            session_update = _openai_session_update_payload(system_prompt, transcription_lang, text_only=(voice_engine == "sarvam"))
             await openai_ws.send(json.dumps(session_update))
+
+        if voice_engine == "sarvam":
+            sarvam_session = SarvamTTSSession(SARVAM_API_KEY, sarvam_speaker, sarvam_language_code)
+            await sarvam_session.__aenter__()
+            sarvam_worker_task = asyncio.create_task(sarvam_tts_worker())
 
         # Brief shield so the click/pop from the line connecting isn't fed to
         # the transcriber as speech. Kept short on purpose: genuine early
@@ -850,15 +945,22 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                 logger.error(f"Error in plivo_to_openai: {e}")
 
         async def openai_to_plivo():
-            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples
+            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task
+            text_accum_buffer = ""
+            full_response_text = ""
             try:
                 while True:
                     msg = await openai_ws.recv()
                     event = json.loads(msg)
                     etype = event.get("type")
 
-                    # Both GA ('response.output_audio.delta') and Beta ('response.audio.delta')
+                    # Both GA ('response.output_audio.delta') and Beta ('response.audio.delta').
+                    # In Sarvam mode the session is configured text-only, so these should not
+                    # occur - but OpenAI's own docs note audio can occasionally leak through
+                    # even then, so drop it defensively instead of double-voicing the call.
                     if etype in ("response.output_audio.delta", "response.audio.delta"):
+                        if voice_engine == "sarvam":
+                            continue
                         delta = event.get("delta")
                         if delta:
                             if last_speech_stopped_time is not None:
@@ -876,6 +978,52 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             }
                             await websocket.send_text(json.dumps(play_msg))
 
+                    elif etype == "response.output_text.delta" and voice_engine == "sarvam":
+                        delta = event.get("delta", "")
+                        if delta:
+                            text_accum_buffer += delta
+                            full_response_text += delta
+                            # Flush on a sentence boundary so Sarvam can start
+                            # synthesizing before the whole response has arrived,
+                            # instead of waiting for response.output_text.done.
+                            while True:
+                                m = re.search(r'^(.*?[.!?।])\s*', text_accum_buffer, re.DOTALL)
+                                if not m or len(m.group(1)) < 6:
+                                    break
+                                sentence = m.group(1)
+                                text_accum_buffer = text_accum_buffer[m.end():]
+                                await sarvam_queue.put(sentence)
+
+                    elif etype == "response.output_text.done" and voice_engine == "sarvam":
+                        if text_accum_buffer.strip():
+                            await sarvam_queue.put(text_accum_buffer.strip())
+                        text_accum_buffer = ""
+                        text = (event.get("text") or full_response_text).strip()
+                        full_response_text = ""
+                        if text:
+                            safe_print(f"[AI SPEECH][SARVAM]: {text}")
+                            transcript_parts.append(f"AI: {text}")
+                            if call_id:
+                                try:
+                                    await db.calls.update_one(
+                                        {"call_id": call_id},
+                                        {"$set": {"transcript": "\n".join(transcript_parts)}}
+                                    )
+                                except Exception as db_e:
+                                    safe_print(f"Error persisting transcript: {db_e}")
+
+                            text_lower = text.lower()
+                            goodbye_keywords = [
+                                "अलविदा", "दिन शुभ हो", "बाय", "bye", "goodbye",
+                                "have a great day", "have a wonderful day", "have a good day",
+                                "take care", "बात करने के लिए धन्यवाद"
+                            ]
+                            if (len(transcript_parts) - 1) >= 3 and any(kw in text_lower for kw in goodbye_keywords):
+                                chars = len(text.strip())
+                                delay = max(7.0, min((chars / 11.0) + 3.5, 16.0))
+                                safe_print(f"[AUTO HANGUP]: Goodbye detected in AI speech. Allowing full sentence to complete ({delay:.1f}s)...")
+                                asyncio.create_task(trigger_auto_hangup(delay_seconds=delay))
+
                     elif etype == "input_audio_buffer.speech_started":
                         if time.time() < pickup_click_shield_until:
                             continue
@@ -883,6 +1031,16 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         await websocket.send_text(json.dumps({"event": "clearAudio"}))
                         customer_speaking = True
                         turn_rms_samples = []
+                        if voice_engine == "sarvam" and sarvam_worker_task is not None:
+                            # Drop whatever AI speech was mid-flight so it can't
+                            # keep talking over the customer after the barge-in.
+                            sarvam_worker_task.cancel()
+                            while not sarvam_queue.empty():
+                                try:
+                                    sarvam_queue.get_nowait()
+                                except asyncio.QueueEmpty:
+                                    break
+                            sarvam_worker_task = asyncio.create_task(sarvam_tts_worker())
 
                     elif etype == "input_audio_buffer.speech_stopped":
                         last_speech_stopped_time = time.time()
@@ -921,7 +1079,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             except Exception as e:
                                 safe_print(f"[SILENCE GATE ERROR]: Failed to send corrective response: {e}")
 
-                    elif etype in ("response.output_audio_transcript.done", "response.audio_transcript.done", "response.done"):
+                    elif etype in ("response.output_audio_transcript.done", "response.audio_transcript.done", "response.done") and voice_engine != "sarvam":
                         text = event.get("transcript", "").strip()
                         if text:
                             safe_print(f"[AI SPEECH]: {text}")
@@ -995,17 +1153,37 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         )
                         if (len(transcript_parts) - 1) < 3 or not has_goodbye:
                             safe_print(f"[AUTO HANGUP SHIELD]: Premature end_call blocked (turns={len(transcript_parts)}, has_goodbye={has_goodbye}). Continuing conversation...")
+                            # A premature end_call often follows a turn that got cut off
+                            # mid-sentence by a VAD/silence-gate retrigger (flaky line,
+                            # background noise). Left as a bare response.create with no
+                            # instructions, the model free-associates its next line from
+                            # history alone and can drift into confidently claiming a
+                            # date/time/confirmation the customer never actually gave
+                            # (seen live: confirming "11am Tuesday" when the customer's
+                            # last two turns were silence-gated noise and "Thank you").
+                            # Explicit instructions here close that gap.
+                            no_fabrication_note = (
+                                "Do not assume or claim that any date, time, confirmation, "
+                                "or answer was given by the customer unless they actually "
+                                "said it earlier in this conversation. If you are not sure "
+                                "what they last said, or your own last turn was cut off "
+                                "before finishing, ask them to repeat or clarify instead of "
+                                "guessing or inventing an answer."
+                            )
                             if call_id_func:
                                 func_resp = {
                                     "type": "conversation.item.create",
                                     "item": {
                                         "type": "function_call_output",
                                         "call_id": call_id_func,
-                                        "output": json.dumps({"status": "continue", "message": "Call is active. Continue the conversation and ask the next question from key objectives."})
+                                        "output": json.dumps({"status": "continue", "message": f"Call is active - do not end it yet. Continue the conversation and ask the next question from key objectives. {no_fabrication_note}"})
                                     }
                                 }
                                 await openai_ws.send(json.dumps(func_resp))
-                            await openai_ws.send(json.dumps({"type": "response.create"}))
+                            await openai_ws.send(json.dumps({
+                                "type": "response.create",
+                                "response": {"instructions": f"Continue the conversation naturally from here. {no_fabrication_note}"}
+                            }))
                         else:
                             safe_print(f"[AUTO HANGUP]: Confirmation and goodbye verified in speech. Ending call in 8s ({event.get('arguments')})...")
                             asyncio.create_task(trigger_auto_hangup(delay_seconds=8.0))
@@ -1046,6 +1224,13 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     finally:
         safe_print(f"[STREAM FINALLY]: call_id={call_id}, turns recorded={len(transcript_parts)}")
         await finalize_plivo_call(call_id, company_id=company_id, transcript_parts=transcript_parts)
+        if sarvam_worker_task is not None:
+            sarvam_worker_task.cancel()
+        if sarvam_session is not None:
+            try:
+                await sarvam_session.__aexit__(None, None, None)
+            except Exception:
+                pass
         if ws_cm:
             try:
                 await ws_cm.__aexit__(None, None, None)

@@ -160,7 +160,7 @@ async def get_company(company_id: str, current_user: dict = Depends(require_supe
 async def update_company(company_id: str, payload: dict = Body(...), current_user: dict = Depends(require_super_admin)):
     db = mongodb.get_db()
     await _require_company(db, company_id)
-    allowed = {k: payload[k] for k in ("name", "status", "bolna_agent_id", "plan_type") if k in payload}
+    allowed = {k: payload[k] for k in ("name", "status", "bolna_agent_id", "plan_type", "use_sarvam_voice") if k in payload}
     if "status" in allowed and allowed["status"] not in ("ACTIVE", "SUSPENDED", "TRIAL", "INACTIVE"):
         raise HTTPException(status_code=400, detail="Invalid status")
     if not allowed:

@@ -11,6 +11,7 @@ pydub
 razorpay
 livekit-api
 websockets
+sarvamai
 
 PyJWT
 passlib[bcrypt]
