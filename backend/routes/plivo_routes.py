@@ -439,13 +439,16 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     }
     transcription_lang = WHISPER_LANGUAGE_CODES.get(str(call_lang).strip().lower())
 
-    # Sarvam voice pilot: opt-in per company (companies.use_sarvam_voice),
-    # and only for languages actually validated against Sarvam so far
-    # (English, Hindi/Hinglish). Falls back to OpenAI's native voice for
-    # every other company/language rather than guessing on a live call.
+    # Sarvam voice: default ON for every company (current and future) as of
+    # 2026-11-03, not just the original TCS pilot - companies.use_sarvam_voice
+    # now only matters as an explicit opt-OUT (set to False) if a specific
+    # company needs to fall back to OpenAI's native voice. Still only for
+    # languages actually validated against Sarvam so far (English,
+    # Hindi/Hinglish); every other language still falls back to OpenAI's
+    # native voice rather than guessing on a live call.
     voice_engine = "openai"
     sarvam_voice = None
-    if company and company.get("use_sarvam_voice") and SARVAM_API_KEY:
+    if company and company.get("use_sarvam_voice", True) and SARVAM_API_KEY:
         sarvam_voice = sarvam_voice_for(transcription_lang)
         if sarvam_voice:
             voice_engine = "sarvam"
