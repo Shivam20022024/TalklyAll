@@ -211,7 +211,7 @@ Key Objectives:
 }
 
 export default function PromptPage() {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const [promptText, setPromptText] = useState("Loading...")
   const [welcomeMessage, setWelcomeMessage] = useState("Loading...")
   const [inboundPromptText, setInboundPromptText] = useState("Loading...")
@@ -332,6 +332,12 @@ export default function PromptPage() {
         })
       })
       setPromptStatus('Published')
+      // Publishing changes company.industry server-side, but the cached
+      // `user` object in AuthProvider doesn't know that - without this,
+      // every other page reading user.industry (e.g. Leads' Quick Call)
+      // keeps using whatever industry was cached at login, silently
+      // mismatching the template that was just published.
+      await refreshUser()
       alert(`Published! Live AI agent is now configured with the ${CLIENT_TEMPLATES[selectedIndustry]?.name || ''} template.`)
     } catch (e: any) {
       alert(e.message || 'Failed to publish.')
