@@ -84,6 +84,10 @@ HALLUCINATION_PHRASES = {
     "god bless you.", "god bless you", "like and subscribe", "please subscribe",
     "subscribe to my channel", "don't forget to subscribe", "i want to give it a like.",
     "i want to give it a like",
+    # Video-caption-timestamp hallucinations - same training-data artifact
+    # family as "[music]"/"thanks for watching" above, just a different shape.
+    # Confirmed live: a raw "00:00" line showed up in a stored transcript.
+    "00:00", "0:00", "00:00:00", "0:00:00",
 }
 
 import re as _re_degenerate_check
@@ -98,6 +102,39 @@ def is_degenerate_transcript(text: str) -> bool:
     fixed list of known fluent hallucinations, so this novel garbage would
     otherwise slip through untouched."""
     return bool(text) and bool(_DEGENERATE_REPETITION_RE.search(text))
+
+
+def merge_customer_transcript(transcript_parts: list, text: str) -> bool:
+    """Appends new customer-speech text to transcript_parts, or merges it
+    into the most recent customer entry when this is clearly the same
+    utterance reported twice by two different event paths (one partial, one
+    complete) - the two customer-speech event handlers below previously only
+    deduped on EXACT string equality, so a cut-off partial and the full
+    follow-up both passed the old check and got appended as two separate
+    lines (confirmed live - the same truncated-then-full pattern already
+    fixed on the AI-text side showing up on the customer side too). Returns
+    True if transcript_parts actually changed (append or merge), False if
+    this was a stale duplicate to skip."""
+    last_idx = None
+    for i in range(len(transcript_parts) - 1, -1, -1):
+        if transcript_parts[i].startswith("AI: "):
+            break  # an AI turn happened since - this is a genuinely new utterance
+        if transcript_parts[i].startswith("Customer: "):
+            last_idx = i
+            break
+    if last_idx is None:
+        transcript_parts.append(f"Customer: {text}")
+        return True
+    last_text = transcript_parts[last_idx][len("Customer: "):].strip()
+    if text == last_text:
+        return False
+    if last_text and text.startswith(last_text):
+        transcript_parts[last_idx] = f"Customer: {text}"
+        return True
+    if text and last_text.startswith(text):
+        return False
+    transcript_parts.append(f"Customer: {text}")
+    return True
 
 # Below this RMS (16-bit linear PCM decoded from 8kHz mu-law telephony audio), a
 # VAD-flagged "speech" segment is almost certainly silence or background noise,
@@ -1328,9 +1365,8 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                     elif etype in ("conversation.item.input_audio_transcription.completed", "input_audio_transcription.completed"):
                         text = event.get("transcript", "").strip()
                         if text and text.lower() not in HALLUCINATION_PHRASES and len(text) > 1 and not is_degenerate_transcript(text):
-                            if not any(text == p.replace("Customer: ", "").strip() for p in transcript_parts):
+                            if merge_customer_transcript(transcript_parts, text):
                                 safe_print(f"[CUSTOMER SPEECH]: {text}")
-                                transcript_parts.append(f"Customer: {text}")
                                 if call_id:
                                     try:
                                         await db.calls.update_one(
@@ -1347,9 +1383,8 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                                 if c.get("type") == "input_text" and c.get("text"):
                                     ctext = c["text"].strip()
                                     if ctext and ctext.lower() not in HALLUCINATION_PHRASES and len(ctext) > 1 and not is_degenerate_transcript(ctext):
-                                        if not any(ctext == p.replace("Customer: ", "").strip() for p in transcript_parts):
+                                        if merge_customer_transcript(transcript_parts, ctext):
                                             safe_print(f"[CUSTOMER SPEECH via ITEM]: {ctext}")
-                                            transcript_parts.append(f"Customer: {ctext}")
                                             if call_id:
                                                 try:
                                                     await db.calls.update_one(
