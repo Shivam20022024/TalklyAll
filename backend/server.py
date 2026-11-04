@@ -159,6 +159,7 @@ from routes.admin_routes import admin_router
 from routes.agent_routes import agent_router
 from routes.access_requests import access_requests_router
 from routes.telephony_routes import telephony_router
+from routes.collections_routes import collections_router
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(billing_router, prefix="/api/v1/billing", tags=["Billing"])
@@ -169,6 +170,7 @@ app.include_router(campaign_router, prefix="/api/v1", tags=["Campaigns"])
 app.include_router(lead_router, prefix="/api/v1", tags=["Leads"])
 app.include_router(agent_router, prefix="/api/v1", tags=["Agent"])
 app.include_router(telephony_router, prefix="/api/v1/telephony", tags=["Telephony"])
+app.include_router(collections_router, prefix="/api/v1/collections", tags=["Collections"])
 app.include_router(access_requests_router, prefix="/api/v1/access-requests")
 app.include_router(access_requests_router, prefix="/api/v1/admin/access-requests")
 from routes.whatsapp_routes import whatsapp_router

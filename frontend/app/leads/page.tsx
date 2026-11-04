@@ -31,6 +31,9 @@ function LeadsContent() {
   const [newLead, setNewLead] = useState({ name: '', phone: '', property: '' })
   const [creating, setCreating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [repaymentUploading, setRepaymentUploading] = useState(false)
+  const repaymentFileInputRef = useRef<HTMLInputElement>(null)
+  const [recoveryAnalytics, setRecoveryAnalytics] = useState<any>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
   
@@ -61,6 +64,21 @@ function LeadsContent() {
   useEffect(() => {
     loadLeads()
   }, [range, campaignId])
+
+  const loadRecoveryAnalytics = async () => {
+    try {
+      const data = await fetchApi('/api/v1/collections/recovery-analytics')
+      setRecoveryAnalytics(data)
+    } catch (e) {
+      setRecoveryAnalytics(null)
+    }
+  }
+
+  useEffect(() => {
+    loadRecoveryAnalytics()
+  }, [])
+
+  const showCollectionsUI = activeIndustry === 'collections' || leads.some(l => l.industry === 'collections')
 
   useEffect(() => {
     if (selectedLead) {
@@ -188,6 +206,40 @@ function LeadsContent() {
     }
   }
 
+  const handleRepaymentUploadClick = () => {
+    repaymentFileInputRef.current?.click()
+  }
+
+  const handleRepaymentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setRepaymentUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const token = getAuthToken()
+      const response = await fetch(`${API_BASE_URL}/api/v1/collections/repayments/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      })
+
+      if (!response.ok) throw new Error('Upload failed')
+
+      const result = await response.json()
+      alert(`Uploaded ${result.repayments_inserted} repayments. Reconciled ${result.leads_reconciled} collections leads against promise-to-pay commitments.`)
+      loadLeads()
+      loadRecoveryAnalytics()
+    } catch (error) {
+      alert('Failed to upload repayments')
+    } finally {
+      setRepaymentUploading(false)
+      if (repaymentFileInputRef.current) repaymentFileInputRef.current.value = ''
+    }
+  }
+
   const handleCall = async (lead: any) => {
     try {
       // Only English/Hindi/Hinglish have an actual Indian-accented voice
@@ -252,8 +304,46 @@ function LeadsContent() {
             {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
             {uploading ? 'Uploading...' : 'Upload Leads'}
           </button>
+          {showCollectionsUI && (
+            <>
+              <input type="file" accept=".csv,.xlsx" className="hidden" ref={repaymentFileInputRef} onChange={handleRepaymentFileChange} />
+              <button onClick={handleRepaymentUploadClick} disabled={repaymentUploading} title="Upload a CSV/Excel of repayments actually received, to reconcile against Promise-to-Pay commitments" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-50">
+                {repaymentUploading ? <Loader2 size={15} className="animate-spin" /> : <CircleDollarSign size={15} />}
+                {repaymentUploading ? 'Uploading...' : 'Upload Repayments'}
+              </button>
+            </>
+          )}
         </div>
       </section>
+
+      {showCollectionsUI && recoveryAnalytics && (
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Overdue Accounts</span>
+            <div className="mt-1 text-2xl font-bold text-foreground">{recoveryAnalytics.overdue_accounts}</div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PTPs Secured</span>
+            <div className="mt-1 text-2xl font-bold text-foreground">{recoveryAnalytics.ptp_secured}</div>
+          </div>
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PTP Kept Rate</span>
+            <div className="mt-1 text-2xl font-bold text-emerald-600">{recoveryAnalytics.ptp_kept_rate_pct}%</div>
+          </div>
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PTP Broken</span>
+            <div className="mt-1 text-2xl font-bold text-rose-500">{recoveryAnalytics.ptp_broken}</div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Amount Due</span>
+            <div className="mt-1 text-2xl font-bold text-foreground">₹{recoveryAnalytics.total_amount_due?.toLocaleString('en-IN')}</div>
+          </div>
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Recovery Rate</span>
+            <div className="mt-1 text-2xl font-bold text-emerald-600">{recoveryAnalytics.recovery_rate_pct}% <span className="text-xs font-medium text-muted-foreground">(₹{recoveryAnalytics.total_amount_recovered?.toLocaleString('en-IN')})</span></div>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-col flex-wrap justify-between gap-3 sm:flex-row sm:items-center">
@@ -563,9 +653,23 @@ function LeadsContent() {
                     <CircleDollarSign size={14} className={selectedCall.analysis.promise_to_pay.promised ? 'text-emerald-500' : 'text-muted-foreground'} /> Promise to Pay
                   </div>
                   {selectedCall.analysis.promise_to_pay.promised ? (
-                    <div className="text-sm font-bold text-foreground">
-                      Committed to pay {selectedCall.analysis.promise_to_pay.amount || 'an unspecified amount'} by {selectedCall.analysis.promise_to_pay.date || 'an unspecified date'}
-                    </div>
+                    <>
+                      <div className="text-sm font-bold text-foreground">
+                        Committed to pay {selectedCall.analysis.promise_to_pay.amount || 'an unspecified amount'} by {selectedCall.analysis.promise_to_pay.date || 'an unspecified date'}
+                      </div>
+                      {selectedLead?.collections_status && (
+                        <div className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
+                          selectedLead.collections_status === 'kept' ? 'bg-emerald-500/10 text-emerald-600' :
+                          selectedLead.collections_status === 'kept_late' ? 'bg-amber-500/10 text-amber-600' :
+                          selectedLead.collections_status === 'partial' ? 'bg-amber-500/10 text-amber-600' :
+                          selectedLead.collections_status === 'broken' ? 'bg-rose-500/10 text-rose-500' :
+                          'bg-muted text-muted-foreground'
+                        }`}>
+                          {selectedLead.collections_status.replace('_', ' ')}
+                          {selectedLead.collections_total_paid > 0 && ` · ₹${selectedLead.collections_total_paid.toLocaleString('en-IN')} received`}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-sm font-medium text-muted-foreground">
                       No confirmed commitment yet - the customer did not give a clear amount and date during this call.
