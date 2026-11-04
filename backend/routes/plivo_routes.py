@@ -65,11 +65,6 @@ plivo_router = APIRouter()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
 BAKBAK_API_KEY = os.environ.get("BAKBAK_API_KEY", "").strip()
-# Only checked here to validate the decoupled pipeline's dependencies in
-# resolve_call_voice_context() - the actual Gemini calls happen in
-# routes/plivo_decoupled.py, which reads this env var itself.
-OPENROUTER_API_KEY_CHECK = os.environ.get("OPENROUTER_API_KEY", "").strip()
-
 # Known Whisper "silence hallucination" phrases - fabricated, fluent-sounding
 # text the model emits when fed near-silent/low-energy audio instead of real
 # speech. Shared by both customer-speech event handlers so the list can't drift.
@@ -533,11 +528,11 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     if company and company.get("conversation_engine") == "decoupled" and BAKBAK_API_KEY:
         if not bakbak_voice:
             bakbak_voice = bakbak_voice_for(transcription_lang)
-        if bakbak_voice and OPENROUTER_API_KEY_CHECK and SARVAM_API_KEY:
+        if bakbak_voice and OPENAI_API_KEY and SARVAM_API_KEY:
             conversation_engine = "decoupled"
         else:
             safe_print(f"[DECOUPLED]: conversation_engine is decoupled but a dependency is missing "
-                        f"(bakbak_voice={bool(bakbak_voice)}, openrouter_key={bool(OPENROUTER_API_KEY_CHECK)}, "
+                        f"(bakbak_voice={bool(bakbak_voice)}, openai_key={bool(OPENAI_API_KEY)}, "
                         f"sarvam_key={bool(SARVAM_API_KEY)}) for language '{call_lang}' - falling back to OpenAI Realtime.")
 
     return {

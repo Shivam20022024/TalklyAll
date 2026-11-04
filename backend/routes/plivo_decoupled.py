@@ -1,7 +1,12 @@
-# Decoupled live-call pipeline: Sarvam STT -> Gemini (via OpenRouter) ->
-# Bakbak TTS, replacing OpenAI Realtime's fused listen+reason+speak engine
-# for companies with company.conversation_engine == "decoupled". OpenAI
-# Realtime isn't used anywhere in this file.
+# Decoupled live-call pipeline: Sarvam STT -> OpenAI (plain text chat
+# completions, not Realtime) -> Bakbak TTS, replacing OpenAI Realtime's
+# fused listen+reason+speak engine for companies with
+# company.conversation_engine == "decoupled". Originally built against
+# OpenRouter/Gemini for the reasoning leg; swapped to OpenAI's own standard
+# chat completions after OpenRouter's account turned out to have no
+# purchased credits (confirmed live: every call returned 402 "Insufficient
+# credits"). OpenAI Realtime's audio/listening is still not used anywhere
+# in this file - this is the cheap, text-only chat endpoint.
 #
 # STAGE 1 ONLY, per the approved plan
 # (C:\Users\Shivam kumar\.claude\plans\serene-inventing-mist.md): core loop
@@ -25,15 +30,19 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from services.bakbak_tts import BakbakTTSSession
 from services.sarvam_stt import SarvamSTTSession
-from services.gemini_chat import stream_gemini_reply
+from services.openai_chat import stream_openai_reply
 from routes.plivo_routes import safe_print, finalize_plivo_call, HALLUCINATION_PHRASES, is_degenerate_transcript
 
 logger = logging.getLogger("talkly-plivo-decoupled")
 
 BAKBAK_API_KEY = os.environ.get("BAKBAK_API_KEY", "").strip()
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.8-flash")
+# Plain text chat completions, not Realtime - OPENAI_API_KEY is already
+# funded elsewhere in this codebase. gpt-4o-mini by default: cheap, and
+# this pipeline's whole point is avoiding Realtime's expensive audio-token
+# pricing, so a cheap text model for turn-by-turn reasoning fits.
+OPENAI_CHAT_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+OPENAI_CHAT_MODEL = os.environ.get("DECOUPLED_CHAT_MODEL", "gpt-4o-mini")
 
 # Sarvam STT's "auto" language_code does real per-utterance adaptive
 # detection (confirmed in the SDK's connect() docstring) - unlike the
@@ -79,10 +88,10 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     bakbak_model = ctx.get("bakbak_model")
     stt_language_code = "auto"
 
-    if not (BAKBAK_API_KEY and bakbak_voice_id and OPENROUTER_API_KEY and SARVAM_API_KEY):
+    if not (BAKBAK_API_KEY and bakbak_voice_id and OPENAI_CHAT_API_KEY and SARVAM_API_KEY):
         safe_print(f"[DECOUPLED ERROR]: Missing required config for call_id={call_id} "
                     f"(bakbak_key={bool(BAKBAK_API_KEY)}, bakbak_voice={bool(bakbak_voice_id)}, "
-                    f"openrouter_key={bool(OPENROUTER_API_KEY)}, sarvam_key={bool(SARVAM_API_KEY)}) - aborting call.")
+                    f"openai_key={bool(OPENAI_CHAT_API_KEY)}, sarvam_key={bool(SARVAM_API_KEY)}) - aborting call.")
         await websocket.close()
         return
 
@@ -123,11 +132,11 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     messages.append({"role": "user", "content": customer_text})
 
                     full_reply = ""
-                    async for delta in stream_gemini_reply(messages, OPENROUTER_API_KEY, OPENROUTER_MODEL):
+                    async for delta in stream_openai_reply(messages, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL):
                         full_reply += delta
                     full_reply = full_reply.strip()
                     if not full_reply:
-                        safe_print(f"[DECOUPLED ERROR]: Gemini returned no text for call_id={call_id}")
+                        safe_print(f"[DECOUPLED ERROR]: OpenAI chat returned no text for call_id={call_id}")
                         return
 
                     safe_print(f"[AI SPEECH][DECOUPLED]: {full_reply}")
