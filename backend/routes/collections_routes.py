@@ -9,7 +9,7 @@ infrastructure exists in this codebase yet), matching each new repayment
 row against leads by phone number.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from datetime import datetime
 import uuid
 import csv
@@ -55,8 +55,10 @@ async def _reconcile_lead(db, company_id: str, lead: dict) -> None:
     """Check one lead's promise-to-pay against recorded repayments and set
     lead.collections_status accordingly. Safe to re-run any time - it only
     ever reads repayments and writes this one lead's status field."""
-    analysis = lead.get("analysis") or {}
-    ptp = analysis.get("promise_to_pay") or {}
+    # promise_to_pay lives directly on the lead doc (copied over by
+    # crm_service.sync_lead_status_from_call at analysis time) - the full
+    # analysis dict itself is only ever written to db.calls, never db.leads.
+    ptp = lead.get("promise_to_pay") or {}
     if not ptp.get("promised"):
         return  # nothing to reconcile - no commitment was ever made
 
@@ -185,8 +187,7 @@ async def get_recovery_analytics(current_user: dict = Depends(require_company_ac
 
     async for lead in db.leads.find({"company_id": company_id, "industry": "collections"}):
         overdue_accounts += 1
-        analysis = lead.get("analysis") or {}
-        ptp = analysis.get("promise_to_pay") or {}
+        ptp = lead.get("promise_to_pay") or {}
         custom_fields = lead.get("custom_fields") or {}
         total_amount_due += _parse_amount(custom_fields.get("amount_due"))
 

@@ -182,6 +182,16 @@ class CRMService:
             if reqs.get("budget"):
                 update_data["budget"] = reqs.get("budget")
 
+        # Collections-specific fields: the full analysis dict only ever gets
+        # written to db.calls, never db.leads, so without copying these two
+        # over explicitly the collections reconciliation/dashboard metrics
+        # (which query db.leads) would never see them.
+        ptp = analysis_result.get("promise_to_pay")
+        if isinstance(ptp, dict) and ptp:
+            update_data["promise_to_pay"] = ptp
+        if "identity_verified" in analysis_result:
+            update_data["identity_verified"] = bool(analysis_result.get("identity_verified"))
+
         await db.leads.update_one(
             {"lead_id": lead_id},
             {"$set": update_data}

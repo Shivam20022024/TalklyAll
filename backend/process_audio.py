@@ -104,6 +104,7 @@ CRITICAL SCORING RULES:
 2. Conversely, if the customer provides explicit requirements (e.g., product/service desired, budget, timeline, location, or scheduling preference) AND states an immediate or very urgent timeline (e.g., "tomorrow", "immediately", "this week", "book an appointment", "schedule demo"), you MUST set `lead_score` above 80, set `conversion_probability` above 70, and set `lead_temperature` to "Hot".
 3. For any `follow_up_recommendations` entry of type "WhatsApp", always write its `draft` text in English - regardless of what language the call itself was conducted in (Hindi, Hinglish, or any other language). This is a fixed platform rule, not dependent on `detected_language`/`preferred_language`.
 4. For collections/loan-repayment calls (BFSI industry where the call is about an overdue payment, not a new loan inquiry): only set `promise_to_pay.promised` to true if the customer gave an explicit, specific commitment to pay (a clear amount and/or a clear date/timeframe). A vague acknowledgement ("haan dekhta hoon", "I'll try") is NOT a promise to pay - leave `promised` false and leave `amount`/`date` empty rather than guessing. This mirrors the platform's existing rule against inventing answers from unclear customer input.
+5. For collections calls only: set `identity_verified` to true only if the transcript shows the agent explicitly confirmed it was speaking with the account holder (e.g. asked to confirm the customer's name/identity) before discussing the account or payment details. Default to false for every other industry and whenever this isn't clearly shown.
 
 The JSON schema must be:
 {
@@ -144,6 +145,7 @@ The JSON schema must be:
     "amount": "Amount explicitly promised, if any (else empty string)",
     "date": "Date/timeframe explicitly promised, if any (else empty string)"
   },
+  "identity_verified": false,
   "follow_up_recommendations": [
     { "type": "WhatsApp", "priority": "High", "content": "Send details or brochure", "draft": "Hi, here is the information requested..." }
   ],

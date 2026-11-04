@@ -85,6 +85,30 @@ class IntelligenceService:
         if total_leads > 0:
             rate = (converted_leads / total_leads) * 100
             conversion_rate = f"{rate:.1f}%"
+
+        # Collections is a recovery funnel, not a sales funnel: the generic
+        # status-string counts above ("Qualified"/"Interested"/"Converted")
+        # don't mean anything here. Swap in the real signals - whether the
+        # agent actually verified the account holder's identity, whether a
+        # specific promise to pay was secured, and what fraction of those
+        # promises were actually kept (reconciled against real repayments by
+        # backend/routes/collections_routes.py).
+        if industry == "collections":
+            identity_verified_task = db.leads.count_documents({
+                **base_query_leads, "identity_verified": True
+            })
+            ptp_secured_task = db.leads.count_documents({
+                **base_query_leads, "promise_to_pay.promised": True
+            })
+            ptp_kept_task = db.leads.count_documents({
+                **base_query_leads, "collections_status": {"$in": ["kept", "kept_late"]}
+            })
+            identity_verified, ptp_secured, ptp_kept = await asyncio.gather(
+                identity_verified_task, ptp_secured_task, ptp_kept_task
+            )
+            qualified_leads = identity_verified
+            interested_leads = ptp_secured
+            conversion_rate = f"{(ptp_kept / total_leads * 100):.1f}%" if total_leads > 0 else "0%"
             
         # 6. Chart Data
         chart_data = []
