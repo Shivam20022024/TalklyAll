@@ -25,6 +25,7 @@ import base64
 import json
 import logging
 import os
+import re
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -44,6 +45,11 @@ GOODBYE_KEYWORDS = [
     "have a great day", "have a wonderful day", "have a good day",
     "take care", "बात करने के लिए धन्यवाद"
 ]
+
+# Matches the first sentence (English/Hindi terminators) at the start of a
+# growing streamed-text buffer, so it can be flushed to TTS the moment it
+# completes instead of waiting for the whole (possibly multi-sentence) reply.
+_SENTENCE_END_RE = re.compile(r"^(.*?[.!?।])\s*")
 
 logger = logging.getLogger("talkly-plivo-decoupled")
 
@@ -193,9 +199,24 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
                     messages.append({"role": "user", "content": customer_text})
 
+                    # Flush the first completed sentence to Bakbak as soon as
+                    # the streamed text reaches a sentence boundary, instead
+                    # of waiting for the entire (possibly multi-sentence)
+                    # reply - this is what actually uses the streaming the
+                    # OpenAI call already requests. Confirmed live this was
+                    # the real source of the 1-2s gap: the whole reply was
+                    # being accumulated before any TTS call even started.
                     full_reply = ""
+                    first_sentence_flushed = False
+                    remainder_start = 0
                     async for delta in stream_openai_reply(messages, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL):
                         full_reply += delta
+                        if not first_sentence_flushed:
+                            m = _SENTENCE_END_RE.match(full_reply)
+                            if m:
+                                first_sentence_flushed = True
+                                remainder_start = m.end()
+                                await _speak_and_forward(websocket, tts_session, m.group(1).strip())
                     full_reply = full_reply.strip()
                     if not full_reply:
                         safe_print(f"[DECOUPLED ERROR]: OpenAI chat returned no text for call_id={call_id}")
@@ -205,7 +226,12 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     messages.append({"role": "assistant", "content": full_reply})
                     transcript_parts.append(f"AI: {full_reply}")
                     await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
-                    await _speak_and_forward(websocket, tts_session, full_reply)
+                    if first_sentence_flushed:
+                        remaining_text = full_reply[remainder_start:].strip()
+                        if remaining_text:
+                            await _speak_and_forward(websocket, tts_session, remaining_text)
+                    else:
+                        await _speak_and_forward(websocket, tts_session, full_reply)
 
                     reply_lower = full_reply.lower()
                     if (len(transcript_parts) - 1) >= 3 and any(kw in reply_lower for kw in GOODBYE_KEYWORDS):
