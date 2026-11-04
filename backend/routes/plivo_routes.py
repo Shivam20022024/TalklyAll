@@ -65,6 +65,10 @@ plivo_router = APIRouter()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
 BAKBAK_API_KEY = os.environ.get("BAKBAK_API_KEY", "").strip()
+# Only checked here to validate the decoupled pipeline's dependencies in
+# resolve_call_voice_context() - the actual Gemini calls happen in
+# routes/plivo_decoupled.py, which reads this env var itself.
+OPENROUTER_API_KEY_CHECK = os.environ.get("OPENROUTER_API_KEY", "").strip()
 
 # Known Whisper "silence hallucination" phrases - fabricated, fluent-sounding
 # text the model emits when fed near-silent/low-energy audio instead of real
@@ -471,12 +475,28 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         else:
             safe_print(f"[SARVAM]: use_sarvam_voice is on but language '{call_lang}' isn't validated yet - using OpenAI voice.")
 
+    # Decoupled pipeline (Sarvam STT -> Gemini -> Bakbak TTS, no OpenAI
+    # Realtime at all) is a separate, explicit opt-in on top of everything
+    # above - it always uses Bakbak for TTS regardless of voice_engine, so
+    # resolve a Bakbak voice for it here even if voice_engine wasn't "bakbak".
+    conversation_engine = "openai_realtime"
+    if company and company.get("conversation_engine") == "decoupled" and BAKBAK_API_KEY:
+        if not bakbak_voice:
+            bakbak_voice = bakbak_voice_for(transcription_lang)
+        if bakbak_voice and OPENROUTER_API_KEY_CHECK and SARVAM_API_KEY:
+            conversation_engine = "decoupled"
+        else:
+            safe_print(f"[DECOUPLED]: conversation_engine is decoupled but a dependency is missing "
+                        f"(bakbak_voice={bool(bakbak_voice)}, openrouter_key={bool(OPENROUTER_API_KEY_CHECK)}, "
+                        f"sarvam_key={bool(SARVAM_API_KEY)}) for language '{call_lang}' - falling back to OpenAI Realtime.")
+
     return {
         "system_prompt": system_prompt,
         "welcome_text": welcome_text,
         "transcription_lang": transcription_lang,
         "company": company,
         "voice_engine": voice_engine,
+        "conversation_engine": conversation_engine,
         "sarvam_speaker": sarvam_voice["speaker"] if sarvam_voice else None,
         "sarvam_language_code": sarvam_voice["language_code"] if sarvam_voice else None,
         "bakbak_voice_id": bakbak_voice["voice_id"] if bakbak_voice else None,
@@ -795,7 +815,7 @@ async def plivo_answer_call(request: Request, call_id: str = Query(None), compan
     # Return Plivo Bidirectional Audio Stream XML
     xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000">
+    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000" noiseCancellation="true" noiseCancellationLevel="85">
         {stream_url}
     </Stream>
 </Response>"""
@@ -814,6 +834,20 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     greeting_audio_logged = False
     logger.info(f"Plivo Media Stream connected for call_id={call_id}")
     db = mongodb.get_db()
+
+    # Decoupled pipeline (Sarvam STT -> Gemini -> Bakbak TTS, no OpenAI
+    # Realtime at all) branches out here, before any of the OpenAI-specific
+    # prewarm/session logic below runs, so the two pipelines stay completely
+    # independent - a bug in one can't touch the other. Lazy import to avoid
+    # a circular import (plivo_decoupled.py imports helpers from this module
+    # at its own top level).
+    if call_id and company_id:
+        _engine_check_ctx = await resolve_call_voice_context(db, call_id, company_id)
+        if _engine_check_ctx.get("conversation_engine") == "decoupled":
+            OPENAI_PREWARM_CACHE.pop(call_id, None)  # discard any OpenAI prewarm - not used on this path
+            from routes.plivo_decoupled import run_decoupled_pipeline
+            await run_decoupled_pipeline(websocket, call_id, company_id, db, _engine_check_ctx)
+            return
 
     # Reuse a pre-warmed OpenAI Realtime session if /answer already started one
     # for this call (see prewarm_openai_session). Falls back to resolving
