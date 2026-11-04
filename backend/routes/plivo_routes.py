@@ -705,6 +705,8 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             "welcome_text": ctx["welcome_text"],
             "company": ctx["company"],
             "voice_engine": ctx["voice_engine"],
+            "conversation_engine": ctx["conversation_engine"],
+            "transcription_lang": ctx["transcription_lang"],
             "sarvam_speaker": ctx["sarvam_speaker"],
             "sarvam_language_code": ctx["sarvam_language_code"],
             "bakbak_voice_id": ctx["bakbak_voice_id"],
@@ -887,7 +889,12 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     # a circular import (plivo_decoupled.py imports helpers from this module
     # at its own top level).
     if call_id and company_id:
-        _engine_check_ctx = await resolve_call_voice_context(db, call_id, company_id)
+        # Reuse the prewarmed context from /answer if it's there (prewarm_openai_session
+        # already called resolve_call_voice_context once) instead of calling it again here -
+        # confirmed live via a duplicated "[STREAM PROMPT]" log line that this was happening
+        # on every single call before this fix, wasting a full DB round trip each time.
+        _prewarmed_for_engine_check = OPENAI_PREWARM_CACHE.get(call_id)
+        _engine_check_ctx = _prewarmed_for_engine_check or await resolve_call_voice_context(db, call_id, company_id)
         if _engine_check_ctx.get("conversation_engine") == "decoupled":
             OPENAI_PREWARM_CACHE.pop(call_id, None)  # discard any OpenAI prewarm - not used on this path
             from routes.plivo_decoupled import run_decoupled_pipeline
