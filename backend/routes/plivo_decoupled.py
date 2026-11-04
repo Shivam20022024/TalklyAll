@@ -116,6 +116,15 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             messages.append({"role": "assistant", "content": welcome_text})
 
         turn_lock = asyncio.Lock()  # serializes Gemini+TTS turns - Stage 1 has no barge-in, so one turn at a time is correct
+        # Each STT "final" event spawns handle_final_transcript as a
+        # fire-and-forget task (see stt_to_gemini below) so a slow
+        # Gemini/TTS turn doesn't block new STT events from being consumed.
+        # Tracked here so cleanup can wait for any still-running turn before
+        # closing the websocket - without this, a turn that was mid-flight
+        # when the Plivo connection dropped would have its audio silently
+        # fail to send (confirmed live: "Unexpected ASGI message
+        # 'websocket.send', after sending 'websocket.close'").
+        turn_tasks: set = set()
 
         async def handle_final_transcript(customer_text: str) -> None:
             try:
@@ -165,7 +174,9 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             async for ev in stt_session.events():
                 safe_print(f"[DECOUPLED STT EVENT]: {ev}")
                 if ev["type"] == "final":
-                    asyncio.create_task(handle_final_transcript(ev["text"]))
+                    t = asyncio.create_task(handle_final_transcript(ev["text"]))
+                    turn_tasks.add(t)
+                    t.add_done_callback(turn_tasks.discard)
                 elif ev["type"] == "error":
                     safe_print(f"[DECOUPLED ERROR]: Sarvam STT error for call_id={call_id}: {ev.get('message')}")
                     break
@@ -176,6 +187,15 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
         done, pending = await asyncio.wait({plivo_task, stt_task}, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
+
+        # Let any turn that was already mid-flight (customer's last
+        # utterance already transcribed, Gemini/TTS in progress) finish
+        # speaking before the websocket gets closed below, instead of
+        # racing it. Bounded wait so a genuinely stuck turn can't hang
+        # shutdown forever.
+        if turn_tasks:
+            safe_print(f"[DECOUPLED]: Waiting for {len(turn_tasks)} in-flight turn(s) to finish before closing call_id={call_id}")
+            await asyncio.wait(turn_tasks, timeout=15.0)
 
     except WebSocketDisconnect:
         safe_print(f"[DECOUPLED]: Client disconnected for call_id={call_id}")
