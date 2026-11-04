@@ -86,6 +86,19 @@ HALLUCINATION_PHRASES = {
     "i want to give it a like",
 }
 
+import re as _re_degenerate_check
+_DEGENERATE_REPETITION_RE = _re_degenerate_check.compile(r"(.)\1{4,}")
+
+
+def is_degenerate_transcript(text: str) -> bool:
+    """Catches a distinct STT failure mode from HALLUCINATION_PHRASES: given
+    very low-quality/near-silent/noise-only audio, the model can get stuck
+    looping the same character (e.g. "...गंग्डडडडडडडडडडडडडडडड") instead of
+    producing a fluent-but-wrong phrase. HALLUCINATION_PHRASES only matches a
+    fixed list of known fluent hallucinations, so this novel garbage would
+    otherwise slip through untouched."""
+    return bool(text) and bool(_DEGENERATE_REPETITION_RE.search(text))
+
 # Below this RMS (16-bit linear PCM decoded from 8kHz mu-law telephony audio), a
 # VAD-flagged "speech" segment is almost certainly silence or background noise,
 # not real speech - Whisper still returns a fluent-sounding transcript for it
@@ -1314,7 +1327,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
 
                     elif etype in ("conversation.item.input_audio_transcription.completed", "input_audio_transcription.completed"):
                         text = event.get("transcript", "").strip()
-                        if text and text.lower() not in HALLUCINATION_PHRASES and len(text) > 1:
+                        if text and text.lower() not in HALLUCINATION_PHRASES and len(text) > 1 and not is_degenerate_transcript(text):
                             if not any(text == p.replace("Customer: ", "").strip() for p in transcript_parts):
                                 safe_print(f"[CUSTOMER SPEECH]: {text}")
                                 transcript_parts.append(f"Customer: {text}")
@@ -1333,7 +1346,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             for c in item.get("content", []):
                                 if c.get("type") == "input_text" and c.get("text"):
                                     ctext = c["text"].strip()
-                                    if ctext and ctext.lower() not in HALLUCINATION_PHRASES and len(ctext) > 1:
+                                    if ctext and ctext.lower() not in HALLUCINATION_PHRASES and len(ctext) > 1 and not is_degenerate_transcript(ctext):
                                         if not any(ctext == p.replace("Customer: ", "").strip() for p in transcript_parts):
                                             safe_print(f"[CUSTOMER SPEECH via ITEM]: {ctext}")
                                             transcript_parts.append(f"Customer: {ctext}")

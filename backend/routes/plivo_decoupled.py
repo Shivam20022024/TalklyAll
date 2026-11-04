@@ -26,7 +26,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from services.bakbak_tts import BakbakTTSSession
 from services.sarvam_stt import SarvamSTTSession
 from services.gemini_chat import stream_gemini_reply
-from routes.plivo_routes import safe_print, finalize_plivo_call, HALLUCINATION_PHRASES
+from routes.plivo_routes import safe_print, finalize_plivo_call, HALLUCINATION_PHRASES, is_degenerate_transcript
 
 logger = logging.getLogger("talkly-plivo-decoupled")
 
@@ -112,8 +112,8 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             customer_text = (customer_text or "").strip()
             if not customer_text or len(customer_text) <= 1:
                 return
-            if customer_text.lower() in HALLUCINATION_PHRASES:
-                safe_print(f"[DECOUPLED]: Dropped likely hallucinated STT text: '{customer_text}'")
+            if customer_text.lower() in HALLUCINATION_PHRASES or is_degenerate_transcript(customer_text):
+                safe_print(f"[DECOUPLED]: Dropped likely hallucinated/degenerate STT text: '{customer_text}'")
                 return
             async with turn_lock:
                 safe_print(f"[CUSTOMER SPEECH][DECOUPLED]: {customer_text}")
