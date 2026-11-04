@@ -78,7 +78,11 @@ function LeadsContent() {
     loadRecoveryAnalytics()
   }, [])
 
-  const showCollectionsUI = activeIndustry === 'collections' || leads.some(l => l.industry === 'collections')
+  // Only relevant when the user has actually selected the Collections/Loan
+  // Recovery prompt - these metrics don't mean anything for other industries,
+  // so showing them just because *some* lead in the full list happens to be
+  // collections (regardless of the active filter) was wrong.
+  const showCollectionsUI = industryFilter === 'collections' || (industryFilter === 'active' && activeIndustry === 'collections')
 
   useEffect(() => {
     if (selectedLead) {
