@@ -35,10 +35,15 @@ SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.8-flash")
 
-# Sarvam STT's language_code is BCP-47 ("hi-IN"/"en-IN"); resolve_call_voice_context's
-# transcription_lang is the short Whisper-style code ("hi"/"en"). Only the two
-# languages actually validated this session map here.
-STT_LANGUAGE_MAP = {"en": "en-IN", "hi": "hi-IN"}
+# Sarvam STT's "auto" language_code does real per-utterance adaptive
+# detection (confirmed in the SDK's connect() docstring) - unlike the
+# OpenAI/Whisper path, which has transcription_lang hard-pinned to "hi" for
+# Hindi/Hinglish calls because Whisper's auto-detect previously mis-rendered
+# Hindi speech in the wrong script entirely (see resolve_call_voice_context's
+# WHISPER_LANGUAGE_CODES comment). Sarvam's auto mode is a different,
+# purpose-built feature, not the same thing that broke before - using it
+# here is what actually delivers "English when they speak English, Hindi
+# when they speak Hindi" without re-touching the Whisper pipeline at all.
 
 
 async def _speak_and_forward(websocket: WebSocket, tts_session: BakbakTTSSession, text: str) -> None:
@@ -72,7 +77,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     bakbak_voice_id = ctx.get("bakbak_voice_id")
     bakbak_language = ctx.get("bakbak_language")
     bakbak_model = ctx.get("bakbak_model")
-    stt_language_code = STT_LANGUAGE_MAP.get(ctx.get("transcription_lang"), "hi-IN")
+    stt_language_code = "auto"
 
     if not (BAKBAK_API_KEY and bakbak_voice_id and OPENROUTER_API_KEY and SARVAM_API_KEY):
         safe_print(f"[DECOUPLED ERROR]: Missing required config for call_id={call_id} "
