@@ -650,6 +650,21 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
         db = mongodb.get_db()
         ctx = await resolve_call_voice_context(db, call_id, company_id)
 
+        # Decoupled calls never touch OpenAI Realtime at all (see
+        # plivo_decoupled.py) - connecting it here was pure waste (a real
+        # websocket handshake to OpenAI that gets thrown away), and the time
+        # that handshake took was exactly the race window that caused
+        # /stream's engine check to sometimes find this cache not yet
+        # populated and recompute resolve_call_voice_context a second time
+        # (confirmed live via a duplicated "[STREAM PROMPT]" log line even
+        # after that recompute was made conditional). Populating the cache
+        # with just the already-resolved ctx - no slow connect needed -
+        # closes that race instead of only narrowing it.
+        if ctx.get("conversation_engine") == "decoupled":
+            OPENAI_PREWARM_CACHE[call_id] = dict(ctx)
+            safe_print(f"[PREWARM]: Skipped OpenAI Realtime connect for call_id={call_id} (conversation_engine=decoupled)")
+            return
+
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip() or OPENAI_API_KEY
         if not openai_key:
             return
