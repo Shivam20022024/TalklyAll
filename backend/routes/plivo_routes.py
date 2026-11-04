@@ -576,8 +576,11 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             ws_cm = websockets.connect(openai_ws_url, additional_headers=openai_headers)
             openai_ws = await asyncio.wait_for(ws_cm.__aenter__(), timeout=8.0)
             await asyncio.wait_for(openai_ws.recv(), timeout=8.0)  # session.created
-            text_only = ctx["voice_engine"] == "sarvam"
-            session_update = _openai_session_update_payload(ctx["system_prompt"], ctx["transcription_lang"], text_only=text_only)
+            # Always start in native-audio mode, even for a Sarvam call - the
+            # greeting is spoken via OpenAI's own voice for speed, and the
+            # session switches to text-only (for Sarvam) right after it
+            # finishes. See the sarvam_mode_active comment in /stream.
+            session_update = _openai_session_update_payload(ctx["system_prompt"], ctx["transcription_lang"], text_only=False)
             await openai_ws.send(json.dumps(session_update))
             return ws_cm, openai_ws
 
@@ -827,6 +830,16 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     sarvam_session = None
     sarvam_queue: "asyncio.Queue" = asyncio.Queue()
     sarvam_worker_task = None
+    # The opening greeting is always spoken via OpenAI's own fast native
+    # audio, even on a Sarvam call - it's a fixed, pre-written line, so
+    # routing it through the extra OpenAI-text-then-Sarvam-TTS hop only adds
+    # latency for no benefit, and that hop was the main reason the greeting
+    # could take 4+ seconds to start. sarvam_mode_active flips to True right
+    # after the greeting finishes, and every turn after that goes through
+    # Sarvam as before. voice_engine == "sarvam" still means "this call uses
+    # Sarvam at all" (session setup, worker startup); sarvam_mode_active
+    # means "we've switched over to it for this specific moment in the call."
+    sarvam_mode_active = False
 
     async def sarvam_tts_worker():
         nonlocal last_speech_stopped_time, greeting_audio_logged
@@ -931,7 +944,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
             init_event = await openai_ws.recv()
 
             # Update session: interrupt_response is True, protected during greeting by plivo_to_openai shield
-            session_update = _openai_session_update_payload(system_prompt, transcription_lang, text_only=(voice_engine == "sarvam"))
+            session_update = _openai_session_update_payload(system_prompt, transcription_lang, text_only=False)
             await openai_ws.send(json.dumps(session_update))
 
         if voice_engine == "sarvam":
@@ -1005,7 +1018,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                 logger.error(f"Error in plivo_to_openai: {e}")
 
         async def openai_to_plivo():
-            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task, greeting_audio_logged
+            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task, greeting_audio_logged, sarvam_mode_active
             text_accum_buffer = ""
             full_response_text = ""
             current_response_id = None
@@ -1021,7 +1034,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                     # occur - but OpenAI's own docs note audio can occasionally leak through
                     # even then, so drop it defensively instead of double-voicing the call.
                     if etype in ("response.output_audio.delta", "response.audio.delta"):
-                        if voice_engine == "sarvam":
+                        if sarvam_mode_active:
                             continue
                         delta = event.get("delta")
                         if delta:
@@ -1044,7 +1057,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             }
                             await websocket.send_text(json.dumps(play_msg))
 
-                    elif etype == "response.output_text.delta" and voice_engine == "sarvam":
+                    elif etype == "response.output_text.delta" and sarvam_mode_active:
                         delta = event.get("delta", "")
                         # Never let two overlapping OpenAI responses (e.g. an
                         # explicit response.create racing a server-auto-created
@@ -1083,7 +1096,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                                     await sarvam_queue.put(sentence)
                                     sentences_flushed_this_response += 1
 
-                    elif etype == "response.output_text.done" and voice_engine == "sarvam":
+                    elif etype == "response.output_text.done" and sarvam_mode_active:
                         resp_id = event.get("response_id")
                         if resp_id and resp_id != current_response_id:
                             # A stale/abandoned response finishing late - its
@@ -1127,7 +1140,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         await websocket.send_text(json.dumps({"event": "clearAudio"}))
                         customer_speaking = True
                         turn_rms_samples = []
-                        if voice_engine == "sarvam" and sarvam_worker_task is not None:
+                        if sarvam_mode_active and sarvam_worker_task is not None:
                             # Drop whatever AI speech was mid-flight so it can't
                             # keep talking over the customer after the barge-in.
                             sarvam_worker_task.cancel()
@@ -1175,7 +1188,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             except Exception as e:
                                 safe_print(f"[SILENCE GATE ERROR]: Failed to send corrective response: {e}")
 
-                    elif etype in ("response.output_audio_transcript.done", "response.audio_transcript.done", "response.done") and voice_engine != "sarvam":
+                    elif etype in ("response.output_audio_transcript.done", "response.audio_transcript.done", "response.done") and not sarvam_mode_active:
                         text = event.get("transcript", "").strip()
                         if text:
                             safe_print(f"[AI SPEECH]: {text}")
@@ -1205,6 +1218,20 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                                 delay = max(7.0, min((chars / 11.0) + 3.5, 16.0))
                                 safe_print(f"[AUTO HANGUP]: Goodbye detected in AI speech. Allowing full sentence to complete ({delay:.1f}s)...")
                                 asyncio.create_task(trigger_auto_hangup(delay_seconds=delay))
+
+                        # The greeting (this call's first response) just finished
+                        # speaking via OpenAI's native audio. For a Sarvam call,
+                        # switch the session to text-only now so every turn from
+                        # here on goes through Sarvam's voice instead - this is
+                        # the one-time handoff point, not something that repeats.
+                        if voice_engine == "sarvam":
+                            try:
+                                switch_update = _openai_session_update_payload(system_prompt, transcription_lang, text_only=True)
+                                await openai_ws.send(json.dumps(switch_update))
+                                sarvam_mode_active = True
+                                safe_print(f"[SARVAM]: Switched to Sarvam voice after greeting for call_id={call_id}")
+                            except Exception as e:
+                                safe_print(f"[SARVAM ERROR]: Failed to switch to text-only mode after greeting: {e}")
 
                     elif etype in ("conversation.item.input_audio_transcription.completed", "input_audio_transcription.completed"):
                         text = event.get("transcript", "").strip()
