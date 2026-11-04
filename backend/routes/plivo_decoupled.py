@@ -109,31 +109,35 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
         turn_lock = asyncio.Lock()  # serializes Gemini+TTS turns - Stage 1 has no barge-in, so one turn at a time is correct
 
         async def handle_final_transcript(customer_text: str) -> None:
-            customer_text = (customer_text or "").strip()
-            if not customer_text or len(customer_text) <= 1:
-                return
-            if customer_text.lower() in HALLUCINATION_PHRASES or is_degenerate_transcript(customer_text):
-                safe_print(f"[DECOUPLED]: Dropped likely hallucinated/degenerate STT text: '{customer_text}'")
-                return
-            async with turn_lock:
-                safe_print(f"[CUSTOMER SPEECH][DECOUPLED]: {customer_text}")
-                transcript_parts.append(f"Customer: {customer_text}")
-                await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
-                messages.append({"role": "user", "content": customer_text})
-
-                full_reply = ""
-                async for delta in stream_gemini_reply(messages, OPENROUTER_API_KEY, OPENROUTER_MODEL):
-                    full_reply += delta
-                full_reply = full_reply.strip()
-                if not full_reply:
-                    safe_print(f"[DECOUPLED ERROR]: Gemini returned no text for call_id={call_id}")
+            try:
+                customer_text = (customer_text or "").strip()
+                if not customer_text or len(customer_text) <= 1:
                     return
+                if customer_text.lower() in HALLUCINATION_PHRASES or is_degenerate_transcript(customer_text):
+                    safe_print(f"[DECOUPLED]: Dropped likely hallucinated/degenerate STT text: '{customer_text}'")
+                    return
+                async with turn_lock:
+                    safe_print(f"[CUSTOMER SPEECH][DECOUPLED]: {customer_text}")
+                    transcript_parts.append(f"Customer: {customer_text}")
+                    await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
+                    messages.append({"role": "user", "content": customer_text})
 
-                safe_print(f"[AI SPEECH][DECOUPLED]: {full_reply}")
-                messages.append({"role": "assistant", "content": full_reply})
-                transcript_parts.append(f"AI: {full_reply}")
-                await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
-                await _speak_and_forward(websocket, tts_session, full_reply)
+                    full_reply = ""
+                    async for delta in stream_gemini_reply(messages, OPENROUTER_API_KEY, OPENROUTER_MODEL):
+                        full_reply += delta
+                    full_reply = full_reply.strip()
+                    if not full_reply:
+                        safe_print(f"[DECOUPLED ERROR]: Gemini returned no text for call_id={call_id}")
+                        return
+
+                    safe_print(f"[AI SPEECH][DECOUPLED]: {full_reply}")
+                    messages.append({"role": "assistant", "content": full_reply})
+                    transcript_parts.append(f"AI: {full_reply}")
+                    await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
+                    await _speak_and_forward(websocket, tts_session, full_reply)
+            except Exception:
+                import traceback
+                safe_print(f"[DECOUPLED ERROR]: handle_final_transcript crashed for call_id={call_id}:\n{traceback.format_exc()}")
 
         async def plivo_to_stt():
             while True:
@@ -150,11 +154,13 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
 
         async def stt_to_gemini():
             async for ev in stt_session.events():
+                safe_print(f"[DECOUPLED STT EVENT]: {ev}")
                 if ev["type"] == "final":
                     asyncio.create_task(handle_final_transcript(ev["text"]))
                 elif ev["type"] == "error":
                     safe_print(f"[DECOUPLED ERROR]: Sarvam STT error for call_id={call_id}: {ev.get('message')}")
                     break
+            safe_print(f"[DECOUPLED]: stt_to_gemini loop ended for call_id={call_id} (events() generator finished)")
 
         plivo_task = asyncio.create_task(plivo_to_stt())
         stt_task = asyncio.create_task(stt_to_gemini())
