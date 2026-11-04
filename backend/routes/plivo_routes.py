@@ -25,6 +25,7 @@ from process_audio import analyze_transcript_text
 from services.crm_service import crm_service
 from services.billing_service import billing_service
 from services.sarvam_tts import SarvamTTSSession, sarvam_voice_for
+from services.bakbak_tts import BakbakTTSSession, bakbak_voice_for
 from industry_templates import INDUSTRY_TEMPLATES
 import re
 import requests
@@ -63,6 +64,7 @@ plivo_router = APIRouter()
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "").strip()
+BAKBAK_API_KEY = os.environ.get("BAKBAK_API_KEY", "").strip()
 
 # Known Whisper "silence hallucination" phrases - fabricated, fluent-sounding
 # text the model emits when fed near-silent/low-energy audio instead of real
@@ -449,7 +451,20 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     # native voice rather than guessing on a live call.
     voice_engine = "openai"
     sarvam_voice = None
-    if company and company.get("use_sarvam_voice", True) and SARVAM_API_KEY:
+    bakbak_voice = None
+
+    # Bakbak is an explicit opt-in (companies.voice_engine == "bakbak"), not a
+    # new default - it's a cost/quality evaluation against Sarvam, same
+    # validated-languages-only philosophy. Checked first so it can override
+    # the Sarvam default for a company that's explicitly testing it.
+    if company and company.get("voice_engine") == "bakbak" and BAKBAK_API_KEY:
+        bakbak_voice = bakbak_voice_for(transcription_lang)
+        if bakbak_voice:
+            voice_engine = "bakbak"
+        else:
+            safe_print(f"[BAKBAK]: voice_engine is bakbak but language '{call_lang}' isn't validated yet - falling back.")
+
+    if voice_engine == "openai" and company and company.get("use_sarvam_voice", True) and SARVAM_API_KEY:
         sarvam_voice = sarvam_voice_for(transcription_lang)
         if sarvam_voice:
             voice_engine = "sarvam"
@@ -464,6 +479,9 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "voice_engine": voice_engine,
         "sarvam_speaker": sarvam_voice["speaker"] if sarvam_voice else None,
         "sarvam_language_code": sarvam_voice["language_code"] if sarvam_voice else None,
+        "bakbak_voice_id": bakbak_voice["voice_id"] if bakbak_voice else None,
+        "bakbak_language": bakbak_voice["language"] if bakbak_voice else None,
+        "bakbak_model": bakbak_voice["model"] if bakbak_voice else None,
     }
 
 
@@ -592,15 +610,26 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             # round trip to Sarvam on top of everything else before the
             # customer heard anything. Prewarming it here in parallel removes
             # that wait from the hot path entirely for the common case.
-            if ctx["voice_engine"] != "sarvam" or not SARVAM_API_KEY:
-                return None
-            try:
-                session = SarvamTTSSession(SARVAM_API_KEY, ctx["sarvam_speaker"], ctx["sarvam_language_code"])
-                await asyncio.wait_for(session.__aenter__(), timeout=8.0)
-                return session
-            except Exception as e:
-                safe_print(f"[PREWARM ERROR]: Sarvam prewarm failed for call_id={call_id}: {e}")
-                return None
+            # Also covers Bakbak (holds the same "sarvam_session" slot - see
+            # the sarvam_mode_active comment in /stream for why the naming
+            # stayed Sarvam-specific rather than a broader rename).
+            if ctx["voice_engine"] == "sarvam" and SARVAM_API_KEY:
+                try:
+                    session = SarvamTTSSession(SARVAM_API_KEY, ctx["sarvam_speaker"], ctx["sarvam_language_code"])
+                    await asyncio.wait_for(session.__aenter__(), timeout=8.0)
+                    return session
+                except Exception as e:
+                    safe_print(f"[PREWARM ERROR]: Sarvam prewarm failed for call_id={call_id}: {e}")
+                    return None
+            elif ctx["voice_engine"] == "bakbak" and BAKBAK_API_KEY:
+                try:
+                    session = BakbakTTSSession(BAKBAK_API_KEY, ctx["bakbak_voice_id"], ctx["bakbak_language"], ctx["bakbak_model"])
+                    await asyncio.wait_for(session.__aenter__(), timeout=8.0)
+                    return session
+                except Exception as e:
+                    safe_print(f"[PREWARM ERROR]: Bakbak prewarm failed for call_id={call_id}: {e}")
+                    return None
+            return None
 
         (ws_cm, openai_ws), sarvam_session = await asyncio.gather(_connect_openai(), _connect_sarvam())
 
@@ -613,6 +642,9 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             "voice_engine": ctx["voice_engine"],
             "sarvam_speaker": ctx["sarvam_speaker"],
             "sarvam_language_code": ctx["sarvam_language_code"],
+            "bakbak_voice_id": ctx["bakbak_voice_id"],
+            "bakbak_language": ctx["bakbak_language"],
+            "bakbak_model": ctx["bakbak_model"],
             "sarvam_session": sarvam_session,
         }
         safe_print(f"[PREWARM]: OpenAI Realtime session ready ahead of stream connect for call_id={call_id}")
@@ -797,6 +829,9 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         voice_engine = prewarmed["voice_engine"]
         sarvam_speaker = prewarmed["sarvam_speaker"]
         sarvam_language_code = prewarmed["sarvam_language_code"]
+        bakbak_voice_id = prewarmed["bakbak_voice_id"]
+        bakbak_language = prewarmed["bakbak_language"]
+        bakbak_model = prewarmed["bakbak_model"]
         safe_print(f"[PREWARM]: Reusing warm OpenAI session for call_id={call_id} - skipping cold connect")
     else:
         if prewarmed:
@@ -812,9 +847,14 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         voice_engine = ctx["voice_engine"]
         sarvam_speaker = ctx["sarvam_speaker"]
         sarvam_language_code = ctx["sarvam_language_code"]
+        bakbak_voice_id = ctx["bakbak_voice_id"]
+        bakbak_language = ctx["bakbak_language"]
+        bakbak_model = ctx["bakbak_model"]
 
     if voice_engine == "sarvam":
         safe_print(f"[SARVAM]: Voice pilot active for call_id={call_id} (speaker={sarvam_speaker}, language={sarvam_language_code})")
+    elif voice_engine == "bakbak":
+        safe_print(f"[BAKBAK]: Voice pilot active for call_id={call_id} (voice_id={bakbak_voice_id}, language={bakbak_language})")
 
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip() or OPENAI_API_KEY
     openai_ws_url = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
@@ -948,14 +988,18 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
             session_update = _openai_session_update_payload(system_prompt, transcription_lang, text_only=False)
             await openai_ws.send(json.dumps(session_update))
 
-        if voice_engine == "sarvam":
+        if voice_engine in ("sarvam", "bakbak"):
             if prewarmed_usable and prewarmed.get("sarvam_session"):
                 # Already connected and configured in parallel with the OpenAI
-                # prewarm at /answer time - nothing to wait on here.
+                # prewarm at /answer time - nothing to wait on here. Shared
+                # slot for both engines (see the sarvam_mode_active comment).
                 sarvam_session = prewarmed["sarvam_session"]
-            else:
+            elif voice_engine == "sarvam":
                 # Cold path (no usable prewarm): connect now, same as before.
                 sarvam_session = SarvamTTSSession(SARVAM_API_KEY, sarvam_speaker, sarvam_language_code)
+                await sarvam_session.__aenter__()
+            else:
+                sarvam_session = BakbakTTSSession(BAKBAK_API_KEY, bakbak_voice_id, bakbak_language, bakbak_model)
                 await sarvam_session.__aenter__()
             sarvam_worker_task = asyncio.create_task(sarvam_tts_worker())
 
@@ -1225,14 +1269,14 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         # switch the session to text-only now so every turn from
                         # here on goes through Sarvam's voice instead - this is
                         # the one-time handoff point, not something that repeats.
-                        if voice_engine == "sarvam":
+                        if voice_engine in ("sarvam", "bakbak"):
                             try:
                                 switch_update = _openai_session_update_payload(system_prompt, transcription_lang, text_only=True)
                                 await openai_ws.send(json.dumps(switch_update))
                                 sarvam_mode_active = True
-                                safe_print(f"[SARVAM]: Switched to Sarvam voice after greeting for call_id={call_id}")
+                                safe_print(f"[{voice_engine.upper()}]: Switched to {voice_engine} voice after greeting for call_id={call_id}")
                             except Exception as e:
-                                safe_print(f"[SARVAM ERROR]: Failed to switch to text-only mode after greeting: {e}")
+                                safe_print(f"[{voice_engine.upper()} ERROR]: Failed to switch to text-only mode after greeting: {e}")
 
                     elif etype in ("conversation.item.input_audio_transcription.completed", "input_audio_transcription.completed"):
                         text = event.get("transcript", "").strip()

@@ -12,6 +12,7 @@ razorpay
 livekit-api
 websockets
 sarvamai
+httpx
 
 PyJWT
 passlib[bcrypt]
