@@ -190,6 +190,14 @@ function LeadsContent() {
 
   const handleCall = async (lead: any) => {
     try {
+      // Only English/Hindi/Hinglish have an actual Indian-accented voice
+      // (Sarvam) behind them - any other value here would silently fall
+      // back to a foreign-accented voice for the whole call, so a CSV-
+      // uploaded lead with an unsupported language value never reaches the
+      // backend as-is.
+      const SARVAM_SUPPORTED_LANGUAGES = ['english', 'hindi', 'hinglish']
+      const leadLanguage = (lead.language || '').trim()
+      const safeLanguage = SARVAM_SUPPORTED_LANGUAGES.includes(leadLanguage.toLowerCase()) ? leadLanguage : 'Hinglish'
       alert(`Initiating call to ${lead.name || 'Lead'} (${lead.phone})...`)
       await fetchApi('/api/v1/calls/trigger', {
         method: 'POST',
@@ -197,7 +205,7 @@ function LeadsContent() {
           phone_number: lead.phone,
           customer_name: lead.name,
           lead_id: lead.lead_id || 'manual-lead',
-          campaign_language: lead.language || 'Hinglish',
+          campaign_language: safeLanguage,
           industry: lead.industry || 'general_sales',
           offering: lead.offering || lead.property || '',
           location: lead.location || ''
