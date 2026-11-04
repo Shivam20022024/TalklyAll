@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -194,6 +195,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     safe_print(f"[DECOUPLED]: Dropped likely hallucinated/degenerate STT text: '{customer_text}'")
                     return
                 async with turn_lock:
+                    turn_start = time.time()
                     safe_print(f"[CUSTOMER SPEECH][DECOUPLED]: {customer_text}")
                     transcript_parts.append(f"Customer: {customer_text}")
                     await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
@@ -203,20 +205,22 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     # the streamed text reaches a sentence boundary, instead
                     # of waiting for the entire (possibly multi-sentence)
                     # reply - this is what actually uses the streaming the
-                    # OpenAI call already requests. Confirmed live this was
-                    # the real source of the 1-2s gap: the whole reply was
-                    # being accumulated before any TTS call even started.
+                    # OpenAI call already requests.
                     full_reply = ""
                     first_sentence_flushed = False
                     remainder_start = 0
+                    first_sentence_ready_at = None
                     async for delta in stream_openai_reply(messages, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL):
                         full_reply += delta
                         if not first_sentence_flushed:
                             m = _SENTENCE_END_RE.match(full_reply)
                             if m:
                                 first_sentence_flushed = True
+                                first_sentence_ready_at = time.time()
                                 remainder_start = m.end()
+                                safe_print(f"[DECOUPLED LATENCY]: OpenAI first sentence ready in {first_sentence_ready_at - turn_start:.2f}s")
                                 await _speak_and_forward(websocket, tts_session, m.group(1).strip())
+                                safe_print(f"[DECOUPLED LATENCY]: Bakbak first-sentence audio sent, {time.time() - first_sentence_ready_at:.2f}s after text was ready ({time.time() - turn_start:.2f}s total)")
                     full_reply = full_reply.strip()
                     if not full_reply:
                         safe_print(f"[DECOUPLED ERROR]: OpenAI chat returned no text for call_id={call_id}")
@@ -258,10 +262,17 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     safe_print(f"[DECOUPLED]: Plivo stream stop received for call_id={call_id}")
                     break
 
+        speech_stopped_at = None
+
         async def stt_to_gemini():
+            nonlocal speech_stopped_at
             async for ev in stt_session.events():
                 safe_print(f"[DECOUPLED STT EVENT]: {ev}")
-                if ev["type"] == "final":
+                if ev["type"] == "speech_stopped":
+                    speech_stopped_at = time.time()
+                elif ev["type"] == "final":
+                    if speech_stopped_at is not None:
+                        safe_print(f"[DECOUPLED LATENCY]: Sarvam final transcript {time.time() - speech_stopped_at:.2f}s after speech_stopped")
                     t = asyncio.create_task(handle_final_transcript(ev["text"]))
                     turn_tasks.add(t)
                     t.add_done_callback(turn_tasks.discard)
