@@ -11,7 +11,7 @@
 
 import json
 import logging
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 import httpx
 
@@ -20,12 +20,18 @@ logger = logging.getLogger("talkly-openai-chat")
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
 
-async def stream_openai_reply(messages: list, api_key: str, model: str) -> AsyncIterator[str]:
+async def stream_openai_reply(messages: list, api_key: str, model: str, client: Optional[httpx.AsyncClient] = None) -> AsyncIterator[str]:
     """Streams one reply given a full message history
     ([{"role": "system"|"user"|"assistant", "content": str}, ...]), yielding
     text deltas as they arrive. Fail-open: logs and stops yielding on any
     error, same philosophy as SarvamTTSSession/BakbakTTSSession, so a bad
-    response never hangs the call."""
+    response never hangs the call.
+
+    Pass a shared `client` (one opened per call, like BakbakTTSSession
+    already does) to reuse the TCP/TLS connection across turns - creating a
+    fresh httpx.AsyncClient per turn means paying a full connection setup
+    on every single turn, measured live as real, avoidable overhead on top
+    of actual generation time."""
     if not messages or not api_key:
         return
     headers = {
@@ -38,29 +44,39 @@ async def stream_openai_reply(messages: list, api_key: str, model: str) -> Async
         "stream": True,
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        if client is not None:
             async with client.stream("POST", OPENAI_CHAT_URL, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    logger.error(f"[OPENAI CHAT ERROR]: {resp.status_code} - {body[:300]}")
-                    return
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data_str = line[len("data:"):].strip()
-                    if not data_str or data_str == "[DONE]":
-                        continue
-                    try:
-                        chunk = json.loads(data_str)
-                    except Exception:
-                        continue
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    content = delta.get("content")
-                    if content:
-                        yield content
+                async for chunk_text in _iter_sse(resp):
+                    yield chunk_text
+        else:
+            async with httpx.AsyncClient(timeout=30.0) as temp_client:
+                async with temp_client.stream("POST", OPENAI_CHAT_URL, headers=headers, json=payload) as resp:
+                    async for chunk_text in _iter_sse(resp):
+                        yield chunk_text
     except Exception as e:
         logger.error(f"[OPENAI CHAT ERROR]: {e}")
         return
+
+
+async def _iter_sse(resp: httpx.Response) -> AsyncIterator[str]:
+    if resp.status_code != 200:
+        body = await resp.aread()
+        logger.error(f"[OPENAI CHAT ERROR]: {resp.status_code} - {body[:300]}")
+        return
+    async for line in resp.aiter_lines():
+        if not line or not line.startswith("data:"):
+            continue
+        data_str = line[len("data:"):].strip()
+        if not data_str or data_str == "[DONE]":
+            continue
+        try:
+            chunk = json.loads(data_str)
+        except Exception:
+            continue
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        delta = choices[0].get("delta") or {}
+        content = delta.get("content")
+        if content:
+            yield content

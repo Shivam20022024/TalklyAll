@@ -29,6 +29,7 @@ import re
 import time
 
 from fastapi import WebSocket, WebSocketDisconnect
+import httpx
 
 from services.bakbak_tts import BakbakTTSSession
 from services.sarvam_stt import SarvamSTTSession
@@ -121,6 +122,10 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
 
     tts_session = BakbakTTSSession(BAKBAK_API_KEY, bakbak_voice_id, bakbak_language, bakbak_model)
     stt_session = SarvamSTTSession(SARVAM_API_KEY, stt_language_code)
+    # One shared connection for every OpenAI turn this call makes, instead
+    # of a fresh TCP/TLS handshake per turn - measured live as real,
+    # avoidable overhead on top of actual generation time.
+    openai_http_client = httpx.AsyncClient(timeout=30.0)
 
     await tts_session.__aenter__()
     await stt_session.__aenter__()
@@ -210,7 +215,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     first_sentence_flushed = False
                     remainder_start = 0
                     first_sentence_ready_at = None
-                    async for delta in stream_openai_reply(messages, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL):
+                    async for delta in stream_openai_reply(messages, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL, client=openai_http_client):
                         full_reply += delta
                         if not first_sentence_flushed:
                             m = _SENTENCE_END_RE.match(full_reply)
@@ -303,6 +308,10 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     finally:
         await tts_session.__aexit__(None, None, None)
         await stt_session.__aexit__(None, None, None)
+        try:
+            await openai_http_client.aclose()
+        except Exception:
+            pass
         try:
             await finalize_plivo_call(call_id, company_id=company_id, transcript_parts=transcript_parts)
         except Exception as e:
