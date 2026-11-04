@@ -24,12 +24,17 @@ logger = logging.getLogger("talkly-bakbak-tts")
 
 BAKBAK_TTS_URL = "https://hub.getraya.app/v1/text-to-speech"
 
-# Only the pairing actually tested live (Anjura M1, language=hi - the voice
-# explicitly marketed as "works best for Hindi, English, and Hinglish").
-# Mirrors sarvam_tts.py's SARVAM_VOICE_MAP philosophy: never guess at an
-# untested voice/language pairing on a live call.
+# Only pairings actually tested live against the real API (Anjura M1 - the
+# voice explicitly marketed as "works best for Hindi, English, and
+# Hinglish" - confirmed 200 OK + correctly-sized mulaw/8kHz audio for both
+# hi and en-in). "hinglish" isn't a separate key here because
+# plivo_routes.WHISPER_LANGUAGE_CODES already aliases it to "hi" before
+# this map is consulted. Mirrors sarvam_tts.py's SARVAM_VOICE_MAP
+# philosophy: never guess at an untested voice/language pairing on a live
+# call - every other language still falls back to Sarvam/OpenAI.
 BAKBAK_VOICE_MAP = {
     "hi": {"voice_id": "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2", "language": "hi", "model": "m1"},
+    "en": {"voice_id": "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2", "language": "en-in", "model": "m1"},
 }
 
 
