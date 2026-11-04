@@ -248,7 +248,7 @@ function LeadsContent() {
       </section>
 
       <section className="rounded-xl border border-border bg-card p-5">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col flex-wrap justify-between gap-3 sm:flex-row sm:items-center">
           <div className="flex gap-2">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-primary" size={14} />
@@ -298,15 +298,12 @@ function LeadsContent() {
             )}
             <button onClick={handleDownload} className="rounded-lg border border-border bg-muted/50 p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"><Download size={15} /></button>
           </div>
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1 mr-2 hidden sm:flex">
-              {['Today', '7 Days', '30 Days', 'All Time'].map((item) => (
-                <button key={item} onClick={() => setRange(item)} className={`rounded-md px-3 py-1.5 text-sm font-bold transition-colors ${range === item ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-                  {item}
-                </button>
-              ))}
-            </div>
-            <button onClick={handleDownload} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"><Download size={15} /></button>
+          <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1 hidden sm:flex">
+            {['Today', '7 Days', '30 Days', 'All Time'].map((item) => (
+              <button key={item} onClick={() => setRange(item)} className={`rounded-md px-3 py-1.5 text-sm font-bold transition-colors ${range === item ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+                {item}
+              </button>
+            ))}
           </div>
         </div>
         
