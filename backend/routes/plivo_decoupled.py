@@ -8,12 +8,12 @@
 # credits"). OpenAI Realtime's audio/listening is still not used anywhere
 # in this file - this is the cheap, text-only chat endpoint.
 #
-# STAGE 1 ONLY, per the approved plan
-# (C:\Users\Shivam kumar\.claude\plans\serene-inventing-mist.md): core loop
-# only - no barge-in, no tool-calling, no goodbye-keyword auto-hangup yet.
-# A test call ends when the caller hangs up or Plivo sends "stop". Those
-# behaviors are deliberately staged in later passes so a failure in this
-# first version is easy to isolate, not entangled with five new pieces of
+# STAGE 1 (+goodbye-triggered auto-hangup, ported from plivo_routes.py's
+# proven implementation since Stage 1 testing hit it directly - a call
+# never ending was worse than not having it), per the approved plan
+# (C:\Users\Shivam kumar\.claude\plans\serene-inventing-mist.md). Still no
+# barge-in or tool-calling yet. Those remain staged for later passes so a
+# failure is easy to isolate, not entangled with several new pieces of
 # untested logic at once.
 #
 # Both STT (Sarvam) and TTS (Bakbak) were empirically validated against the
@@ -32,6 +32,18 @@ from services.bakbak_tts import BakbakTTSSession
 from services.sarvam_stt import SarvamSTTSession
 from services.openai_chat import stream_openai_reply
 from routes.plivo_routes import safe_print, finalize_plivo_call, HALLUCINATION_PHRASES, is_degenerate_transcript
+from telephony.plivo_provider import PlivoProvider
+
+# Same proven keyword list and dynamic delay formula as plivo_routes.py's
+# trigger_auto_hangup (roughly 11 chars/sec of speech + 3.5s buffer,
+# clamped 7-16s) - duplicated rather than imported because the original is
+# a closure nested inside the OpenAI pipeline's function, not a standalone
+# callable, and that working pipeline isn't being touched.
+GOODBYE_KEYWORDS = [
+    "अलविदा", "दिन शुभ हो", "बाय", "bye", "goodbye",
+    "have a great day", "have a wonderful day", "have a good day",
+    "take care", "बात करने के लिए धन्यवाद"
+]
 
 logger = logging.getLogger("talkly-plivo-decoupled")
 
@@ -83,10 +95,12 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     duplicate that DB-heavy lookup."""
     system_prompt = ctx["system_prompt"]
     welcome_text = ctx["welcome_text"]
+    company = ctx.get("company")
     bakbak_voice_id = ctx.get("bakbak_voice_id")
     bakbak_language = ctx.get("bakbak_language")
     bakbak_model = ctx.get("bakbak_model")
     stt_language_code = "auto"
+    hangup_triggered = False
 
     if not (BAKBAK_API_KEY and bakbak_voice_id and OPENAI_CHAT_API_KEY and SARVAM_API_KEY):
         safe_print(f"[DECOUPLED ERROR]: Missing required config for call_id={call_id} "
@@ -126,6 +140,45 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
         # 'websocket.send', after sending 'websocket.close'").
         turn_tasks: set = set()
 
+        async def trigger_decoupled_hangup(delay_seconds: float) -> None:
+            nonlocal hangup_triggered
+            if hangup_triggered or len(transcript_parts) < 3:
+                safe_print(f"[DECOUPLED AUTO HANGUP SHIELD]: Ignored (turns={len(transcript_parts)}, triggered={hangup_triggered}).")
+                return
+            hangup_triggered = True
+            turns_at_trigger = len(transcript_parts)
+            safe_print(f"[DECOUPLED AUTO HANGUP]: Scheduled in {delay_seconds:.1f}s (turns={turns_at_trigger}) unless the conversation genuinely continues...")
+
+            waited = 0.0
+            poll_interval = 1.0
+            while waited < delay_seconds:
+                await asyncio.sleep(poll_interval)
+                waited += poll_interval
+                new_entries = transcript_parts[turns_at_trigger:]
+                substantial_continuation = next(
+                    (e for e in new_entries
+                     if e.startswith("Customer:") and len(e[len("Customer:"):].strip().split()) >= 3),
+                    None
+                )
+                if substantial_continuation:
+                    safe_print(f"[DECOUPLED AUTO HANGUP]: Cancelled - substantial customer continuation: '{substantial_continuation}'")
+                    hangup_triggered = False
+                    return
+
+            try:
+                cdoc = await db.calls.find_one({"call_id": call_id}) if call_id else None
+                call_uuid = (cdoc.get("plivo_call_uuid") or cdoc.get("plivo_request_uuid")) if cdoc else None
+                company_telephony = company.get("telephony", {}) if company else {}
+                plivo_auth_id = company_telephony.get("account_sid") or os.environ.get("PLIVO_AUTH_ID")
+                plivo_auth_token = company_telephony.get("auth_token") or os.environ.get("PLIVO_AUTH_TOKEN")
+                if call_uuid and plivo_auth_id and plivo_auth_token:
+                    plivo_prov = PlivoProvider(plivo_auth_id, plivo_auth_token)
+                    await plivo_prov.hangup_call(call_uuid)
+                    safe_print(f"[DECOUPLED AUTO HANGUP]: Plivo call {call_uuid} hung up successfully via REST API.")
+                await websocket.close()
+            except Exception as e:
+                safe_print(f"[DECOUPLED AUTO HANGUP ERROR]: {e}")
+
         async def handle_final_transcript(customer_text: str) -> None:
             try:
                 customer_text = (customer_text or "").strip()
@@ -153,6 +206,15 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     transcript_parts.append(f"AI: {full_reply}")
                     await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
                     await _speak_and_forward(websocket, tts_session, full_reply)
+
+                    reply_lower = full_reply.lower()
+                    if (len(transcript_parts) - 1) >= 3 and any(kw in reply_lower for kw in GOODBYE_KEYWORDS):
+                        chars = len(full_reply.strip())
+                        delay = max(7.0, min((chars / 11.0) + 3.5, 16.0))
+                        safe_print(f"[DECOUPLED AUTO HANGUP]: Goodbye detected in AI speech. Allowing full sentence to complete ({delay:.1f}s)...")
+                        t = asyncio.create_task(trigger_decoupled_hangup(delay))
+                        turn_tasks.add(t)
+                        t.add_done_callback(turn_tasks.discard)
             except Exception:
                 import traceback
                 safe_print(f"[DECOUPLED ERROR]: handle_final_transcript crashed for call_id={call_id}:\n{traceback.format_exc()}")
