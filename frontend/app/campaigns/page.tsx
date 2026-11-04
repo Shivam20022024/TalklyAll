@@ -163,8 +163,8 @@ export default function CampaignsPage() {
       })
       alert('Calls dispatched successfully!')
       setSelected([])
-    } catch (e) {
-      alert('Failed to trigger campaigns')
+    } catch (e: any) {
+      alert(`Failed to trigger campaigns: ${e.message || 'Unknown error'}`)
     }
   }
 

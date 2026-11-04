@@ -997,38 +997,53 @@ async def process_bulk_calls(contacts: list, campaign_language: str = "English",
         
         print(f"DEBUG: Parsed name for {phone_str} is -> '{customer_name}'")
         
-        # Direct Plivo Dispatch in Bulk
+        # Direct Plivo Dispatch in Bulk - mirrors the single-call /api/v1/calls/trigger
+        # path: use the company's own Plivo account if configured, otherwise fall back
+        # to Talkly's shared Plivo line. Without this fallback, every company on the
+        # shared line (the normal/default setup) silently fell through to the Bolna
+        # branch below, which uses a different voice/STT stack with none of a
+        # published prompt's Collections compliance rules or Sarvam Indian-accent
+        # voice behind it.
+        bulk_plivo_auth_id = None
+        bulk_plivo_auth_token = None
+        bulk_plivo_from_number = None
         if company_telephony and company_telephony.get("mode") == "custom" and company_telephony.get("provider", "").lower() == "plivo":
-            plivo_auth_id = company_telephony.get("account_sid")
-            plivo_auth_token = company_telephony.get("auth_token")
-            if plivo_auth_id and plivo_auth_token:
-                from telephony.plivo_provider import PlivoProvider
-                plivo_prov = PlivoProvider(plivo_auth_id, plivo_auth_token, default_from=caller_id)
-                try:
-                    print(f"Bulk: Routing directly via Plivo API from dedicated number {caller_id} to {phone_str}")
-                    plivo_res = await plivo_prov.trigger_outbound_call(
-                        to_phone_number=phone_str,
-                        lead_id=lead_id,
-                        company_id=company_id,
-                        from_phone_number=caller_id,
-                        base_url=current_base_url
-                    )
-                    await db.calls.update_one(
-                        {"call_id": lead_id},
-                        {"$set": {
-                            "status": "Initiated",
-                            "provider": "plivo",
-                            "caller_id": caller_id,
-                            "plivo_request_uuid": plivo_res.get("plivo_request_uuid")
-                        }}
-                    )
-                    await asyncio.sleep(0.5)
-                    continue
-                except Exception as e:
-                    print(f"Bulk Plivo dispatch error for {phone_str}: {e}")
-                    await db.calls.update_one({"call_id": lead_id}, {"$set": {"status": "Failed"}})
-                    await asyncio.sleep(0.5)
-                    continue
+            bulk_plivo_auth_id = company_telephony.get("account_sid")
+            bulk_plivo_auth_token = company_telephony.get("auth_token")
+            bulk_plivo_from_number = company_telephony.get("phone_number") or caller_id
+        elif not (company_telephony and company_telephony.get("mode") == "custom" and company_telephony.get("provider", "").lower() in ["twilio", "exotel"]):
+            bulk_plivo_auth_id = os.environ.get("PLIVO_AUTH_ID")
+            bulk_plivo_auth_token = os.environ.get("PLIVO_AUTH_TOKEN")
+            bulk_plivo_from_number = os.environ.get("PLIVO_PHONE_NUMBER") or os.environ.get("TALKLY_SHARED_NUMBER", "+918065535758")
+
+        if bulk_plivo_auth_id and bulk_plivo_auth_token and bulk_plivo_from_number:
+            from telephony.plivo_provider import PlivoProvider
+            plivo_prov = PlivoProvider(bulk_plivo_auth_id, bulk_plivo_auth_token, default_from=bulk_plivo_from_number)
+            try:
+                print(f"Bulk: Routing directly via Plivo API from {bulk_plivo_from_number} to {phone_str}")
+                plivo_res = await plivo_prov.trigger_outbound_call(
+                    to_phone_number=phone_str,
+                    lead_id=lead_id,
+                    company_id=company_id,
+                    from_phone_number=bulk_plivo_from_number,
+                    base_url=current_base_url
+                )
+                await db.calls.update_one(
+                    {"call_id": lead_id},
+                    {"$set": {
+                        "status": "Initiated",
+                        "provider": "plivo",
+                        "caller_id": bulk_plivo_from_number,
+                        "plivo_request_uuid": plivo_res.get("plivo_request_uuid")
+                    }}
+                )
+                await asyncio.sleep(0.5)
+                continue
+            except Exception as e:
+                print(f"Bulk Plivo dispatch error for {phone_str}: {e}")
+                await db.calls.update_one({"call_id": lead_id}, {"$set": {"status": "Failed"}})
+                await asyncio.sleep(0.5)
+                continue
 
         try:
             import json
@@ -1172,10 +1187,12 @@ async def trigger_campaign_calls(
     db = mongodb.get_db()
     contacts = []
     
+    # "No Answer" is retriable too - a lead that never connected shouldn't be
+    # permanently stuck just because one attempt was already made.
     leads = await db.leads.find({
         "campaign_id": {"$in": campaign_ids},
         "company_id": current_user["company_id"],
-        "status": "New"
+        "status": {"$in": ["New", "No Answer"]}
     }).to_list(length=1000)
     
     for lead in leads:
@@ -1190,7 +1207,7 @@ async def trigger_campaign_calls(
     if not contacts:
         raise HTTPException(status_code=400, detail="No new leads found in selected campaigns.")
         
-    campaign_language = "English"
+    campaign_language = "Hinglish"
     ai_voice = "Default"
     voice_gender = "Female"
     regional_accent = "Default"
