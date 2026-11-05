@@ -1225,10 +1225,18 @@ async def trigger_campaign_calls(
     
     background_tasks.add_task(process_bulk_calls, contacts, campaign_language, ai_voice, voice_gender, regional_accent, current_user["company_id"])
     
-    # Mark them as Contacted/Initiating so they aren't triggered again
+    # Mark them as Contacted/Initiating so they aren't triggered again.
+    # lastContact must be an ISO string, not a native datetime - every other
+    # write site in the codebase stores it as .isoformat(), and the Leads
+    # list sort (lead_routes.py) sorts on this field directly. Mixing BSON
+    # date and string types in the same field breaks that sort: MongoDB
+    # ranks dates above strings by BSON type regardless of actual value, so
+    # a lead touched here would outrank a genuinely more recent one written
+    # elsewhere as a string - confirmed live, this exact line was the sole
+    # source of that bug.
     await db.leads.update_many(
         {"_id": {"$in": [l["_id"] for l in leads]}},
-        {"$set": {"status": "Contacted", "lastContact": datetime.utcnow()}}
+        {"$set": {"status": "Contacted", "lastContact": datetime.utcnow().isoformat()}}
     )
     
     return {
