@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { MotionConfig } from 'framer-motion'
 import '@fontsource-variable/sora'
 import '@fontsource-variable/inter'
@@ -23,8 +23,10 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
         >
           Skip to content
         </a>
-        <ScrollManager />
-        <Navbar />
+        <Suspense fallback={null}>
+          <ScrollManager />
+          <Navbar />
+        </Suspense>
         <main id="main">{children}</main>
         <Footer />
       </div>

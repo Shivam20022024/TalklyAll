@@ -3,7 +3,7 @@
 import { CalendarCheck, CircleCheck, ClipboardList, LoaderCircle, PhoneCall } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { contact } from '@/lib/landing-content'
 import { submitDemoRequest, type DemoFormValues } from '@/lib/submitDemo'
 
@@ -55,6 +55,14 @@ function Field({
 }
 
 export default function DemoPage() {
+  return (
+    <Suspense fallback={null}>
+      <DemoForm />
+    </Suspense>
+  )
+}
+
+function DemoForm() {
   const params = useSearchParams()
   const requested = params.get('topic')
   const [values, setValues] = useState<DemoFormValues>({
