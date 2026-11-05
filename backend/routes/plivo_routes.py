@@ -256,7 +256,13 @@ async def finalize_plivo_call(
                     "analysis": analysis_result
                 })
                 # Sync lead status (Qualified, Interested, Converted, etc.)
-                await crm_service.sync_lead_status_from_call(db, call_id, analysis_result, company_id=cid)
+                # call_doc.lead_id is the actual lead document's id when a
+                # quick-call reused an existing lead (dedup by phone number)
+                # under a different id than this call's own call_id - falls
+                # back to call_id for every other path, where the two have
+                # always been (and still are) the same string.
+                sync_lead_id = call_doc.get("lead_id") or call_id
+                await crm_service.sync_lead_status_from_call(db, sync_lead_id, analysis_result, company_id=cid)
                 # Dispatch CRM webhook if configured
                 asyncio.create_task(crm_service.sync_call_to_crm(db, call_id))
                 # Trigger automated WhatsApp follow-up if customer asked or meeting booked

@@ -143,9 +143,15 @@ class WhatsAppService:
             if not call:
                 return
 
+            # Same resolved id crm_service.py uses - a quick-call that
+            # reused an existing lead (dedup by phone) stores that lead's
+            # real id on the call record, which can differ from call_id.
+            # Falls back to call_id for every other path, unchanged.
+            lead_id = call.get("lead_id") or call_id
+
             company_id = call.get("company_id")
             if not company_id:
-                lead = await db.leads.find_one({"lead_id": call_id})
+                lead = await db.leads.find_one({"lead_id": lead_id})
                 if lead and lead.get("company_id"):
                     company_id = lead.get("company_id")
 
@@ -166,7 +172,7 @@ class WhatsAppService:
             # computes from the full call analysis (not a single turn), plus
             # an explicit AI-drafted WhatsApp recommendation as an override
             # for calls where the AI specifically judged a message warranted.
-            lead_for_gate = await db.leads.find_one({"lead_id": call_id})
+            lead_for_gate = await db.leads.find_one({"lead_id": lead_id})
             lead_status = (lead_for_gate or {}).get("status", "")
             has_whatsapp_draft = any(
                 isinstance(rec, dict) and rec.get("type", "").lower() == "whatsapp" and rec.get("draft")
@@ -179,7 +185,7 @@ class WhatsAppService:
             # Resolve customer phone
             customer_phone = call.get("customer_id") or call.get("phone_number")
             if not customer_phone:
-                lead = await db.leads.find_one({"lead_id": call_id})
+                lead = await db.leads.find_one({"lead_id": lead_id})
                 if lead:
                     customer_phone = lead.get("phone")
 
@@ -248,7 +254,7 @@ class WhatsAppService:
             # Update call and lead records
             await db.calls.update_one({"call_id": call_id}, {"$set": whatsapp_record})
             await db.leads.update_one(
-                {"$or": [{"lead_id": call_id}, {"phone": customer_phone}]},
+                {"$or": [{"lead_id": lead_id}, {"phone": customer_phone}]},
                 {"$set": {
                     "whatsapp_sent": True,
                     "whatsapp_last_sent": now_iso,

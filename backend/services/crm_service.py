@@ -22,10 +22,14 @@ class CRMService:
             if company and company.get("webhook_url"):
                 webhook_url = str(company.get("webhook_url")).strip()
 
-        # Fetch lead if available for extra metadata
+        # Fetch lead if available for extra metadata. Prefer the resolved
+        # lead_id stored on the call (set when a quick-call reused an
+        # existing lead under a different id than call_id) - already had a
+        # phone-based fallback for when that's absent, kept as-is.
         lead_doc = None
-        if call_doc.get("call_id"):
-            lead_doc = await db.leads.find_one({"lead_id": call_doc.get("call_id")})
+        resolved_lead_id = call_doc.get("lead_id") or call_doc.get("call_id")
+        if resolved_lead_id:
+            lead_doc = await db.leads.find_one({"lead_id": resolved_lead_id})
         if not lead_doc and call_doc.get("customer_id"):
             lead_doc = await db.leads.find_one({"phone": call_doc.get("customer_id")})
 

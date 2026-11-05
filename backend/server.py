@@ -600,11 +600,20 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
     # quick-call-<timestamp> id rather than checking for an existing lead
     # first. The call record below still gets its own unique call_id per
     # attempt - only the lead identity is deduplicated, not call history.
+    # Resolved lead_id for this call - equal to the call's own id unless the
+    # quick-call branch below reuses an existing lead under a different id.
+    # Stored on the call record so finalize_plivo_call can find the right
+    # lead to update after analysis, instead of assuming lead_id == call_id
+    # (true before the dedup fix, no longer guaranteed for reused leads -
+    # confirmed live: a fully analyzed call's results were never reaching
+    # any lead document because of exactly this mismatch).
+    resolved_lead_id = lead_id
     if lead_id.startswith("quick-call-"):
         existing_quick_lead = await db.leads.find_one(
             tenant_filter(current_user, {"phone": phone_number})
         )
         quick_lead_id = existing_quick_lead["lead_id"] if existing_quick_lead else lead_id
+        resolved_lead_id = quick_lead_id
         await db.leads.update_one(
             {"lead_id": quick_lead_id, "company_id": current_user["company_id"]},
             {"$set": {
@@ -632,6 +641,7 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         {"$set": {
             "customer_id": phone_number,
             "customer_name": customer_name,
+            "lead_id": resolved_lead_id,
             "direction": "outbound",
             "transcript": "",
             "status": "Initiating",
