@@ -10,7 +10,6 @@ const columns = [
       { label: 'Features', to: '/#features' },
       { label: 'Dashboard', to: '/#dashboard' },
       { label: 'How It Works', to: '/#how-it-works' },
-      { label: 'Voice Demo', to: '/#voice-demo' },
       { label: 'Integrations', to: '/#integrations' },
     ],
   },

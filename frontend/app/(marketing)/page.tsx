@@ -7,7 +7,6 @@ import HowItWorks from '@/components/landing/HowItWorks'
 import Industries from '@/components/landing/Industries'
 import Integrations from '@/components/landing/Integrations'
 import Stats from '@/components/landing/Stats'
-import VoiceDemo from '@/components/landing/VoiceDemo'
 
 export default function LandingPage() {
   return (
@@ -18,7 +17,6 @@ export default function LandingPage() {
       <Industries />
       <DashboardPreview />
       <HowItWorks />
-      <VoiceDemo />
       <Collections />
       <Integrations />
       <CTA />

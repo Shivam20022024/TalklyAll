@@ -67,55 +67,6 @@ export const howItWorks = [
   { title: 'Take Action', body: 'Results appear in the dashboard, with automated WhatsApp follow-ups.' },
 ]
 
-// Sample conversations. `d` is how many seconds the line stays active on screen.
-export const demoConversations = {
-  hindi: {
-    label: 'Hindi',
-    lang: 'hi',
-    scenario: 'Appointment confirmation',
-    lines: [
-      { speaker: 'ai', d: 5.5, text: 'नमस्ते, क्या मेरी बात सुनीता जी से हो रही है? मैं आपकी क्लिनिक की ओर से AI असिस्टेंट बोल रही हूँ।' },
-      { speaker: 'customer', d: 2.5, text: 'जी, बोल रही हूँ। बताइए।' },
-      { speaker: 'ai', d: 4.5, text: 'कल सुबह 10:30 बजे डॉक्टर मेहरा के साथ आपकी अपॉइंटमेंट है। क्या आप आ पाएँगी?' },
-      { speaker: 'customer', d: 4, text: 'सुबह थोड़ा मुश्किल है। शाम को कोई समय मिल सकता है?' },
-      { speaker: 'ai', d: 4, text: 'जी, कल शाम 5 बजे का समय खाली है। क्या मैं वही बुक कर दूँ?' },
-      { speaker: 'customer', d: 2.5, text: 'हाँ, 5 बजे ठीक रहेगा।' },
-      { speaker: 'ai', d: 5, text: 'आपकी अपॉइंटमेंट शाम 5 बजे की हो गई है। पूरी जानकारी WhatsApp पर भेज रही हूँ। धन्यवाद!' },
-    ],
-    outcome: ['Appointment moved to 5 pm', 'WhatsApp confirmation queued'],
-  },
-  hinglish: {
-    label: 'Hinglish',
-    lang: 'hi-Latn',
-    scenario: 'Real estate enquiry',
-    lines: [
-      { speaker: 'ai', d: 6, text: 'Namaste Rohit ji, main AI assistant bol rahi hoon. Aapki 3 BHK enquiry ke baare mein call kiya hai. Abhi do minute baat ho sakti hai?' },
-      { speaker: 'customer', d: 3.5, text: 'Haan, boliye. Greater Noida side dekh raha hoon.' },
-      { speaker: 'ai', d: 4, text: 'Bilkul. Aapka budget roughly kitna hai, aur kab tak shift karna chahenge?' },
-      { speaker: 'customer', d: 3.5, text: 'Around 80 lakh. Agle saal March tak shift karna hai.' },
-      { speaker: 'ai', d: 4.5, text: 'Theek hai. Is Sunday site visit schedule kar dun? Subah 11 baje ka slot khaali hai.' },
-      { speaker: 'customer', d: 2.5, text: 'Haan, Sunday 11 baje theek rahega.' },
-      { speaker: 'ai', d: 4.5, text: 'Done. Location aur details WhatsApp par bhej rahi hoon. Dhanyavaad, Rohit ji!' },
-    ],
-    outcome: ['Lead qualified', 'Site visit booked for Sunday, 11 am', 'WhatsApp details queued'],
-  },
-  english: {
-    label: 'English',
-    lang: 'en-IN',
-    scenario: 'EMI reminder',
-    lines: [
-      { speaker: 'ai', d: 5, text: 'Hello, am I speaking with Arjun Deshmukh? This is an AI assistant calling on behalf of your lender.' },
-      { speaker: 'customer', d: 2, text: 'Yes, this is Arjun.' },
-      { speaker: 'ai', d: 4.5, text: 'Thank you. To confirm it is you, could you share the last four digits of your registered mobile number?' },
-      { speaker: 'customer', d: 2, text: 'Sure, it ends in 4821.' },
-      { speaker: 'ai', d: 5, text: 'Thanks, Arjun. Your EMI of ₹12,450 was due on 28 October. Which date would work for you to pay it?' },
-      { speaker: 'customer', d: 3.5, text: 'My salary comes in on the 7th, so I can pay on the 8th.' },
-      { speaker: 'ai', d: 6, text: 'Noted, ₹12,450 on 8 November. I will send the payment link on WhatsApp. If anything changes, I can connect you to a team member.' },
-    ],
-    outcome: ['Identity verified', 'Promise to pay: ₹12,450 on 8 November', 'WhatsApp payment link queued'],
-  },
-} as const
-
 // Only mark a provider 'supported' once the integration is confirmed.
 export const integrations = [
   { id: 'whatsapp', name: 'WhatsApp', status: 'supported', body: 'Send automated confirmations, reminders, and next steps after each call.' },
