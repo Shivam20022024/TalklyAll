@@ -482,7 +482,12 @@ function LeadsContent() {
                       </span>
                     </td>
                     <td className="py-4 pl-6 align-top">
-                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">{lead.aiScore || 0}</span>
+                      <span
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary"
+                        title={lead.status === 'Calling' ? 'Call in progress - previous score shown until this call is analyzed' : undefined}
+                      >
+                        {lead.status === 'Calling' ? '…' : (lead.aiScore || 0)}
+                      </span>
                     </td>
                     <td className="py-4 align-top text-right">
                       <div className="flex items-center justify-end gap-1">
