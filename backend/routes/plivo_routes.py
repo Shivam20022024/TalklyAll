@@ -344,8 +344,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         industry_fallbacks = {
             "real_estate": "luxury property",
             "healthcare": "doctor appointment consultation",
-            "edtech": "online certification program",
-            "bfsi": "loan options",
+            "edtech": "online certification",
+            "bfsi": "loan",
             "general_sales": "AI calling services",
             "collections": "loan EMI payment"
         }
@@ -409,24 +409,43 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         welcome_text = welcome_text.replace(tag, location)
         system_prompt = system_prompt.replace(tag, location)
 
+    # Generic per-lead CSV columns (e.g. {{amount_due}}, {{due_date}} for a
+    # Collections upload) - mirrors the substitution server.py already does
+    # for the separate Bolna dialing path (see its lead_dict.get("custom_fields")
+    # loop), which this Plivo/Realtime path never had. Exact, case-sensitive
+    # match against the uploaded column name, same as that reference loop.
+    if lead_doc:
+        for ck, cv in (lead_doc.get("custom_fields") or {}).items():
+            if cv is not None:
+                tag = f"{{{{{ck}}}}}"
+                welcome_text = welcome_text.replace(tag, str(cv))
+                system_prompt = system_prompt.replace(tag, str(cv))
+
     indian_accent_directive = (
         "CRITICAL VOICE & ACCENT DIRECTIVE:\n"
         "- IDENTITY: You are an Indian professional voice representative calling from an office in India.\n"
         "- ACCENT: Speak with an authentic, natural urban Indian English accent (Indian English cadence, syllable-timing, and clear intonation).\n"
         "- PHONETICS: Use distinct Indian English articulation (crisp dental 't' and 'd' stops, clear vowels, NO American rhotic 'r' drawl, NO American slang or valley-girl inflection).\n"
         "- PROHIBITED: NEVER speak in an American, British, or foreign Western accent. Avoid American filler sounds like 'gonna', 'wanna', 'kinda'.\n"
-        "- LANGUAGE MIRRORING: Always match the language the customer is actually using, turn by turn - do not stay locked to your opening greeting's language. If they reply in English, continue in English (with your Indian English accent). If they speak Hindi or code-mixed Hinglish, respond in natural Hindi/Hinglish. If they explicitly ask for Hindi ('हिंदी में बात करो') or ask for English, switch immediately. If the customer has replied in English for the last two turns, keep speaking English even if your earlier turns were in Hindi.\n"
+        "- LANGUAGE MIRRORING: Match the language the customer is actually using, turn by turn - do not stay locked to your opening greeting's language. If they reply with a substantive phrase or sentence in English, continue in English (with your Indian English accent). If they speak Hindi or code-mixed Hinglish, respond in natural Hindi/Hinglish. If they explicitly ask for Hindi ('हिंदी में बात करो') or ask for English, switch immediately. If the customer has replied in English for the last two turns, keep speaking English even if your earlier turns were in Hindi.\n"
+        "- DO NOT SWITCH LANGUAGE ON A BARE FILLER WORD: A single short acknowledgment with no real content - 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Thanks' - is NOT a language switch signal on its own, even though the word itself is English. Keep speaking in whichever language you were already using until the customer actually says a substantive phrase or sentence in a different language.\n"
         "- LANGUAGE LIMIT: You are only able to speak English and Hindi/Hinglish well. If the customer speaks a different language (e.g. Tamil, Telugu, Bengali, Kannada, Malayalam, or any other), do NOT attempt to reply in that language - politely say, in English, that you can continue in English or Hindi, and ask which they'd prefer. Never guess at or attempt a language outside English and Hindi/Hinglish.\n\n"
     )
 
     natural_speech_directive = (
         "\n\nNATURAL HUMAN CONVERSATION STYLE:"
         "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday phrasing beats long formal sentences."
-        "\n- Keep acknowledgements brief and natural: 'Great, thanks!', 'Sure, no problem', 'Got it', 'Perfect' - not stiff transitions like 'Thank you for that information.'"
+        "\n- MATCH YOUR ACKNOWLEDGMENT TO WHAT THE CUSTOMER ACTUALLY SAID - classify it first, don't pick from one generic pool:"
+        "\n   - A plain GREETING ('Hello', 'Hi', 'Hey', 'Haan ji' as a pickup) is not gratitude, agreement, or an answer to anything - there's nothing to thank them for yet. Reply with a greeting of your own ('Hi!', 'Hey there!', 'Hello!') or go straight into your next line with no acknowledgment at all. NEVER say 'Great, thanks!', 'Perfect!', 'Wonderful!', or 'That's great to hear!' in response to a bare greeting - those only make sense as a reaction to something the customer actually gave you."
+        "\n   - An AFFIRMATION that genuinely confirms something ('Yes', 'Sure', 'Okay', 'Haan' in answer to a real question) is where 'Great, thanks!', 'Perfect', 'Sure thing', 'Got it', 'Alright', 'Noted' fit."
+        "\n   - GRATITUDE from the customer ('Thank you') gets a brief 'You're welcome' style reply, not a re-thanking."
+        "\n   - An actual answer to your question gets a reaction to its CONTENT ('Oh nice', 'I see', 'Makes sense') plus your next step, not a generic filler."
+        "\n   - Within whichever category applies, rotate through different phrasing - NEVER use the exact same acknowledgment word/phrase twice in the same call."
         "\n- Ask ONE short, plain question at a time. Prefer 'What exactly are you looking for?' over a long compound sentence like 'Could you tell me a bit more about what you're looking for in the program, or any specific questions you have? That way I can assist you better.'"
         "\n- Use natural contractions (I'm, you're, that's, don't, can't, we'll) instead of full formal forms."
         "\n- React briefly to what the customer just said before moving on - a quick 'Oh nice', 'I see', 'Makes sense', 'Okay cool' shows you're actually listening, instead of jumping straight to your next scripted point."
         "\n- Vary how you start each turn. Don't open every single turn the same way (e.g. always 'Could you tell me...' or always 'I understand...') - mix it up the way a real person would."
+        "\n- NEVER NARRATE YOUR OWN PROCESS OUT LOUD: Don't say things like 'I'm confirming that I'm speaking with you' or 'I'm now going to check your details' - a real person doesn't announce what they're internally doing. Just do the next natural thing (e.g. move straight into sharing the information) without describing the step itself."
         "\n- Never sound like a call-center script, an email, or a formal announcement being read aloud. This is a live, warm, human conversation between two people."
     )
 
@@ -444,11 +463,14 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n   - Step 3: Present value pitch and ask for budget / timeline."
         "\n   - Step 4: Propose the call to action (e.g. site visit or demo)."
         "\n   - Step 5: Once agreed or concluded, say a warm goodbye in whichever language the customer has been using (Hindi: 'बहुत-बहुत धन्यवाद, आपका दिन शुभ हो! अलविदा।' / English: 'Thank you so much, have a great day! Goodbye.'), and execute the end_call function."
-        "\n5. ONE QUESTION PER TURN: Ask strictly ONE question per turn. Never speak two questions back-to-back. Never answer your own questions."
+        "\n5. ONE QUESTION PER TURN: Ask strictly ONE question per turn. Never speak two questions back-to-back. Never answer your own questions. This includes offering a list of options as a separate trailing question - e.g. do NOT say 'What type of property are you looking for? Is it a 2BHK, 3BHK, or a villa?' (that is two question marks, two questions). Instead fold the options into the single question itself: 'What type of property are you looking for - a 2BHK, 3BHK, or a villa?' is one question and is fine."
         "\n6. AUTOMATIC HANGUP: Immediately after concluding your goodbye, invoke the end_call function."
         "\n7. HANDLE UNCLEAR INPUT: If what the customer said does not logically fit the conversation, sounds garbled, or like background noise rather than a real answer, DO NOT guess or respond as if you understood it. This includes a random name, place, or short phrase with no logical connection to the question you just asked (e.g. you asked for a day/time and the answer is an unrelated proper noun) - NEVER interpret that as agreement, enthusiasm, or a valid choice. If you offered specific named options (e.g. 'loan, insurance, or something else?') and their answer does not clearly and unambiguously match ONE of those options, do NOT default to the option that sounds closest or was mentioned first/most recently in the conversation - treat it exactly like unclear input, not a selection. Politely ask them to repeat instead - Hindi: 'माफ कीजिए, क्या आप फिर से बता सकते हैं?' / English: 'Sorry, could you repeat that?' Only move forward once you get a clear, relevant answer to your last question. (Note: a coherent but off-topic remark is covered by rule 3, not this rule.)"
         "\n8. SERVICE MISMATCH - DON'T FORCE-FIT THE CALLER INTO YOUR SCRIPT: If the customer's very first clearly-stated need is for a different kind of business or service than what your company actually offers (e.g. they ask for a doctor's appointment but you are a loan/insurance company, or they ask about a property but you are a clinic), do NOT ignore what they said and funnel them into your own Key Objectives categories anyway. Briefly and politely clarify in one short sentence what your company actually does (using its name, from your role description above), and ask if that's what they meant or if there's something in that area you can help with. If they confirm they wanted something else entirely, politely let them know this may be the wrong number, wish them well in whichever language they've been using, and execute the end_call function - do not keep asking your scripted qualification questions (budget, loan amount, configuration, etc.) about a need they never actually expressed."
         "\n9. NEVER READ SLASHES OR PLACEHOLDERS OUT LOUD: Your welcome message or prompt text may occasionally contain a slash-separated pair meant as shorthand for a human editor (e.g. 'बोल रहा/रही हूँ', 'he/she', 'Mr./Ms.') rather than literal words to speak. If you see a pattern like this, NEVER say both options or the slash itself out loud - silently pick the single grammatically correct form that matches your own voice (for a female-sounding voice, use the feminine form; for a male-sounding voice, use the masculine form) and speak only that, even when an instruction elsewhere says to speak a line 'verbatim' - verbatim means deliver the message naturally, not recite formatting artifacts."
+        "\n10. DO NOT DEFAULT TO ENGLISH ON A BARE FILLER WORD: If your own last turn was in Hindi or Hinglish and the customer's reply is only a short filler/acknowledgment - 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Thanks', 'Theek hai' - this is them confirming they are listening, NOT a request to switch to English. You MUST continue your very next line in Hindi/Hinglish, exactly as if they had said 'haan' instead. Only switch to English once the customer says a real sentence with actual content in English (e.g. a question, a requirement, a statement of fact) - not before."
+        "\n11. A BARE GREETING STILL MEANS 'GO AHEAD' - DON'T RE-ASK YOUR OPENING QUESTION: If your opening line ended with a yes/no question (e.g. 'Do you have a brief moment?') and the customer's reply is only a bare greeting or filler ('Hello', 'Hi', 'Hmm', 'Yes'), treat that as them saying go ahead - they picked up and responded, that IS their answer. Do NOT ask a second, separate confirmation question repeating the same thing you already asked ('Is now a good time?') - that feels repetitive and robotic to a real person. Instead, respond the way you would to a GREETING specifically (see the acknowledgment-matching guidance in NATURAL HUMAN CONVERSATION STYLE above - a bare 'Hello' is not gratitude or agreement, so do NOT say 'Great, thanks!' or similar) and move directly into your next real step (e.g. identity verification, or your first qualifying question) in the SAME turn - do not add an extra standalone turn just to re-ask permission. Only pause to actually ask about their availability again if they say something that genuinely signals they're busy or hesitant (covered by rule 2 above), not for an ordinary greeting or filler."
+        "\n12. A GREETING/ATTENTION SIGNAL MID-CALL IS STILL NOT AN ANSWER: This covers a different moment than rule 11 (which is only about your very first opening question) - this is about a greeting or attention-check phrase ('Hello', 'Hi', 'Hello?', 'Are you there?', 'Can you hear me?', 'One second', or Hindi/Hinglish equivalents like 'Haan bolo', 'Ji boliye') showing up as the reply to ANY later, substantive question you asked. This is clearly understandable speech (so rule 7's 'garbled/unclear input' handling doesn't apply), but it still is NOT an answer to your question - do not treat it as one. Do NOT paraphrase and re-ask the same question again in slightly different words, and do NOT narrate what's happening ('I see you're responding' - that sounds robotic, see the anti-narration rule above). Instead, briefly confirm you're there and restate what you asked in ONE natural sentence, e.g. 'Yes, I'm here! I was asking whether you're a college student, a working professional, or looking to switch careers.' If the customer does this a SECOND time in a row for the same question, change your approach instead of repeating yourself again - check the connection ('Can you hear me clearly?') or explicitly offer to repeat ('Should I repeat that?'), and wait for a real answer before moving forward. Never end up asking essentially the same question a third time in different words - vary your approach each time this happens."
     )
 
     # Collections compliance directive - opt-in only (companies.collections_mode),
@@ -1108,7 +1130,14 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         # the transcriber as speech. Kept short on purpose: genuine early
         # speech (e.g. the customer saying "hello?" right as the greeting
         # starts) must still reach OpenAI so it's transcribed and can barge in.
-        pickup_click_shield_until = time.time() + 0.5
+        # 0.5s previously - confirmed live that was long enough to silently
+        # swallow a whole quick "Hello" said right as the call connects
+        # (the media handler below drops audio outright during this window,
+        # it never even reaches OpenAI's buffer), so no speech_started event
+        # ever fired and the barge-in/response.cancel path never triggered.
+        # 150ms still covers a literal connector click/pop without eating a
+        # real word.
+        pickup_click_shield_until = time.time() + 0.15
 
         # Trigger immediate opening greeting verbatim
         greet_prompt = f"Speak the following opening greeting verbatim right now: \"{welcome_text}\""
@@ -1136,7 +1165,9 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         media_data = data.get("media", {})
                         payload = media_data.get("payload") or data.get("payload")
                         if payload and isinstance(payload, str):
-                            # Only swallow the brief line-pickup click, not the whole greeting
+                            # Only swallow the brief line-pickup click - genuine
+                            # speech, including during the greeting, must reach
+                            # OpenAI so it can be transcribed and barge in.
                             if time.time() < pickup_click_shield_until:
                                 continue
                             if customer_speaking:
@@ -1234,7 +1265,13 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             # Everything after the first sentence accumulates
                             # and goes out as one larger, more natural chunk at
                             # response.output_text.done instead.
-                            if sentences_flushed_this_response == 0:
+                            # Don't early-flush while the call is already closing
+                            # (hangup_triggered) - whether this response should be
+                            # spoken at all depends on whether the customer's reply
+                            # was substantial, which isn't known until .done below.
+                            # Flushing early here would let audio escape before
+                            # that decision is made.
+                            if sentences_flushed_this_response == 0 and not hangup_triggered:
                                 m = re.search(r'^(.*?[.!?।])\s*', text_accum_buffer, re.DOTALL)
                                 if m and len(m.group(1)) >= 6:
                                     sentence = m.group(1)
@@ -1249,6 +1286,25 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             # text was already dropped when the newer response
                             # started above, so there's nothing left to flush.
                             continue
+
+                        if hangup_triggered:
+                            # The call already said goodbye and is counting down
+                            # to hang up. A trivial reply ("Thank you", "Okay")
+                            # must not get a brand new full response/second
+                            # goodbye - but a genuinely substantial reply (3+
+                            # words) is exactly what trigger_auto_hangup's own
+                            # poller treats as cancelling the hangup, so that
+                            # case still deserves a real answer. Same threshold,
+                            # reused here so the two can't disagree.
+                            last_customer = next((e for e in reversed(transcript_parts) if e.startswith("Customer:")), "")
+                            is_substantial = len(last_customer[len("Customer:"):].strip().split()) >= 3
+                            if not is_substantial:
+                                text_accum_buffer = ""
+                                sentences_flushed_this_response = 0
+                                full_response_text = ""
+                                safe_print("[AUTO HANGUP]: Suppressing duplicate closing response - call is already ending and the customer's reply was just a filler.")
+                                continue
+
                         if text_accum_buffer.strip():
                             await sarvam_queue.put(text_accum_buffer.strip())
                         text_accum_buffer = ""
@@ -1286,16 +1342,35 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         await websocket.send_text(json.dumps({"event": "clearAudio"}))
                         customer_speaking = True
                         turn_rms_samples = []
-                        if sarvam_mode_active and sarvam_worker_task is not None:
+                        # Explicit cancel on every barge-in, not just once sarvam_mode_active
+                        # is on - covers the greeting too (still native OpenAI audio at that
+                        # point), instead of relying solely on the session's own
+                        # interrupt_response setting to truncate it server-side. A no-op if
+                        # there's no active response to cancel.
+                        try:
+                            await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                            safe_print("[BARGE-IN]: Interruption detected mid-response - cancelled in-flight OpenAI generation.")
+                        except Exception:
+                            pass
+                        if sarvam_mode_active:
                             # Drop whatever AI speech was mid-flight so it can't
-                            # keep talking over the customer after the barge-in.
-                            sarvam_worker_task.cancel()
-                            while not sarvam_queue.empty():
-                                try:
-                                    sarvam_queue.get_nowait()
-                                except asyncio.QueueEmpty:
-                                    break
-                            sarvam_worker_task = asyncio.create_task(sarvam_tts_worker())
+                            # keep talking over the customer after the barge-in -
+                            # without this, the response kept streaming new
+                            # sentences in the background and each one got flushed
+                            # straight into the freshly-restarted TTS worker below
+                            # (confirmed live: it kept speaking 1-2 more sentences
+                            # after the customer interrupted).
+                            text_accum_buffer = ""
+                            if sarvam_worker_task is not None:
+                                # Drop whatever AI speech was mid-flight so it can't
+                                # keep talking over the customer after the barge-in.
+                                sarvam_worker_task.cancel()
+                                while not sarvam_queue.empty():
+                                    try:
+                                        sarvam_queue.get_nowait()
+                                    except asyncio.QueueEmpty:
+                                        break
+                                sarvam_worker_task = asyncio.create_task(sarvam_tts_worker())
 
                     elif etype == "input_audio_buffer.speech_stopped":
                         last_speech_stopped_time = time.time()

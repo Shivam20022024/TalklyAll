@@ -287,7 +287,7 @@ export default function DashboardPage() {
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                       isActive
                         ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20 scale-[1.02]'
-                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                        : 'border border-border bg-card text-foreground/70 hover:bg-muted hover:text-foreground'
                     }`}
                   >
                     <Icon size={14} />
@@ -329,7 +329,7 @@ export default function DashboardPage() {
                   key={item} 
                   onClick={() => setRange(item)} 
                   className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
-                    range === item ? 'bg-primary text-primary-foreground shadow-md' : 'text-muted-foreground hover:bg-muted-foreground/10'
+                    range === item ? 'bg-primary text-primary-foreground shadow-md' : 'text-foreground/70 hover:bg-card hover:text-foreground'
                   }`}
                 >
                   {item}

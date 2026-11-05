@@ -256,3 +256,232 @@
     transform: translateX(100%);
   }
 }
+
+/* ==========================================================================
+   Marketing landing page tokens and utilities.
+   Scoped by naming, not by selector: these color and font tokens are only
+   used inside frontend/components/landing and frontend/app/(marketing), so
+   they are additive and don't collide with the brand/theme tokens used
+   elsewhere in the app.
+   ========================================================================== */
+
+@theme {
+  --color-brand: #2463eb;
+  --color-brand-dark: #1b4fc4;
+  --color-accent: #7955e8;
+  --color-ink: #111827;
+  --color-body: #4b5563;
+  --color-muted: #667085;
+  --color-line: #e3e9f4;
+  --color-mist: #f6f9ff;
+  --color-haze: #edf2fe;
+
+  --font-display: 'Sora Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-sans-landing: 'Inter Variable', 'Noto Sans Devanagari', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --shadow-card: 0 1px 2px rgb(30 58 138 / 0.04), 0 10px 28px -14px rgb(30 58 138 / 0.14);
+  --shadow-lift: 0 2px 4px rgb(30 58 138 / 0.05), 0 22px 44px -18px rgb(36 99 235 / 0.26);
+  --shadow-frame: 0 2px 6px rgb(30 58 138 / 0.05), 0 44px 90px -36px rgb(36 70 170 / 0.34);
+
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Scoped base styles for the marketing route group only (frontend/app/(marketing)),
+   applied via the .landing-scope wrapper in its layout so the dashboard app's own
+   fonts/colors are untouched. */
+.landing-scope {
+  background: #fff;
+  color: var(--color-body);
+  font-family: var(--font-sans-landing);
+  -webkit-font-smoothing: antialiased;
+}
+.landing-scope h1,
+.landing-scope h2,
+.landing-scope h3 {
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+.landing-scope :focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.landing-scope button,
+.landing-scope a {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.landing-scope button:not(:disabled) {
+  cursor: pointer;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 76rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+@media (min-width: 768px) {
+  .wrap { padding-inline: 2rem; }
+}
+
+.section { padding-block: 4.5rem; }
+@media (min-width: 1024px) {
+  .section { padding-block: 6.5rem; }
+}
+
+.h-section {
+  font-size: clamp(1.75rem, 1.35rem + 1.7vw, 2.625rem);
+  font-weight: 600;
+  letter-spacing: -0.028em;
+  line-height: 1.15;
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+/* Buttons: 12px radius. Cards: 20px. Inputs: 12px. Status labels: full pill. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.875rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.25s, transform 0.2s var(--ease-out-soft);
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(0.98); }
+.btn svg.btn-arrow { transition: transform 0.25s var(--ease-out-soft); }
+.btn:hover svg.btn-arrow { transform: translateX(3px); }
+.btn-primary {
+  background: var(--color-brand);
+  color: #fff;
+  box-shadow: 0 1px 2px rgb(27 79 196 / 0.3), 0 10px 22px -10px rgb(36 99 235 / 0.65);
+}
+.btn-primary:hover { background: var(--color-brand-dark); }
+.btn-secondary {
+  background: #fff;
+  border: 1px solid #d3dceb;
+  color: var(--color-ink);
+}
+.btn-secondary:hover { border-color: #aebdd6; box-shadow: var(--shadow-card); }
+.btn-sm { min-height: 2.5rem; padding: 0.4375rem 1rem; font-size: 0.875rem; border-radius: 10px; }
+
+.card {
+  background: #fff;
+  border: 1px solid var(--color-line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.tile-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 12px;
+  color: var(--color-brand);
+  background: linear-gradient(140deg, #e6eeff, #efe9ff);
+}
+
+/* Cursor-following border highlight. The position comes from useSpotlight. */
+.spotlight { position: relative; }
+.spotlight::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 0%), var(--color-brand), var(--color-accent) 45%, transparent 75%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.spotlight:hover::before { opacity: 1; }
+
+.lift { transition: transform 0.35s var(--ease-out-soft), box-shadow 0.35s; }
+.lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-lift); }
+
+/* Voice waveform. Bar height is fixed, and only transform animates. */
+.wave { display: flex; align-items: center; justify-content: center; gap: var(--wave-gap, 3px); height: 100%; }
+.wave > span {
+  flex: none;
+  width: var(--wave-bar, 3px);
+  height: calc(var(--h) * 100%);
+  border-radius: 99px;
+  background: currentColor;
+  transform-origin: center;
+  animation: wave 1.15s ease-in-out infinite alternate;
+  animation-delay: var(--d);
+}
+.wave[data-playing='false'] > span { animation-play-state: paused; }
+.wave[data-still='true'] > span { animation: none; transform: scaleY(0.72); }
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+.float { animation: float 6s ease-in-out infinite; }
+.float-sm { animation: float-sm 5s ease-in-out infinite; }
+
+.field {
+  width: 100%;
+  min-height: 2.875rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #c6d1e3;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--color-ink);
+  font-size: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.field:hover { border-color: #9fb0cc; }
+.field:focus-visible { outline: none; border-color: var(--color-brand); box-shadow: 0 0 0 3px rgb(36 99 235 / 0.18); }
+.field[aria-invalid='true'] { border-color: #c2341d; }
+.field::placeholder { color: var(--color-muted); }
+
+.skeleton { background: var(--color-haze); border-radius: 10px; animation: pulse-soft 1.6s ease-in-out infinite; }
+
+@keyframes wave { from { transform: scaleY(0.32); } to { transform: scaleY(1); } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes float-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes drift-a { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(-7%, 6%, 0) scale(1.08); } }
+@keyframes drift-b { 0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); } 50% { transform: translate3d(8%, -6%, 0) scale(0.96); } }
+@keyframes pulse-soft { 50% { opacity: 0.55; } }
+
+.blob-a { animation: drift-a 19s ease-in-out infinite; }
+.blob-b { animation: drift-b 23s ease-in-out infinite; }
+
+/* Phones: keep the waveform and float, drop the large ambient drift. */
+@media (pointer: coarse), (max-width: 767px) {
+  .blob-a, .blob-b { animation: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob-a, .blob-b, .float, .float-sm, .skeleton { animation: none; }
+  .wave > span { animation: none; transform: scaleY(0.72); }
+  .btn, .lift, .btn svg.btn-arrow { transition: none; }
+  .btn:hover, .lift:hover { transform: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .nav-glass { background: #fff !important; backdrop-filter: none !important; }
+}
+
+/* Marketing in-page anchors (Navbar links like #integrations) land below the
+   fixed nav. Harmless globally since the dashboard app has no hash anchors. */
+html {
+  scroll-padding-top: 4.25rem;
+}

@@ -1,167 +1,124 @@
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Sun, Moon } from 'lucide-react';
-import { useTheme } from 'next-themes';
-import Image from 'next/image';
+import { AnimatePresence, motion, useMotionValueEvent, useScroll } from 'framer-motion'
+import { Menu, X } from 'lucide-react'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { loginUrl, navLinks } from '@/lib/landing-content'
+import { getLenis } from '@/lib/lenis'
+import Logo from './Logo'
+import SmartLink from './SmartLink'
 
-export const Navbar = () => {
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+export default function Navbar() {
+  const { scrollY } = useScroll()
+  const [scrolled, setScrolled] = useState(false)
+  const [open, setOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  useMotionValueEvent(scrollY, 'change', (y) => setScrolled(y > 12))
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setOpen(false), [pathname, searchParams])
 
   useEffect(() => {
-    setMounted(true);
-    const handleScroll = () => setIsScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const navLinks = [
-    { name: 'Features', href: '#features' },
-    { name: 'How it works', href: '#how-it-works' },
-    { name: 'Pricing', href: '/pricing' },
-  ];
-
-  const handleScrollTo = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    if (href.startsWith('#')) {
-      e.preventDefault();
-      const targetId = href.substring(1);
-      const elem = document.getElementById(targetId);
-      if (elem) {
-        elem.scrollIntoView({ behavior: 'smooth' });
-        setMobileMenuOpen(false);
+    if (!open) return undefined
+    const lenis = getLenis()
+    lenis?.stop()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        toggleRef.current?.focus()
       }
     }
-  };
+    window.addEventListener('keydown', onKey)
+    return () => {
+      lenis?.start()
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
   return (
-    <>
-      <motion.nav
-        initial={{ y: -100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className={`fixed left-0 right-0 z-[100] transition-all duration-300 mx-auto max-w-5xl px-4 ${
-          isScrolled ? 'top-4' : 'top-6'
-        }`}
-      >
-        <div className={`flex items-center justify-between h-16 px-4 rounded-2xl transition-all duration-300 ${
-          isScrolled
-            ? 'bg-white/90 dark:bg-bg-dark-card/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 shadow-lg shadow-gray-300/40 dark:shadow-theme-900/20'
-            : 'bg-white/70 dark:bg-bg-dark-card/60 backdrop-blur-md border border-gray-200/60 dark:border-white/5 shadow-sm'
-        }`}>
-          {/* Logo */}
-          <div className="flex-shrink-0 flex items-center gap-3 cursor-pointer" onClick={() => window.location.href = '/'}>
-          
-              <Image
-                src="/logo-white.png"
-                alt="Logo"
-                width={550}
-                height={453}
-                className="h-[42px] w-auto flex-shrink-0 object-contain hidden dark:block"
-                priority
-                unoptimized
-              />
-              <Image
-                src="/logo-color.png"
-                alt="Logo"
-                width={550}
-                height={453}
-                className="h-[42px] w-auto flex-shrink-0 object-contain block dark:hidden"
-                priority
-                unoptimized
-              />
-            <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-              Talkly<span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-grad-1 to-brand-grad-2 dark:from-brand-primary dark:to-brand-grad-3">AI</span>
-            </span>
-          </div>
+    <header
+      className={`nav-glass sticky top-0 z-40 border-b transition-[background-color,border-color,box-shadow] duration-300 ${
+        open
+          ? 'border-line bg-white' // No backdrop blur here: it would trap the fixed menu inside the header.
+          : scrolled
+            ? 'border-line bg-white/90 shadow-[0_8px_24px_-18px_rgb(30_58_138/0.35)] backdrop-blur-md'
+            : 'border-transparent bg-white/0'
+      }`}
+    >
+      <nav aria-label="Main" className="wrap flex h-[4.25rem] items-center justify-between gap-4">
+        <Logo />
 
-          {/* Nav Links – Desktop */}
-          <div className="hidden md:flex items-center justify-center flex-1 mx-8 gap-8">
-            {navLinks.map((link) => (
-              <a
-                key={link.name}
-                href={link.href}
-                onClick={(e) => handleScrollTo(e, link.href)}
-                className="text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-brand-muted dark:hover:text-brand-primary transition-colors"
+        <ul className="hidden items-center gap-1 lg:flex">
+          {navLinks.map((link) => (
+            <li key={link.label}>
+              <SmartLink
+                to={link.to}
+                className="rounded-lg px-3.5 py-2 text-[0.9375rem] font-medium text-ink/80 transition-colors hover:bg-haze hover:text-ink"
               >
-                {link.name}
-              </a>
-            ))}
-          </div>
+                {link.label}
+              </SmartLink>
+            </li>
+          ))}
+        </ul>
 
-          {/* Actions – Desktop */}
-          <div className="hidden md:flex flex-shrink-0 items-center gap-4">
-            {mounted && (
-              <button
-                onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-                className="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-muted dark:hover:text-brand-primary hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
-                aria-label="Toggle theme"
-              >
-                {resolvedTheme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-            )}
-            <button onClick={() => window.location.href = "/login"} className="text-gray-600 dark:text-gray-300 hover:text-foreground text-sm font-semibold px-2 py-1.5 transition-colors">
-              Login
-            </button>
-            <button onClick={() => window.location.href = "/register"} className="bg-gradient-to-r from-brand-primary to-brand-muted text-white dark:text-bg-dark-card px-5 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-theme-500/20 transition-all hover:opacity-90 hover:scale-105 active:scale-95">
-              Free Trial
-            </button>
-          </div>
-
-          {/* Actions – Mobile */}
-          <div className="md:hidden flex items-center gap-2">
-            {mounted && (
-              <button
-                onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-                className="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-muted dark:hover:text-brand-primary hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors"
-              >
-                {resolvedTheme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-            )}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-2"
-              aria-label="Toggle menu"
-            >
-              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-          </div>
-        </div>
-      </motion.nav>
-
-      {/* Mobile Menu */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-x-4 top-28 z-[90] md:hidden rounded-2xl bg-white/95 dark:bg-bg-dark-card/95 backdrop-blur-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden"
+        <div className="flex items-center gap-2">
+          <SmartLink to={loginUrl} className="btn btn-secondary btn-sm hidden! lg:inline-flex!">
+            Login
+          </SmartLink>
+          <Link href="/demo" className="btn btn-primary btn-sm">
+            Get a Demo
+          </Link>
+          <button
+            ref={toggleRef}
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            className="grid h-10 w-10 place-items-center rounded-[10px] border border-[#d3dceb] bg-white text-ink lg:hidden"
           >
-            <div className="px-4 pt-4 pb-6 space-y-2">
+            {open ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
+          </button>
+        </div>
+      </nav>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            id="mobile-menu"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-x-0 bottom-0 top-[4.25rem] overflow-y-auto overscroll-contain border-t border-line bg-white lg:hidden"
+            data-lenis-prevent
+          >
+            <ul className="wrap flex flex-col gap-1 py-4">
               {navLinks.map((link) => (
-                <a
-                  key={link.name}
-                  href={link.href}
-                  onClick={(e) => handleScrollTo(e, link.href)}
-                  className="block px-4 py-3 rounded-xl text-base font-semibold text-gray-600 dark:text-gray-300 hover:text-brand-muted dark:hover:text-brand-primary hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-                >
-                  {link.name}
-                </a>
+                <li key={link.label}>
+                  <SmartLink
+                    to={link.to}
+                    onClick={() => setOpen(false)}
+                    className="block rounded-xl px-3 py-3.5 text-lg font-medium text-ink hover:bg-haze"
+                  >
+                    {link.label}
+                  </SmartLink>
+                </li>
               ))}
-              <div className="pt-4 px-4">
-                <button onClick={() => window.location.href = "/login"} className="w-full bg-gradient-to-r from-brand-primary to-brand-muted text-white dark:text-bg-dark-card px-6 py-3.5 rounded-xl text-sm font-bold shadow-md shadow-theme-500/20 transition-all hover:opacity-90 flex justify-center items-center">
+              <li className="mt-4 grid gap-3 border-t border-line pt-6">
+                <SmartLink to={loginUrl} onClick={() => setOpen(false)} className="btn btn-secondary">
                   Login
-                </button>
-              </div>
-            </div>
+                </SmartLink>
+              </li>
+            </ul>
           </motion.div>
         )}
       </AnimatePresence>
-    </>
-  );
-};
+    </header>
+  )
+}

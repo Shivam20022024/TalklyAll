@@ -381,6 +381,7 @@ export default function SettingsPage() {
                   <option value="edtech">EdTech, Academies & Coaching</option>
                   <option value="bfsi">BFSI (Loans & Insurance Advisory)</option>
                   <option value="real_estate">Real Estate & Developers</option>
+                  <option value="collections">Collections (Loan & EMI Recovery)</option>
                 </select>
                 <p className="mt-1 text-[11px] text-muted-foreground">Shapes AI persona, objection handling, and prompt recommendations.</p>
               </div>

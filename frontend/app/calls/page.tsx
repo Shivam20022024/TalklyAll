@@ -128,12 +128,12 @@ export default function CallsPage() {
               <option value="Not Interested">Not Interested (Cold)</option>
               <option value="Completed">Completed</option>
             </select>
-            <button onClick={handleDeleteSelected} disabled={selectedCalls.length === 0} className={`flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-semibold transition-colors ${selectedCalls.length > 0 ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90' : 'bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-50'}`}><Trash2 size={15} />Delete Selected</button>
+            <button onClick={handleDeleteSelected} disabled={selectedCalls.length === 0} className={`flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-semibold transition-colors ${selectedCalls.length > 0 ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90' : 'border border-border bg-card text-foreground/70 disabled:opacity-60'}`}><Trash2 size={15} />Delete Selected</button>
             <button
               onClick={() => handleDownload('outbound')}
               disabled={exporting}
               title="Export outbound calls to Excel"
-              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50"
             >
               <Download size={14} />Outbound (.xlsx)
             </button>
@@ -141,7 +141,7 @@ export default function CallsPage() {
               onClick={() => handleDownload('inbound')}
               disabled={exporting}
               title="Export inbound calls to Excel"
-              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50"
             >
               <Download size={14} />Inbound (.xlsx)
             </button>
@@ -257,7 +257,7 @@ export default function CallsPage() {
             <div className="mt-6 flex justify-center pb-4">
               <button 
                 onClick={() => setPage(p => p + 1)} 
-                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted"
+                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
               >
                 Load More
               </button>
