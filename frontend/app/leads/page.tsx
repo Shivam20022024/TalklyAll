@@ -22,6 +22,7 @@ function LeadsContent() {
   const [showQuickCallModal, setShowQuickCallModal] = useState(false)
   const [quickCallNumber, setQuickCallNumber] = useState('')
   const [quickCallName, setQuickCallName] = useState('')
+  const [quickCallLanguage, setQuickCallLanguage] = useState('English')
   const [calling, setCalling] = useState(false)
   const [selectedLead, setSelectedLead] = useState<any>(null)
   const [selectedCall, setSelectedCall] = useState<any>(null)
@@ -145,7 +146,7 @@ function LeadsContent() {
           phone_number: quickCallNumber,
           customer_name: quickCallName.trim(),
           lead_id: 'quick-call-' + Date.now(),
-          campaign_language: 'Hinglish',
+          campaign_language: quickCallLanguage,
           industry: activeIndustry === 'all' ? (user?.industry || 'general_sales') : activeIndustry
         })
       })
@@ -430,8 +431,8 @@ function LeadsContent() {
                     className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
                   />
                 </th>
-                <th className="pb-3 text-left font-semibold">Lead</th>
-                <th className="pb-3 text-left font-semibold">Phone</th>
+                <th className="pb-3 pr-4 text-left font-semibold">Lead</th>
+                <th className="pb-3 pr-4 text-left font-semibold">Phone</th>
                 <th className="pb-3 text-left font-semibold">Offering / Details</th>
                 <th className="pb-3 text-left font-semibold">Outcome</th>
                 <th className="pb-3 text-left font-semibold">Status</th>
@@ -458,8 +459,8 @@ function LeadsContent() {
                         className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
                       />
                     </td>
-                    <td className="py-4 align-top font-semibold text-sm">{lead.name}</td>
-                    <td className="py-4 align-top text-xs font-medium text-muted-foreground">{lead.phone}</td>
+                    <td className="py-4 pr-4 align-top font-semibold text-sm">{lead.name}</td>
+                    <td className="py-4 pr-4 align-top text-xs font-medium text-muted-foreground">{lead.phone}</td>
                     <td className="py-4 align-top text-xs">
                       <div className="flex flex-col">
                         <span className="font-semibold text-foreground">{lead.offering || lead.property || '-'}</span>
@@ -552,13 +553,25 @@ function LeadsContent() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Phone Number</label>
-                <input 
-                  required 
-                  value={quickCallNumber} 
-                  onChange={(e) => setQuickCallNumber(e.target.value)} 
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" 
-                  placeholder="e.g. +91 9876543210" 
+                <input
+                  required
+                  value={quickCallNumber}
+                  onChange={(e) => setQuickCallNumber(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  placeholder="e.g. +91 9876543210"
                 />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Voice Language</label>
+                <select
+                  value={quickCallLanguage}
+                  onChange={(e) => setQuickCallLanguage(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="English">English</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Hinglish">Hinglish</option>
+                </select>
               </div>
               <button disabled={calling} className="w-full mt-4 flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">
                 {calling ? <Loader2 size={16} className="animate-spin" /> : 'Call Now'}

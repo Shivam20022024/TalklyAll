@@ -592,10 +592,21 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         if company_doc:
             call_industry = company_doc.get("industry", "general_sales")
 
-    # If this is a quick call, insert or update the lead in CRM so it shows on the Leads page
+    # If this is a quick call, insert or update the lead in CRM so it shows on the Leads page.
+    # Reuse an existing lead for this phone number (same company) instead of
+    # minting a new one every time - confirmed live: repeated Quick Calls to
+    # the same number were creating a new duplicate lead row on every click,
+    # since this always upserted under the freshly-generated
+    # quick-call-<timestamp> id rather than checking for an existing lead
+    # first. The call record below still gets its own unique call_id per
+    # attempt - only the lead identity is deduplicated, not call history.
     if lead_id.startswith("quick-call-"):
+        existing_quick_lead = await db.leads.find_one(
+            tenant_filter(current_user, {"phone": phone_number})
+        )
+        quick_lead_id = existing_quick_lead["lead_id"] if existing_quick_lead else lead_id
         await db.leads.update_one(
-            {"lead_id": lead_id, "company_id": current_user["company_id"]},
+            {"lead_id": quick_lead_id, "company_id": current_user["company_id"]},
             {"$set": {
                 "name": customer_name,
                 "phone": phone_number,
@@ -607,7 +618,7 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
                 "lastContact": datetime.utcnow().isoformat(),
             },
             "$setOnInsert": {
-                "lead_id": lead_id,
+                "lead_id": quick_lead_id,
                 "custom_fields": {},
                 "aiScore": 0,
                 "created_at": datetime.utcnow(),
