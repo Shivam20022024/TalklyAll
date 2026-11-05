@@ -641,7 +641,16 @@ def _openai_session_update_payload(system_prompt: str, transcription_lang: str =
                 "prefix_padding_ms": 500,
                 "silence_duration_ms": 1000,
                 "create_response": True,
-                "interrupt_response": True
+                # False on purpose: the agent's current line must always
+                # finish uninterrupted - confirmed live that the customer's
+                # own backchannel ("Hello") firing speech_started while the
+                # agent was still mid-sentence cut the line short and the
+                # next turn started right on top of it, reading as two
+                # sentences spoken on top of each other. Our own
+                # speech_started handler below now does the equivalent
+                # client-side gating (skips response.cancel/clearAudio
+                # while agent_speaking), so this is belt-and-suspenders.
+                "interrupt_response": False
             }
         }
     }
@@ -1041,6 +1050,12 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     last_speech_stopped_time = None
     customer_speaking = False
     turn_rms_samples = []
+    # True for as long as the agent's current line is still being generated/
+    # spoken. While this is True, a speech_started event is treated as
+    # backchannel noise ("Hello", a cough, a stray word) rather than a real
+    # barge-in - the agent's line always finishes before anything reacts to
+    # customer audio. See the speech_started handler below.
+    agent_speaking = False
 
     # Sarvam voice pilot plumbing - unused entirely when voice_engine == "openai"
     sarvam_session = None
@@ -1200,6 +1215,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
             }
         }
         await openai_ws.send(json.dumps(trigger_greeting))
+        agent_speaking = True
 
         async def plivo_to_openai():
             nonlocal stream_id, turn_rms_samples
@@ -1247,7 +1263,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                 logger.error(f"Error in plivo_to_openai: {e}")
 
         async def openai_to_plivo():
-            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task, greeting_audio_logged, sarvam_mode_active
+            nonlocal stream_id, last_speech_stopped_time, customer_speaking, turn_rms_samples, sarvam_worker_task, greeting_audio_logged, sarvam_mode_active, agent_speaking
             text_accum_buffer = ""
             full_response_text = ""
             current_response_id = None
@@ -1267,6 +1283,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             continue
                         delta = event.get("delta")
                         if delta:
+                            agent_speaking = True
                             if not greeting_audio_logged:
                                 greeting_audio_logged = True
                                 greet_lat_ms = int((time.time() - stream_connect_time) * 1000)
@@ -1306,6 +1323,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             full_response_text = ""
                             sentences_flushed_this_response = 0
                         if delta:
+                            agent_speaking = True
                             text_accum_buffer += delta
                             full_response_text += delta
                             # Only flush the FIRST sentence early, for a fast
@@ -1361,6 +1379,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             await sarvam_queue.put(text_accum_buffer.strip())
                         text_accum_buffer = ""
                         sentences_flushed_this_response = 0
+                        agent_speaking = False
                         text = (event.get("text") or full_response_text).strip()
                         full_response_text = ""
                         if text:
@@ -1390,15 +1409,25 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                     elif etype == "input_audio_buffer.speech_started":
                         if time.time() < pickup_click_shield_until:
                             continue
-                        safe_print("[VAD]: Customer started speaking! Clearing audio buffer on Plivo...")
-                        await websocket.send_text(json.dumps({"event": "clearAudio"}))
                         customer_speaking = True
                         turn_rms_samples = []
-                        # Explicit cancel on every barge-in, not just once sarvam_mode_active
-                        # is on - covers the greeting too (still native OpenAI audio at that
-                        # point), instead of relying solely on the session's own
-                        # interrupt_response setting to truncate it server-side. A no-op if
-                        # there's no active response to cancel.
+                        if agent_speaking:
+                            # The agent's current line is still being generated/
+                            # spoken - treat this as backchannel noise ("Hello",
+                            # a cough, a stray word), not a real barge-in.
+                            # Confirmed live: cancelling/clearing here cut the
+                            # agent's line short and the next turn started
+                            # immediately after, so the two lines played with no
+                            # gap at all ("at the same time"). Neglect it instead
+                            # - let the current line finish, then listen normally.
+                            safe_print("[BARGE-IN SUPPRESSED]: Customer spoke while agent was still mid-line - ignoring, letting the current line finish.")
+                            continue
+                        safe_print("[VAD]: Customer started speaking! Clearing audio buffer on Plivo...")
+                        await websocket.send_text(json.dumps({"event": "clearAudio"}))
+                        # Explicit cancel on every real barge-in (agent not already
+                        # done speaking), instead of relying solely on the session's
+                        # own interrupt_response setting to truncate it server-side.
+                        # A no-op if there's no active response to cancel.
                         try:
                             await openai_ws.send(json.dumps({"type": "response.cancel"}))
                             safe_print("[BARGE-IN]: Interruption detected mid-response - cancelled in-flight OpenAI generation.")
@@ -1462,6 +1491,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                                 safe_print(f"[SILENCE GATE ERROR]: Failed to send corrective response: {e}")
 
                     elif etype in ("response.output_audio_transcript.done", "response.audio_transcript.done", "response.done") and not sarvam_mode_active:
+                        agent_speaking = False
                         text = event.get("transcript", "").strip()
                         if text:
                             safe_print(f"[AI SPEECH]: {text}")
