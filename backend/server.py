@@ -593,13 +593,19 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
             call_industry = company_doc.get("industry", "general_sales")
 
     # If this is a quick call, insert or update the lead in CRM so it shows on the Leads page.
-    # Reuse an existing lead for this phone number (same company) instead of
-    # minting a new one every time - confirmed live: repeated Quick Calls to
-    # the same number were creating a new duplicate lead row on every click,
-    # since this always upserted under the freshly-generated
+    # Reuse an existing lead for this phone number AND name (same company)
+    # instead of minting a new one every time - confirmed live: repeated
+    # Quick Calls to the same number were creating a new duplicate lead row
+    # on every click, since this always upserted under the freshly-generated
     # quick-call-<timestamp> id rather than checking for an existing lead
-    # first. The call record below still gets its own unique call_id per
-    # attempt - only the lead identity is deduplicated, not call history.
+    # first. Matching on name too (not phone alone) matters in practice: a
+    # phone number can legitimately be called under more than one name
+    # (e.g. a shared/reused test or office line) and phone-only matching
+    # silently merged those into one lead, overwriting whoever was called
+    # most recently - confirmed live, a customer's own call results
+    # appeared to vanish from the Leads page once a different name was
+    # called on the same number. The call record below still gets its own
+    # unique call_id per attempt - only the lead identity is deduplicated.
     # Resolved lead_id for this call - equal to the call's own id unless the
     # quick-call branch below reuses an existing lead under a different id.
     # Stored on the call record so finalize_plivo_call can find the right
@@ -610,7 +616,7 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
     resolved_lead_id = lead_id
     if lead_id.startswith("quick-call-"):
         existing_quick_lead = await db.leads.find_one(
-            tenant_filter(current_user, {"phone": phone_number})
+            tenant_filter(current_user, {"phone": phone_number, "name": customer_name})
         )
         quick_lead_id = existing_quick_lead["lead_id"] if existing_quick_lead else lead_id
         resolved_lead_id = quick_lead_id
