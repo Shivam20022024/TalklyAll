@@ -194,7 +194,14 @@ async def list_leads(campaign_id: str = None, range: str = None, industry: str =
                 {"lastContact": {"$gte": start_date.isoformat()}}
             ]
 
-    leads = await db.leads.find(query).sort("created_at", -1).to_list(length=200)
+    # Sort by most recent activity (lastContact), not just when the lead
+    # record was first created - confirmed live: a lead that's called again
+    # weeks after it was first added (e.g. a reused Quick Call match) kept
+    # sorting by its original creation date, burying it far below leads
+    # created more recently but never actually contacted since. Leads with
+    # no lastContact yet (nulls) sort last automatically, falling back to
+    # created_at order among themselves.
+    leads = await db.leads.find(query).sort([("lastContact", -1), ("created_at", -1)]).to_list(length=200)
 
     for l in leads:
         l["_id"] = None
