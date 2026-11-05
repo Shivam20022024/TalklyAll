@@ -50,9 +50,17 @@ class IntelligenceService:
         # 1-4. Concurrently fetch all top-level metrics
         total_leads_task = db.leads.count_documents(base_query_leads)
         calls_made_task = db.calls.count_documents(base_query_calls)
-        connected_calls_task = db.calls.count_documents({
-            **base_query_calls,
-            "status": {"$in": ["Completed", "completed", "Analyzed"]}
+        # Derived from db.leads, not db.calls, and specifically a superset of
+        # every status interested_leads/qualified_leads/converted_leads check
+        # below - a lead can have more than one call attempt, so counting
+        # "connected" from call records separately could (and did, confirmed
+        # live on the dashboard) undercount relative to lead-status-based
+        # funnel stages below it, breaking the implied funnel ordering
+        # (Inquiries >= Connected >= Pre-Screened >= Urgent) the dashboard
+        # cards visually present.
+        connected_calls_task = db.leads.count_documents({
+            **base_query_leads,
+            "status": {"$nin": ["New", "No Answer"]}
         })
         qualified_leads_task = db.leads.count_documents({
             **base_query_leads, 

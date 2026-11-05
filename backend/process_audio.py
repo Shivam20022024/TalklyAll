@@ -109,6 +109,7 @@ CRITICAL SCORING RULES:
 The JSON schema must be:
 {
   "summary": "Professional summary of the call",
+  "outcome": "The concrete RESULT of the call in 4-8 words, stated as a fact, not a description - e.g. 'Appointment booked for Monday 5 PM', 'Not interested', 'Callback requested for Tuesday', 'Site visit booked for Sunday 11 AM', 'Payment promised - Rs 7500 by 8 Nov'. Never start with 'The call was...' or similar narration - state only the outcome itself.",
   "sentiment": "positive|neutral|negative",
   "sentiment_confidence": 0.0-1.0,
   "sentiment_reason": "Brief explanation",

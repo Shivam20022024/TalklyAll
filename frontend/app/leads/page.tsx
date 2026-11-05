@@ -430,12 +430,12 @@ function LeadsContent() {
                     className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
                   />
                 </th>
-                <th className="pb-3 font-semibold">Lead</th>
-                <th className="pb-3 font-semibold">Phone</th>
-                <th className="pb-3 font-semibold">Offering / Details</th>
-                <th className="pb-3 font-semibold">Location</th>
-                <th className="pb-3 font-semibold">Status</th>
-                <th className="pb-3 font-semibold">AI Score</th>
+                <th className="pb-3 text-left font-semibold">Lead</th>
+                <th className="pb-3 text-left font-semibold">Phone</th>
+                <th className="pb-3 text-left font-semibold">Offering / Details</th>
+                <th className="pb-3 text-left font-semibold">Outcome</th>
+                <th className="pb-3 text-left font-semibold">Status</th>
+                <th className="pb-3 pl-6 text-left font-semibold">AI Score</th>
                 <th className="pb-3 text-right font-semibold">Actions</th>
               </tr>
             </thead>
@@ -447,9 +447,9 @@ function LeadsContent() {
               ) : (
                 visibleLeads.map((lead, idx) => (
                   <tr key={`${lead._id || lead.lead_id || 'lead'}-${idx}`} className="border-b border-border/70 last:border-0 hover:bg-muted/30">
-                    <td className="py-4 pl-4">
-                      <input 
-                        type="checkbox" 
+                    <td className="py-4 pl-4 align-top">
+                      <input
+                        type="checkbox"
                         checked={selectedLeads.includes(lead.lead_id)}
                         onChange={(e) => {
                           if (e.target.checked) setSelectedLeads([...selectedLeads, lead.lead_id])
@@ -458,9 +458,9 @@ function LeadsContent() {
                         className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
                       />
                     </td>
-                    <td className="py-4 font-semibold text-sm">{lead.name}</td>
-                    <td className="py-4 text-xs font-medium text-muted-foreground">{lead.phone}</td>
-                    <td className="py-4 text-xs">
+                    <td className="py-4 align-top font-semibold text-sm">{lead.name}</td>
+                    <td className="py-4 align-top text-xs font-medium text-muted-foreground">{lead.phone}</td>
+                    <td className="py-4 align-top text-xs">
                       <div className="flex flex-col">
                         <span className="font-semibold text-foreground">{lead.offering || lead.property || '-'}</span>
                         {lead.industry && (
@@ -470,16 +470,20 @@ function LeadsContent() {
                         )}
                       </div>
                     </td>
-                    <td className="py-4 text-xs">{lead.location || '-'}</td>
-                    <td className="py-4">
+                    <td className="py-4 pr-4 align-top text-xs text-muted-foreground max-w-[260px]">
+                      <span className="line-clamp-2" title={lead.outcome_summary || ''}>
+                        {lead.outcome_summary || lead.status || '-'}
+                      </span>
+                    </td>
+                    <td className="py-4 align-top">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700`}>
                         {lead.status}
                       </span>
                     </td>
-                    <td className="py-4">
+                    <td className="py-4 pl-6 align-top">
                       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">{lead.aiScore || 0}</span>
                     </td>
-                    <td className="py-4 text-right">
+                    <td className="py-4 align-top text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => handleCall(lead)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
                           <Phone size={14} />

@@ -182,6 +182,18 @@ class CRMService:
             if reqs.get("budget"):
                 update_data["budget"] = reqs.get("budget")
 
+        # A short, human-readable outcome ("Appointment booked for Monday 5
+        # PM") for the Leads table - same root cause as promise_to_pay/
+        # identity_verified below: the full analysis dict only ever gets
+        # written to db.calls, never db.leads, so without copying this over
+        # explicitly the Leads page has nothing but the generic status to
+        # show per lead. Prefers the dedicated short `outcome` field over
+        # the longer narrative `summary` - the table needs a 4-8 word
+        # result, not a full sentence describing the call.
+        outcome_text = analysis_result.get("outcome") or analysis_result.get("summary")
+        if outcome_text:
+            update_data["outcome_summary"] = outcome_text
+
         # Collections-specific fields: the full analysis dict only ever gets
         # written to db.calls, never db.leads, so without copying these two
         # over explicitly the collections reconciliation/dashboard metrics

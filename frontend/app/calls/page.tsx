@@ -165,12 +165,12 @@ export default function CallsPage() {
                       className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
                     />
                   </th>
-                  <th className="pb-3 px-2 font-semibold w-[24%]">Lead</th>
-                  <th className="pb-3 px-2 font-semibold w-[17%]">Phone</th>
+                  <th className="pb-3 px-2 text-left font-semibold w-[24%]">Lead</th>
+                  <th className="pb-3 px-2 text-left font-semibold w-[17%]">Phone</th>
                   <th className="pb-3 px-2 font-semibold text-center w-[11%]">Language</th>
                   <th className="pb-3 px-2 font-semibold text-center w-[11%]">Duration</th>
-                  <th className="pb-3 px-2 font-semibold w-[13%]">Status</th>
-                  <th className="pb-3 px-2 font-semibold w-[17%]">Date</th>
+                  <th className="pb-3 px-2 text-left font-semibold w-[13%]">Status</th>
+                  <th className="pb-3 px-2 text-left font-semibold w-[17%]">Date</th>
                   <th className="pb-3 pr-4 text-right font-semibold w-[7%]">Actions</th>
                 </tr>
               </thead>
