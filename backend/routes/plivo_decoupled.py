@@ -48,10 +48,37 @@ GOODBYE_KEYWORDS = [
     "take care", "बात करने के लिए धन्यवाद"
 ]
 
-# Matches the first sentence (English/Hindi terminators) at the start of a
-# growing streamed-text buffer, so it can be flushed to TTS the moment it
-# completes instead of waiting for the whole (possibly multi-sentence) reply.
-_SENTENCE_END_RE = re.compile(r"^(.*?[.!?।])\s*")
+# Matches the first sentence OR comma-terminated clause (English/Hindi
+# terminators) at the start of a growing streamed-text buffer, so it can be
+# flushed to TTS the moment it completes instead of waiting for the whole
+# (possibly multi-sentence) reply. Comma included on purpose - Bakbak's TTS
+# call is a single blocking HTTP round trip with no streaming (see
+# bakbak_tts.py), so its synthesis time scales with how much text it's
+# given; flushing at the first comma instead of only the first full stop
+# gives it a short acknowledgment clause to synthesize first (see
+# DECOUPLED_FIRST_WORD_DIRECTIVE below) instead of a whole sentence,
+# cutting the dead air before the agent's first word - confirmed live as a
+# 2-3s gap before this change.
+_SENTENCE_END_RE = re.compile(r"^(.*?[,.!?।])\s*")
+
+# Decoupled-only addition, not part of the shared conversation_rules used by
+# both pipelines - the OpenAI Realtime pipeline has no equivalent
+# non-streaming-TTS bottleneck, so this instruction has nothing to fix
+# there. Paired with the comma-inclusive _SENTENCE_END_RE above: this gives
+# Bakbak a short, complete clause to synthesize first instead of a full
+# sentence, so the caller hears something within roughly the time Bakbak
+# takes to synthesize 2-4 words, not an entire reply.
+DECOUPLED_FIRST_WORD_DIRECTIVE = (
+    "\n\nRESPONSE DELIVERY (read this - it affects how fast the caller hears you): "
+    "Begin every reply with a short, natural 1-4 word acknowledgment or filler clause "
+    "ending in a comma - e.g. 'ठीक है,', 'समझ गया,', 'अच्छा,', 'Got it,', 'Sure,', "
+    "'I see,' - matching whichever language you're already using, before continuing "
+    "with the rest of your actual response after the comma. This is not optional "
+    "styling - it is a real technical requirement of this call's voice pipeline, "
+    "which starts synthesizing speech from the text up to your first comma before "
+    "your full sentence is even finished. Do not open with a long clause before the "
+    "first comma, and do not skip the leading comma-terminated opener."
+)
 
 logger = logging.getLogger("talkly-plivo-decoupled")
 
@@ -118,7 +145,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
         return
 
     transcript_parts: list = []
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = [{"role": "system", "content": system_prompt + DECOUPLED_FIRST_WORD_DIRECTIVE}]
 
     tts_session = BakbakTTSSession(BAKBAK_API_KEY, bakbak_voice_id, bakbak_language, bakbak_model)
     stt_session = SarvamSTTSession(SARVAM_API_KEY, stt_language_code)
