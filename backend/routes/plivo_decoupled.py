@@ -134,7 +134,21 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     bakbak_voice_id = ctx.get("bakbak_voice_id")
     bakbak_language = ctx.get("bakbak_language")
     bakbak_model = ctx.get("bakbak_model")
-    stt_language_code = "auto"
+    # Pin Sarvam STT to the campaign's actual configured language when it's
+    # one we're confident mapping (same "only pin what we're sure of, auto
+    # otherwise" philosophy as WHISPER_LANGUAGE_CODES in
+    # resolve_call_voice_context). "auto" alone was confirmed live to
+    # mis-detect ambiguous/noisy audio as an unrelated language entirely
+    # (Vietnamese, on an English edtech campaign) - that wrong-language
+    # transcript then became the next "user" message in the chat history,
+    # and gpt-4o-mini naturally kept replying in it since the conversation
+    # context was now actually in that language. Pinning doesn't make STT
+    # infallible, but it removes the failure mode of auto-detect landing on
+    # a language the campaign was never configured for. "en-IN"/"hi-IN"
+    # confirmed valid against the installed sarvamai SDK's own
+    # speech_to_text_realtime_streaming.connect() language_code signature.
+    _sarvam_stt_lang_map = {"en": "en-IN", "hi": "hi-IN"}
+    stt_language_code = _sarvam_stt_lang_map.get(ctx.get("transcription_lang"), "auto")
     hangup_triggered = False
 
     if not (BAKBAK_API_KEY and bakbak_voice_id and OPENAI_CHAT_API_KEY and SARVAM_API_KEY):
