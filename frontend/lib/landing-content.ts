@@ -17,6 +17,7 @@ export const contact = {
 
 export const company = {
   name: 'Novalantis',
+  site: 'https://novalantis.com/',
   privacy: 'https://novalantis.com/privacy-policy/',
   terms: 'https://novalantis.com/terms-of-service/',
   blog: 'https://novalantis.com/resources/blogs/',

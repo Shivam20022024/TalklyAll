@@ -1,6 +1,7 @@
 import { Mail, MapPin, Phone } from 'lucide-react'
 import { company, contact } from '@/lib/landing-content'
 import Logo from './Logo'
+import PoweredByNovalantis from './PoweredByNovalantis'
 import SmartLink from './SmartLink'
 
 const columns = [
@@ -92,6 +93,8 @@ export default function Footer() {
           </ul>
         </div>
       </div>
+
+      <PoweredByNovalantis />
     </footer>
   )
 }

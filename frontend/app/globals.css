@@ -269,6 +269,7 @@
   --color-brand: #2463eb;
   --color-brand-dark: #1b4fc4;
   --color-accent: #7955e8;
+  --color-novalantis: #172554;
   --color-ink: #111827;
   --color-body: #4b5563;
   --color-muted: #667085;
@@ -436,6 +437,131 @@
 .float { animation: float 6s ease-in-out infinite; }
 .float-sm { animation: float-sm 5s ease-in-out infinite; }
 
+/* Powered by Novalantis: the bottom-most strip of the footer. */
+.powered-strip {
+  position: relative;
+  overflow: hidden;
+  padding-block: 2.5rem;
+  border-block: 1px solid var(--color-line);
+  background: linear-gradient(180deg, #fff, #f8fafc);
+  text-align: center;
+}
+@media (min-width: 1024px) {
+  .powered-strip { padding-block: 3rem; }
+}
+.powered-strip-bg {
+  position: absolute;
+  width: min(70vw, 34rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-play-state: paused;
+}
+.powered-strip-bg-a {
+  top: -130%;
+  left: 12%;
+  background: radial-gradient(closest-side, rgb(36 99 235 / 0.07), transparent);
+  animation-name: powered-drift-a;
+  animation-duration: 18s;
+}
+.powered-strip-bg-b {
+  right: 10%;
+  bottom: -140%;
+  background: radial-gradient(closest-side, rgb(121 85 232 / 0.07), transparent);
+  animation-name: powered-drift-b;
+  animation-duration: 23s;
+}
+.powered-strip[data-active='true'] .powered-strip-bg,
+.powered-strip[data-active='true'] .powered-strip-sweep { animation-play-state: running; }
+.powered-strip-inner { position: relative; }
+.powered-strip-label {
+  color: var(--color-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.powered-strip-brand {
+  position: relative;
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 18px;
+  isolation: isolate;
+  vertical-align: top;
+}
+.powered-strip-glow {
+  position: absolute;
+  inset: 0.75rem 1rem;
+  z-index: -2;
+  border-radius: 24px;
+  background: linear-gradient(100deg, var(--color-brand), var(--color-accent));
+  filter: blur(26px);
+}
+/* The sweep passes behind the logo, so the logo itself is never recoloured. */
+.powered-strip-sweep-clip {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  /* Fades the sweep out before it reaches the edges, so no rectangle ever shows. */
+  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side, #000 30%, transparent 100%);
+}
+.powered-strip-sweep {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgb(36 99 235 / 0.1) 40%, rgb(121 85 232 / 0.13) 60%, transparent);
+  animation: powered-sweep 6.5s ease-in-out infinite;
+  animation-play-state: paused;
+}
+.powered-strip-logo {
+  display: block;
+  width: 190px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+@media (min-width: 640px) {
+  .powered-strip-logo { width: 240px; }
+}
+.powered-strip-tagline {
+  margin-top: 0.875rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+/* "A product by Novalantis" under the hero buttons. */
+.novalantis-endorsement {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding-block: 0.25rem;
+  border-radius: 6px;
+  color: var(--color-body);
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+.novalantis-endorsement strong {
+  color: var(--color-novalantis);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: color 0.2s;
+}
+.novalantis-endorsement:hover strong { color: var(--color-brand); }
+
 .field {
   width: 100%;
   min-height: 2.875rem;
@@ -460,6 +586,18 @@
 @keyframes drift-a { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(-7%, 6%, 0) scale(1.08); } }
 @keyframes drift-b { 0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); } 50% { transform: translate3d(8%, -6%, 0) scale(0.96); } }
 @keyframes pulse-soft { 50% { opacity: 0.55; } }
+@keyframes powered-sweep {
+  0% { transform: translateX(-120%) skewX(-16deg); }
+  40%, 100% { transform: translateX(300%) skewX(-16deg); }
+}
+@keyframes powered-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(12%, 8%, 0) scale(1.08); }
+}
+@keyframes powered-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-12%, -8%, 0) scale(0.96); }
+}
 
 .blob-a { animation: drift-a 19s ease-in-out infinite; }
 .blob-b { animation: drift-b 23s ease-in-out infinite; }
@@ -474,6 +612,9 @@
   .wave > span { animation: none; transform: scaleY(0.72); }
   .btn, .lift, .btn svg.btn-arrow { transition: none; }
   .btn:hover, .lift:hover { transform: none; }
+  .powered-strip-bg { animation: none; }
+  .powered-strip-sweep { display: none; }
+  .novalantis-endorsement strong { transition: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {

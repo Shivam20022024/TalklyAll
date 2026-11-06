@@ -1,0 +1,201 @@
+.talkly-preloader {
+  --intro-blue: #2463eb;
+  --intro-purple: #7955e8;
+  --intro-ink: #111827;
+  --intro-navy: #172554;
+
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  background: #fff;
+  /* The soft edge keeps the curtain from looking like a hard cut as it lifts. */
+  box-shadow: 0 24px 60px -12px rgb(36 70 170 / 0.22);
+  will-change: transform;
+}
+
+/* Keeps the page's scrollbar width so the layout does not move, but paints it invisible. */
+html.talkly-intro-active {
+  scrollbar-color: transparent transparent;
+}
+
+.talkly-preloader-glow {
+  position: absolute;
+  width: min(90vw, 44rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.talkly-preloader-glow-a {
+  top: -18%;
+  right: -12%;
+  background: radial-gradient(closest-side, rgb(36 99 235 / 0.11), transparent);
+  animation: talkly-intro-drift-a 9s ease-in-out infinite;
+}
+.talkly-preloader-glow-b {
+  bottom: -22%;
+  left: -12%;
+  background: radial-gradient(closest-side, rgb(121 85 232 / 0.1), transparent);
+  animation: talkly-intro-drift-b 11s ease-in-out infinite;
+}
+
+.talkly-preloader-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  padding: 1.5rem 1.25rem max(1.75rem, env(safe-area-inset-bottom));
+}
+
+.talkly-preloader-center {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.talkly-preloader-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.talkly-preloader-mark {
+  width: clamp(2.25rem, 1.8rem + 2vw, 3.25rem);
+  height: clamp(2.25rem, 1.8rem + 2vw, 3.25rem);
+}
+.talkly-preloader-name {
+  color: var(--intro-ink);
+  font-family: 'Sora Variable', 'Inter Variable', system-ui, sans-serif;
+  font-size: clamp(2.25rem, 1.75rem + 2.4vw, 3.5rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+/* Waveform: only transform animates. Each bar has its own height, delay and speed. */
+.talkly-preloader-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 3.5rem;
+  margin-top: 1.75rem;
+}
+.talkly-preloader-wave > span {
+  flex: none;
+  width: 3px;
+  border-radius: 99px;
+  transform-origin: center;
+  animation-name: talkly-intro-wave;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+.talkly-preloader-track {
+  width: min(13.5rem, 60vw);
+  height: 2px;
+  margin-top: 1.5rem;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e5e9f4;
+}
+.talkly-preloader-bar {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--intro-blue), var(--intro-purple));
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.talkly-preloader-powered {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.talkly-preloader-label {
+  color: #374151;
+  font-family: 'Inter Variable', system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.talkly-preloader-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.talkly-preloader-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--intro-blue), var(--intro-purple));
+  box-shadow: 0 0 8px rgb(91 92 235 / 0.65);
+  animation: talkly-intro-pulse 1.8s ease-in-out infinite;
+}
+.talkly-preloader-word {
+  /* Positions stay within 0-100%, so the gradient covers every letter for the whole sweep. */
+  background: linear-gradient(100deg, var(--intro-navy) 42%, #8b83f2 50%, var(--intro-navy) 58%) 100% 0 / 260% 100% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: 'Sora Variable', 'Inter Variable', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  animation: talkly-intro-sweep 2.2s ease-in-out 0.7s infinite;
+}
+
+@keyframes talkly-intro-wave {
+  from { transform: scaleY(0.3); }
+  to { transform: scaleY(1); }
+}
+@keyframes talkly-intro-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-6%, 6%, 0) scale(1.08); }
+}
+@keyframes talkly-intro-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.04); }
+  50% { transform: translate3d(7%, -5%, 0) scale(0.96); }
+}
+@keyframes talkly-intro-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+@keyframes talkly-intro-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
+/* Short landscape phones: tighten the stack so everything still fits. */
+@media (max-height: 460px) {
+  .talkly-preloader-wave { height: 2.25rem; margin-top: 0.875rem; }
+  .talkly-preloader-track { margin-top: 0.875rem; }
+  .talkly-preloader-content { padding-block: 0.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talkly-preloader { will-change: auto; }
+  .talkly-preloader-glow,
+  .talkly-preloader-dot,
+  .talkly-preloader-word,
+  .talkly-preloader-wave > span {
+    animation: none;
+  }
+  .talkly-preloader-wave > span { transform: scaleY(0.72); }
+  .talkly-preloader-word { background-position: 100% 0; }
+}
+
+@media (forced-colors: active) {
+  .talkly-preloader-word { background: none; color: CanvasText; }
+}

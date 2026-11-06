@@ -4,6 +4,7 @@ import { useInView, useReducedMotion } from 'framer-motion'
 import { Building2, PhoneCall, PhoneForwarded, Workflow } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { stats } from '@/lib/landing-content'
+import { useIntroRevealed } from '@/lib/intro'
 import Reveal from './Reveal'
 
 const icons: Record<string, any> = { calls: PhoneCall, businesses: Building2, connections: PhoneForwarded, automation: Workflow }
@@ -17,9 +18,10 @@ function StatValue({ stat }: { stat: (typeof stats)[number] }) {
   const ref = useRef<HTMLSpanElement>(null)
   const inView = useInView(ref, { once: true, amount: 0.6 })
   const reduce = useReducedMotion()
+  const revealed = useIntroRevealed()
 
   useEffect(() => {
-    if (!inView || reduce || !ref.current) return undefined
+    if (!inView || !revealed || reduce || !ref.current) return undefined
     const el = ref.current
     const start = performance.now()
     let frame: number
@@ -41,7 +43,7 @@ function StatValue({ stat }: { stat: (typeof stats)[number] }) {
     }
     frame = requestAnimationFrame(step)
     return () => cancelAnimationFrame(frame)
-  }, [inView, reduce, stat])
+  }, [inView, revealed, reduce, stat])
 
   const isPlaceholder = stat.value === null
   return (

@@ -5,7 +5,9 @@ import { ArrowRight, Play, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { lazy, Suspense, useState } from 'react'
 import { introVideo } from '@/lib/landing-content'
+import { useIntroRevealed } from '@/lib/intro'
 import PhoneMockup from './PhoneMockup'
+import { NovalantisEndorsement } from './PoweredByNovalantis'
 import { easeSoft } from './Reveal'
 
 const VideoModal = lazy(() => import('./VideoModal'))
@@ -16,13 +18,14 @@ const headline = [
 ]
 const wordCount = headline.flat().length
 
-const fadeUp = (delay: number) => ({
+const fadeUp = (delay: number, revealed: boolean) => ({
   initial: { opacity: 0, y: 18 },
-  animate: { opacity: 1, y: 0 },
+  animate: revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 18 },
   transition: { duration: 0.7, delay, ease: easeSoft },
 })
 
 export default function Hero() {
+  const revealed = useIntroRevealed()
   const [videoOpen, setVideoOpen] = useState(false)
   const [videoRequested, setVideoRequested] = useState(false)
   let wordIndex = -1
@@ -37,7 +40,7 @@ export default function Hero() {
       <div className="wrap grid items-center gap-12 pb-16 pt-10 lg:grid-cols-[1.1fr_1fr] lg:gap-8 lg:pb-20 lg:pt-14">
         <div>
           <motion.p
-            {...fadeUp(0)}
+            {...fadeUp(0, revealed)}
             className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5 text-[0.8125rem] font-medium text-ink/80"
           >
             <Sparkles size={14} className="text-brand" aria-hidden="true" />
@@ -58,7 +61,7 @@ export default function Hero() {
                       <motion.span
                         className="inline-block"
                         initial={{ y: '112%' }}
-                        animate={{ y: 0 }}
+                        animate={{ y: revealed ? 0 : '112%' }}
                         transition={{ duration: 0.85, delay: 0.1 + wordIndex * 0.07, ease: easeSoft }}
                       >
                         {word}
@@ -71,12 +74,12 @@ export default function Hero() {
             ))}
           </h1>
 
-          <motion.p {...fadeUp(0.15 + wordCount * 0.07)} className="mt-5 max-w-[33rem] text-[1.0625rem] leading-relaxed lg:text-lg">
+          <motion.p {...fadeUp(0.15 + wordCount * 0.07, revealed)} className="mt-5 max-w-[33rem] text-[1.0625rem] leading-relaxed lg:text-lg">
             An AI voice calling platform that talks to your customers, understands their intent, and takes action — in
             Hindi, Hinglish, or English.
           </motion.p>
 
-          <motion.div {...fadeUp(0.25 + wordCount * 0.07)} className="mt-8 flex flex-wrap gap-3">
+          <motion.div {...fadeUp(0.25 + wordCount * 0.07, revealed)} className="mt-8 flex flex-wrap gap-3">
             <Link href="/demo" className="btn btn-primary min-w-[9.5rem]">
               Get a Demo
               <ArrowRight size={17} className="btn-arrow" aria-hidden="true" />
@@ -92,6 +95,15 @@ export default function Hero() {
               <Play size={15} className="text-brand" fill="currentColor" aria-hidden="true" />
               {introVideo.label}
             </button>
+          </motion.div>
+
+          <motion.div
+            className="mt-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: revealed ? 1 : 0 }}
+            transition={{ duration: 0.9, delay: 0.5 + wordCount * 0.07, ease: 'easeOut' }}
+          >
+            <NovalantisEndorsement />
           </motion.div>
         </div>
 

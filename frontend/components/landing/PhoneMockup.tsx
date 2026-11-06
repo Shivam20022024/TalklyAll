@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-mot
 import { CalendarCheck, Check, IndianRupee, MessageCircle, Pause, PhoneOff, Play, UserRoundCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { heroCall } from '@/lib/landing-content'
+import { useIntroRevealed } from '@/lib/intro'
 import { LogoMark } from './Logo'
 import { easeSoft } from './Reveal'
 import Waveform from './Waveform'
@@ -58,7 +59,8 @@ export default function PhoneMockup() {
   useEffect(() => setMounted(true), [])
   const reduce = mounted ? liveReduce : false
   const [paused, setPaused] = useState(false)
-  const running = inView && !paused && !reduce
+  const revealed = useIntroRevealed()
+  const running = inView && !paused && !reduce && revealed
   const { line, seconds } = useSampleCall(running)
 
   const shownLine = reduce ? lastLine : line
@@ -81,7 +83,7 @@ export default function PhoneMockup() {
         <motion.div
           className="mx-auto w-[15.5rem] sm:w-full"
           initial={{ opacity: 0, y: 36 }}
-          animate={{ opacity: 1, y: 0 }}
+          animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 36 }}
           transition={{ duration: 1, delay: 0.3, ease: easeSoft }}
         >
           <div className="float">
@@ -160,7 +162,7 @@ export default function PhoneMockup() {
               <motion.li
                 key={outcome.label}
                 initial={{ opacity: 0, x: 18, y: 10 }}
-                animate={{ opacity: 1, x: 0, y: 0 }}
+                animate={revealed ? { opacity: 1, x: 0, y: 0 } : { opacity: 0, x: 18, y: 10 }}
                 transition={{ duration: 0.75, delay: 0.75 + index * 0.14, ease: easeSoft }}
                 className={`sm:absolute sm:w-max ${outcome.pos}`}
               >
