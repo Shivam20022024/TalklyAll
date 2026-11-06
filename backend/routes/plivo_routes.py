@@ -553,17 +553,24 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     }
     transcription_lang = WHISPER_LANGUAGE_CODES.get(str(call_lang).strip().lower())
 
-    # Rule 14's worked example, chosen by this call's actual language so
-    # only ONE of these two ever reaches the model - see the comment left
-    # in conversation_rules above for why both together caused the model to
-    # copy a whole phrase (and its language) out of the wrong one.
+    # Rule 14's worked example, chosen by whichever language welcome_text is
+    # ACTUALLY written in - not by transcription_lang/call_lang. Confirmed
+    # live (Banti/EdTech, call_doc.language="Hindi"): the edtech template
+    # has no Hindi welcome_message/prompt at all, so the call opens in
+    # English regardless of that field - keying this off transcription_lang
+    # picked the Hindi example anyway and reintroduced the exact bug this
+    # was meant to fix. Detecting Devanagari script in the actual resolved
+    # welcome_text is grounded in what the call will really sound like,
+    # unlike a separately-configurable field that can disagree with the
+    # industry template's own fixed language.
+    _is_hindi_call = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
     _RULE14_EXAMPLE_EN = (
         "\nWORKED EXAMPLE for rule 14 - [CustomerName] and [YourCompany] below are placeholders for whichever real name and company you were actually given elsewhere in this prompt - substitute them, never say the brackets or the literal words 'CustomerName'/'YourCompany' aloud. This exact pattern has been confirmed live to go wrong, so follow the UNDERLYING BEHAVIOR precisely, but vary your actual wording naturally each time rather than reusing the same sentence on every call (confirmed live: the model started literally saying the word 'Sorry' on every single re-ask because it was copying this example's exact phrasing verbatim instead of treating it as one illustration of the pattern) - e.g. rotate between 'Just to confirm, am I speaking with [CustomerName]?', 'Quick check - is this [CustomerName]?', 'Before we continue, am I speaking with [CustomerName]?', or similar, choosing naturally rather than defaulting to the same opener every time. Your opening line was 'Hello [CustomerName], I am calling from [YourCompany] regarding your recent inquiry for our Loan options. Am I speaking with [CustomerName]?' and the customer's entire reply was just 'Hello'. WRONG (confirmed happened): immediately asking 'What type of loan are you looking for?' - this skips confirming identity entirely, even though your own opening line explicitly asked for it. RIGHT: ask again in your own natural words whether you're speaking with [CustomerName], and wait for an actual yes/no before asking about the loan type at all. This is not optional or a minor stylistic choice - treat a bare 'Hello' replying to an identity question as equivalent to not having answered it yet, full stop."
     )
     _RULE14_EXAMPLE_HI = (
         "\nWORKED EXAMPLE for rule 14 - [CustomerName] and [YourCompany] below are placeholders for whichever real name and company you were actually given elsewhere in this prompt - substitute them, never read the brackets aloud: Your opening line was 'नमस्ते [CustomerName], मैं [YourCompany] की तरफ से बोल रहा हूँ। क्या मैं [CustomerName] से बात कर रहा हूँ?' and the customer's entire reply was just 'Hello' or 'हाँ'. WRONG: immediately asking 'आप किस तरह का लोन चाहते हैं?' - skips identity confirmation entirely. ALSO WRONG (confirmed live) - starting the confirmation with the English word 'Sorry' before switching to Hindi, e.g. 'Sorry, बस यह बताने के लिए कि क्या मैं...?': that is the exact bare-English-opener mistake rule 10 forbids. RIGHT: ask again in your own natural Hindi words whether you're speaking with [CustomerName] - entirely in Hindi, no English opener, e.g. 'माफ कीजिए, क्या मैं [CustomerName] से ही बात कर रहा हूँ?' or 'सिर्फ कन्फर्म करने के लिए, क्या यह [CustomerName] हैं?' or similar - vary your exact wording naturally across calls rather than always opening with the same opener on every single one, and wait for an actual, clear yes before asking about the loan type. ALSO WRONG (confirmed live, a different failure) - if the given name is something unusual like 'Boss', saying 'क्या मैं आपके साथ बात कर रहा हूँ?' (am I speaking with you?) instead of 'क्या मैं Boss से बात कर रहा हूँ?' - dropping the name because it looks informal still confirms nothing; use the exact name you were given no matter how it reads."
     )
-    conversation_rules += _RULE14_EXAMPLE_HI if transcription_lang == "hi" else _RULE14_EXAMPLE_EN
+    conversation_rules += _RULE14_EXAMPLE_HI if _is_hindi_call else _RULE14_EXAMPLE_EN
 
     # Must stay after the conversation_rules += above - this is what
     # actually finalizes the prompt sent to the model.
