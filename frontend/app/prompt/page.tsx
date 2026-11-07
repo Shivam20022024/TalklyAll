@@ -467,7 +467,7 @@ export default function PromptPage() {
       try {
         const saved = localStorage.getItem('talkly_selected_prompt_template')
         if (saved) targetTemplate = saved
-      } catch {}
+      } catch { }
     }
 
     // 3. Check user.industry (whether standard or custom_)
@@ -532,7 +532,7 @@ export default function PromptPage() {
         const url = new URL(window.location.href)
         url.searchParams.set('template', key)
         window.history.replaceState({}, '', url.toString())
-      } catch {}
+      } catch { }
     }
     loadIndustryPrompt(key)
   }
@@ -603,7 +603,7 @@ export default function PromptPage() {
             const url = new URL(window.location.href)
             url.searchParams.set('template', t.template_id)
             window.history.replaceState({}, '', url.toString())
-          } catch {}
+          } catch { }
         }
         setPromptText(t.prompt)
         setWelcomeMessage(t.welcome_message)
@@ -710,7 +710,7 @@ export default function PromptPage() {
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('talkly_selected_prompt_template', selectedIndustry)
-        } catch {}
+        } catch { }
       }
       alert(`Successfully published! Your live AI agent is now active with the ${tmplName} prompt.`)
     } catch (e: any) {
