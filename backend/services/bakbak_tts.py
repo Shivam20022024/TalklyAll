@@ -38,11 +38,13 @@ BAKBAK_VOICE_MAP = {
 }
 
 
-def bakbak_voice_for(transcription_lang: Optional[str]) -> Optional[dict]:
-    """Returns {"voice_id", "language", "model"} for a validated language code
-    (as produced by plivo_routes.WHISPER_LANGUAGE_CODES), or None if this
-    language hasn't been evaluated against Bakbak yet."""
-    return BAKBAK_VOICE_MAP.get((transcription_lang or "").strip().lower())
+def bakbak_voice_for(transcription_lang: Optional[str]) -> dict:
+    """Returns {"voice_id", "language", "model"} for Raya / Bakbak TTS.
+    Defaults to Anjura M1 so voice is ALWAYS available."""
+    lang = (transcription_lang or "").strip().lower()
+    if lang.startswith("hi"):
+        return BAKBAK_VOICE_MAP["hi"]
+    return BAKBAK_VOICE_MAP["en"]
 
 
 class BakbakTTSSession:

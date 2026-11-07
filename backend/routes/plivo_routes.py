@@ -980,21 +980,14 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     sarvam_voice = None
     bakbak_voice = None
 
-    # Bakbak TTS voice is the standard Indian conversational voice (fast & natural).
-    preferred_voice = (company.get("voice_engine") if company else None) or "bakbak"
-    if preferred_voice == "bakbak" and BAKBAK_API_KEY:
-        bakbak_voice = bakbak_voice_for(transcription_lang)
-        if bakbak_voice:
-            voice_engine = "bakbak"
-        else:
-            safe_print(f"[BAKBAK]: voice_engine is bakbak but language '{call_lang}' isn't validated yet - falling back.")
-
-    if voice_engine == "openai" and company and company.get("use_sarvam_voice", True) and SARVAM_API_KEY:
+    # Raya / Bakbak TTS is ALWAYS the voice engine for natural conversational Indian voice
+    bakbak_voice = bakbak_voice_for(transcription_lang) if BAKBAK_API_KEY else None
+    if BAKBAK_API_KEY and bakbak_voice:
+        voice_engine = "bakbak"
+    elif company and company.get("use_sarvam_voice", True) and SARVAM_API_KEY:
         sarvam_voice = sarvam_voice_for(transcription_lang)
         if sarvam_voice:
             voice_engine = "sarvam"
-        else:
-            safe_print(f"[SARVAM]: use_sarvam_voice is on but language '{call_lang}' isn't validated yet - using OpenAI voice.")
 
     # Decoupled pipeline (Sarvam STT -> LLM -> Bakbak TTS, unified voice, zero tone shift)
     # Default to decoupled for all companies when BAKBAK_API_KEY, SARVAM_API_KEY, and OPENAI_API_KEY are configured

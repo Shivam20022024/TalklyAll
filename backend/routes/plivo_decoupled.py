@@ -178,22 +178,18 @@ def prewarm_decoupled_greeting(
                 return None
 
             t0 = time.time()
-            use_sarvam = bool(SARVAM_API_KEY) and (
-                (ctx.get("voice_engine") == "sarvam" if ctx else False)
-                or not (os.environ.get("BAKBAK_API_KEY", "").strip() or BAKBAK_API_KEY and v_id)
-                or ((ctx.get("company") or {}).get("use_sarvam_voice", True) if ctx else True)
-            )
-
-            if use_sarvam and SARVAM_API_KEY:
+            api_key = os.environ.get("BAKBAK_API_KEY", "").strip() or BAKBAK_API_KEY
+            if api_key:
+                v_id = v_id or "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2"
+                v_lang = v_lang or ("hi" if bool(re.search(r"[ऀ-ॿ]", w_text or "")) else "en-in")
+                session = BakbakTTSSession(api_key, v_id, v_lang, v_mod)
+            elif SARVAM_API_KEY:
                 is_hi = bool(re.search(r"[ऀ-ॿ]", w_text or ""))
                 speaker = (ctx.get("sarvam_speaker") if ctx else None) or ("ishita_enhi_customer" if is_hi else "simran_en_conversation")
                 lang = "hi-IN" if is_hi else "en-IN"
                 session = SarvamTTSSession(SARVAM_API_KEY, speaker, lang)
             else:
-                api_key = os.environ.get("BAKBAK_API_KEY", "").strip() or BAKBAK_API_KEY
-                if not api_key or not v_id:
-                    return None
-                session = BakbakTTSSession(api_key, v_id, v_lang, v_mod)
+                return None
 
             await session.__aenter__()
             chunks = []
@@ -330,13 +326,10 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
 
     hangup_triggered = False
 
-    use_sarvam_tts = bool(SARVAM_API_KEY) and (
-        ctx.get("voice_engine") == "sarvam"
-        or not (BAKBAK_API_KEY and bakbak_voice_id)
-        or ((company or {}).get("use_sarvam_voice", True))
-    )
+    # Always lock voice engine to Raya / Bakbak TTS
+    use_bakbak_tts = bool(BAKBAK_API_KEY)
 
-    if not (OPENAI_CHAT_API_KEY and SARVAM_API_KEY and (use_sarvam_tts or (BAKBAK_API_KEY and bakbak_voice_id))):
+    if not (OPENAI_CHAT_API_KEY and SARVAM_API_KEY and (use_bakbak_tts or SARVAM_API_KEY)):
         safe_print(f"[DECOUPLED ERROR]: Missing required config for call_id={call_id} "
                     f"(sarvam_key={bool(SARVAM_API_KEY)}, openai_key={bool(OPENAI_CHAT_API_KEY)}, "
                     f"bakbak_key={bool(BAKBAK_API_KEY)}) - aborting call.")
@@ -350,14 +343,17 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     stt_session = SarvamSTTSession(SARVAM_API_KEY, stt_language_code)
     stt_init_task = asyncio.create_task(stt_session.__aenter__())
 
-    if use_sarvam_tts:
+    if use_bakbak_tts:
+        v_id = bakbak_voice_id or "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2"
+        v_lang = bakbak_language or ("hi" if is_hindi_pipeline else "en-in")
+        v_mod = bakbak_model or "m1"
+        tts_session = BakbakTTSSession(BAKBAK_API_KEY, v_id, v_lang, v_mod)
+        safe_print(f"[DECOUPLED]: Voice engine locked to Raya / Bakbak TTS (voice_id={v_id}, lang={v_lang})")
+    else:
         sarvam_speaker = ctx.get("sarvam_speaker") or ("ishita_enhi_customer" if is_hindi_pipeline else "simran_en_conversation")
         sarvam_lang = "hi-IN" if is_hindi_pipeline else "en-IN"
         tts_session = SarvamTTSSession(SARVAM_API_KEY, sarvam_speaker, sarvam_lang)
-        safe_print(f"[DECOUPLED]: Using ultra-low-latency Sarvam Streaming TTS ({sarvam_speaker}, {sarvam_lang})")
-    else:
-        tts_session = BakbakTTSSession(BAKBAK_API_KEY, bakbak_voice_id, bakbak_language, bakbak_model)
-        safe_print(f"[DECOUPLED]: Using Bakbak TTS (voice_id={bakbak_voice_id})")
+        safe_print(f"[DECOUPLED]: Fallback to Sarvam Streaming TTS ({sarvam_speaker}, {sarvam_lang})")
 
     await tts_session.__aenter__()
 
