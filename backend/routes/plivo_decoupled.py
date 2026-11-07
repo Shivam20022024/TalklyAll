@@ -65,27 +65,29 @@ GOODBYE_KEYWORDS = [
 # cutting the dead air before the agent's first word - confirmed live as a
 # 2-3s gap before this change.
 _SENTENCE_END_RE = re.compile(r"^(.*?[.!?।])\s*")
+_CLAUSE_END_RE = re.compile(r"^(.*?[,])\s*")
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
-    "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES: "
-    "Respond concisely, naturally, and warmly in under 15 words per turn. "
-    "Ask strictly ONE clear question at a time so the customer can answer easily. "
-    "STRICT LANGUAGE ENFORCEMENT: You MUST converse 100% in English. Do NOT switch to Hindi "
-    "or Hinglish unless the customer explicitly tells you to speak in Hindi. "
-    "ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
-    "Once the conversation is underway, NEVER say their name in your subsequent replies. "
-    "Strictly say 'I see,', 'Got it,', 'Sure,', 'You're welcome!' without repeating their name."
+    "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES:\n"
+    "1. RAPID 2-WORD OPENER (MANDATORY): Always start your response with a natural 2-word acknowledgment "
+    "ending with a period (e.g. 'Got it.', 'I see.', 'Great.', 'Sure thing.', 'Understood.'). "
+    "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
+    "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
+    "3. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
+    "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies "
+    "(do NOT say 'Thanks, Vikash!' or 'Hi Shivam', just say 'Got it.' or 'I see.').\n"
+    "4. STRICT LANGUAGE ENFORCEMENT: You MUST converse 100% in English unless the customer explicitly speaks Hindi."
 )
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_HI = (
-    "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES: "
-    "Respond concisely, naturally, and warmly in under 15 words per turn. "
-    "Ask strictly ONE clear question at a time so the customer can answer easily. "
-    "STRICT LANGUAGE ENFORCEMENT: You MUST converse in natural Hindi/Hinglish. "
-    "Do NOT switch to English on short fillers unless the customer explicitly tells you to speak in English. "
-    "ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
-    "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies. "
-    "Strictly say 'ठीक है,', 'समझ गया,', 'जी,' without repeating their name."
+    "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES:\n"
+    "1. RAPID 2-WORD OPENER (MANDATORY): Always start your response with a natural 2-word acknowledgment "
+    "ending with a full stop or exclamation (e.g. 'समझ गया।', 'ठीक है।', 'जी बिल्कुल।', 'जी जरूर।'). "
+    "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
+    "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
+    "3. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
+    "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies.\n"
+    "4. STRICT LANGUAGE ENFORCEMENT: You MUST converse in natural Hindi/Hinglish unless the customer explicitly speaks English."
 )
 
 logger = logging.getLogger("talkly-plivo-decoupled")
@@ -556,11 +558,20 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         full_reply += delta
                         if not first_sentence_flushed:
                             m = _SENTENCE_END_RE.match(full_reply)
-                            if m and len(m.group(1).strip().split()) >= 3:
+                            mc = _CLAUSE_END_RE.match(full_reply) if not m else None
+                            # Priority 1: Terminal punctuation (.!?।) on >= 2 words (e.g. "Got it.", "I see.", "समझ गया।")
+                            # Priority 2 (Guardrail): Comma (,) on >= 3 words (e.g. "Just to confirm,")
+                            target_match = None
+                            if m and len(m.group(1).strip().split()) >= 2:
+                                target_match = m
+                            elif mc and len(mc.group(1).strip().split()) >= 3:
+                                target_match = mc
+
+                            if target_match:
                                 first_sentence_flushed = True
                                 first_sentence_ready_at = time.time()
-                                remainder_start = m.end()
-                                first_sent_text = m.group(1).strip()
+                                remainder_start = target_match.end()
+                                first_sent_text = target_match.group(1).strip()
                                 safe_print(f"[DECOUPLED LATENCY]: OpenAI first clause ready in {first_sentence_ready_at - turn_start:.2f}s: '{first_sent_text}'")
                                 # Run TTS concurrently in background so OpenAI generation is not stalled
                                 first_audio_task = asyncio.create_task(
