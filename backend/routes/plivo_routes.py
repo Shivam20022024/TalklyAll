@@ -1052,6 +1052,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "bakbak_model": bakbak_voice["model"] if bakbak_voice else None,
         "customer_name": customer_name,
         "is_inbound": is_inbound,
+        "call_uuid": call_doc.get("plivo_call_uuid") if call_doc else None,
     }
 
 
@@ -1390,6 +1391,7 @@ async def plivo_answer_call(request: Request, call_id: str = Query(None), compan
     PLIVO_CALL_CACHE[call_id] = {
         "company_id": company_id,
         "call_id": call_id,
+        "call_uuid": call_uuid,
         "direction": direction,
         "customer_name": caller_name if not call_id or "inbound" in str(call_id) else (lead_match.get("name") if 'lead_match' in locals() and lead_match else None)
     }
