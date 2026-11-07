@@ -622,11 +622,18 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             if len(transcript_parts) == 1 and not hangup_triggered:
                 safe_print("[DECOUPLED]: User has been silent for 5.0s after welcome message finished. Prompting gently...")
                 is_hindi = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
+                is_inbound = bool(ctx.get("is_inbound", False))
                 cname = ctx.get("customer_name") or ""
-                if is_hindi:
-                    prompt_line = f"नमस्ते {cname} जी, क्या आप मुझे सुन पा रहे हैं? क्या अभी 2 मिनट बात हो सकती है?" if cname else "नमस्ते, क्या आप मुझे सुन पा रहे हैं? क्या अभी 2 मिनट बात हो सकती है?"
+                if is_inbound:
+                    if is_hindi:
+                        prompt_line = f"नमस्ते {cname} जी, क्या आप मुझे सुन पा रहे हैं? मैं आपकी किस तरह सहायता कर सकती हूँ?" if cname else "नमस्ते, क्या आप मुझे सुन पा रहे हैं? मैं आपकी किस तरह सहायता कर सकती हूँ?"
+                    else:
+                        prompt_line = f"Hi {cname}, are you able to hear me? How can I help you today?" if cname else "Hi, are you able to hear me? How can I help you today?"
                 else:
-                    prompt_line = f"Hi {cname}, are you able to hear me? Is now a convenient time to chat?" if cname else "Hi, are you able to hear me? Is now a convenient time to chat?"
+                    if is_hindi:
+                        prompt_line = f"नमस्ते {cname} जी, क्या आप मुझे सुन पा रहे हैं? क्या अभी 2 मिनट बात हो सकती है?" if cname else "नमस्ते, क्या आप मुझे सुन पा रहे हैं? क्या अभी 2 मिनट बात हो सकती है?"
+                    else:
+                        prompt_line = f"Hi {cname}, are you able to hear me? Is now a convenient time to chat?" if cname else "Hi, are you able to hear me? Is now a convenient time to chat?"
                 async with turn_lock:
                     if len(transcript_parts) == 1 and not hangup_triggered:
                         transcript_parts.append(f"AI: {prompt_line}")
