@@ -231,7 +231,8 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
     """
     Sanitize text before speech synthesis so TTS never pronounces formatting artifacts
     like 'underscore', 'asterisk', or placeholder leaks like 'customer_name'.
-    On mid-call turns (is_subsequent=True), also strips repetitive customer name vocatives.
+    On mid-call turns (is_subsequent=True), also strips repetitive customer name vocatives,
+    while NEVER stripping the customer name during identity verification or questions.
     """
     if not text:
         return ""
@@ -243,15 +244,25 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
     cleaned = re.sub(r'[*_~`#\[\]]', '', text)
 
     # On subsequent turns, strip repetitive customer name vocatives (e.g. 'I see, Mohit.' -> 'I see.')
+    # BUT NEVER strip the name during identity confirmation or when asking questions ending in '?'
     if is_subsequent and customer_name:
-        parts = [p.strip() for p in customer_name.split() if len(p.strip()) > 1]
-        name_patterns = [re.escape(customer_name)] + [re.escape(p) for p in parts]
-        for np in name_patterns:
-            cleaned = re.sub(rf'(?i)\b(Got it|Sure|I see|Understood|Great|Alright|Okay|Thank you|You\'re welcome|Welcome|Thanks|No problem|Theek hai|Samajh gaya|Ji),?\s*{np}\b', r'\1', cleaned)
-            cleaned = re.sub(rf'(?i),\s*{np}\b([.!?])', r'\1', cleaned)
-            cleaned = re.sub(rf'(?i),\s*{np}\b,', ',', cleaned)
-            cleaned = re.sub(rf'(?i)\b{np}\b([.!?])', r'\1', cleaned)
-            cleaned = re.sub(rf'(?i)(^|[.!?]\s*){np},?\s*', r'\1', cleaned)
+        is_identity_check = bool(re.search(
+            r'(?i)\b(speaking with|talking to|is this|am I speaking|are you|is that|call with|call for|verify|confirm|identity|बात कर|से बात|बोल रहे|बोल रही|नाम)\b',
+            cleaned
+        ))
+        if not is_identity_check:
+            parts = [p.strip() for p in customer_name.split() if len(p.strip()) > 1]
+            name_patterns = [re.escape(customer_name)] + [re.escape(p) for p in parts]
+            for np in name_patterns:
+                # Strip acknowledgment filler vocatives: "Got it Binit" -> "Got it"
+                cleaned = re.sub(
+                    rf'(?i)\b(Got it|Sure|I see|Understood|Great|Alright|Okay|Thank you|You\'re welcome|Welcome|Thanks|No problem|Theek hai|Samajh gaya|Ji),?\s*{np}\b',
+                    r'\1',
+                    cleaned
+                )
+                # Strip trailing comma vocatives at end of statements: ", Binit." -> "." (NEVER on '?'!)
+                cleaned = re.sub(rf'(?i),\s*{np}\b([.!])', r'\1', cleaned)
+                cleaned = re.sub(rf'(?i),\s*{np}\b,', ',', cleaned)
 
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
