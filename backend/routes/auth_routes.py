@@ -76,6 +76,9 @@ async def register_company(payload: dict = Body(...)):
         "industry": industry,
         "plan_type": "trial",
         "status": "ACTIVE",
+        "voice_engine": "bakbak",
+        "conversation_engine": "decoupled",
+        "use_sarvam_voice": True,
         "bolna_agent_id": None,
         "webhook_url": payload.get("webhook_url", ""),
         "created_at": now,
@@ -93,15 +96,47 @@ async def register_company(payload: dict = Body(...)):
         "updated_at": now,
     })
 
-    # Initialize default prompt from industry template
+    # Initialize default prompt from industry template and pre-seed all 6 industry presets
+    industry_prompts = {}
+    for k, tmpl_data in INDUSTRY_TEMPLATES.items():
+        is_chosen = (k == industry)
+        industry_prompts[k] = {
+            "prompt": tmpl_data.get("prompt", ""),
+            "welcome_message": tmpl_data.get("welcome_message", ""),
+            "draft_prompt": tmpl_data.get("prompt", ""),
+            "draft_welcome_message": tmpl_data.get("welcome_message", ""),
+            "published_prompt": tmpl_data.get("prompt", ""),
+            "published_welcome_message": tmpl_data.get("welcome_message", ""),
+            "inbound_prompt": tmpl_data.get("inbound_prompt", ""),
+            "inbound_welcome_message": tmpl_data.get("inbound_welcome_message", ""),
+            "draft_inbound_prompt": tmpl_data.get("inbound_prompt", ""),
+            "draft_inbound_welcome_message": tmpl_data.get("inbound_welcome_message", ""),
+            "published_inbound_prompt": tmpl_data.get("inbound_prompt", ""),
+            "published_inbound_welcome_message": tmpl_data.get("inbound_welcome_message", ""),
+            "offering": payload.get("offering", "") if is_chosen else "",
+            "location": payload.get("location", "") if is_chosen else "",
+            "variables": {},
+            "status": "Published" if is_chosen else "Draft",
+            "updated_at": now
+        }
+
     if tmpl:
         await db.prompts.insert_one({
             "company_id": company_id,
+            "industry": industry,
             "draft_prompt": tmpl["prompt"],
             "published_prompt": tmpl["prompt"],
             "draft_welcome_message": tmpl["welcome_message"],
             "published_welcome_message": tmpl["welcome_message"],
+            "draft_inbound_prompt": tmpl.get("inbound_prompt", ""),
+            "published_inbound_prompt": tmpl.get("inbound_prompt", ""),
+            "draft_inbound_welcome_message": tmpl.get("inbound_welcome_message", ""),
+            "published_inbound_welcome_message": tmpl.get("inbound_welcome_message", ""),
+            "industry_prompts": industry_prompts,
+            "offering": payload.get("offering", ""),
+            "location": payload.get("location", ""),
             "status": "Published",
+            "created_at": now,
             "updated_at": now
         })
 

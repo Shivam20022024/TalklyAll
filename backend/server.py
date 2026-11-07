@@ -209,60 +209,137 @@ DEFAULT_PROMPT = "You are an AI sales agent for TalklyAI. You MUST speak entirel
 DEFAULT_WELCOME = "Hi, this is TalklyAI. How can I help you today?"
 
 
-def _effective_prompt(doc: dict | None):
-    """Prompt actually used for live calls: published, then draft, then legacy flat field."""
+def _effective_prompt(doc: dict | None, industry: str | None = None):
+    """Prompt actually used for live calls: industry-specific published/draft, then top-level published/draft."""
     if not doc:
         return None, None
+    if industry:
+        ind_entry = (doc.get("industry_prompts") or {}).get(industry, {})
+        if ind_entry:
+            prompt = ind_entry.get("published_prompt") or ind_entry.get("draft_prompt") or ind_entry.get("prompt")
+            welcome = ind_entry.get("published_welcome_message") or ind_entry.get("draft_welcome_message") or ind_entry.get("welcome_message")
+            if prompt or welcome:
+                return prompt, welcome
     prompt = doc.get("published_prompt") or doc.get("draft_prompt") or doc.get("prompt")
     welcome = doc.get("published_welcome_message") or doc.get("draft_welcome_message") or doc.get("welcome_message")
     return prompt, welcome
 
 
-def _prompt_view(doc: dict | None) -> dict:
-    """Present a prompt doc, tolerating the legacy flat {prompt, welcome_message} shape."""
-    if not doc:
-        return {
-            "status": "success",
-            "prompt": DEFAULT_PROMPT,
-            "welcome_message": DEFAULT_WELCOME,
-            "published_prompt": None,
-            "published_welcome_message": None,
-            "inbound_prompt": "",
-            "inbound_welcome_message": "",
-            "published_inbound_prompt": None,
-            "published_inbound_welcome_message": None,
-            "prompt_status": "Draft",
-        }
-    draft = doc.get("draft_prompt") or doc.get("prompt")
-    draft_welcome = doc.get("draft_welcome_message") or doc.get("welcome_message")
-    published = doc.get("published_prompt") or doc.get("prompt")
-    published_welcome = doc.get("published_welcome_message") or doc.get("welcome_message")
+def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
+    """Present a prompt doc for a specific industry or the active one, supporting
+    independent per-industry custom prompts across all verticals + company custom templates."""
+    active_ind = industry or (doc.get("industry") if doc else None) or "real_estate"
+    
+    custom_templates = (doc.get("custom_templates") or []) if doc else []
+    cleaned_custom = []
+    for ct in custom_templates:
+        if not isinstance(ct, dict):
+            continue
+        c_copy = dict(ct)
+        raw_v = c_copy.get("variables")
+        v_tags = ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}"]
+        if isinstance(raw_v, list):
+            v_tags = [str(x) for x in raw_v]
+        elif isinstance(raw_v, dict):
+            for k in raw_v.keys():
+                clean_k = k.replace("{", "").replace("}", "")
+                tag = f"{{{{{clean_k}}}}}"
+                if tag not in v_tags:
+                    v_tags.append(tag)
+        c_copy["variables"] = v_tags
+        cleaned_custom.append(c_copy)
+    custom_templates = cleaned_custom
+    custom_map = {t["id"]: t for t in custom_templates if isinstance(t, dict) and t.get("id")}
+    
+    if active_ind in custom_map:
+        template_def = custom_map[active_ind]
+    else:
+        template_def = INDUSTRY_TEMPLATES.get(active_ind, INDUSTRY_TEMPLATES.get("general_sales", {}))
+    
+    ind_prompts = (doc.get("industry_prompts") or {}) if doc else {}
+    ind_entry = ind_prompts.get(active_ind, {})
+    
+    # 1. Check if this industry has customized prompt in industry_prompts
+    draft = ind_entry.get("draft_prompt") or ind_entry.get("prompt")
+    draft_welcome = ind_entry.get("draft_welcome_message") or ind_entry.get("welcome_message")
+    published = ind_entry.get("published_prompt") or ind_entry.get("prompt")
+    published_welcome = ind_entry.get("published_welcome_message") or ind_entry.get("welcome_message")
 
-    draft_inbound = doc.get("draft_inbound_prompt") or doc.get("inbound_prompt")
-    draft_inbound_welcome = doc.get("draft_inbound_welcome_message") or doc.get("inbound_welcome_message")
-    published_inbound = doc.get("published_inbound_prompt")
-    published_inbound_welcome = doc.get("published_inbound_welcome_message")
+    draft_inbound = ind_entry.get("draft_inbound_prompt") or ind_entry.get("inbound_prompt")
+    draft_inbound_welcome = ind_entry.get("draft_inbound_welcome_message") or ind_entry.get("inbound_welcome_message")
+    published_inbound = ind_entry.get("published_inbound_prompt")
+    published_inbound_welcome = ind_entry.get("published_inbound_welcome_message")
+
+    status = ind_entry.get("status")
+
+    # 2. If not in industry_prompts, fall back to doc top-level if doc.industry matches active_ind
+    if not draft and doc and doc.get("industry") == active_ind:
+        draft = doc.get("draft_prompt") or doc.get("prompt")
+        draft_welcome = doc.get("draft_welcome_message") or doc.get("welcome_message")
+        published = doc.get("published_prompt") or doc.get("prompt")
+        published_welcome = doc.get("published_welcome_message") or doc.get("welcome_message")
+        draft_inbound = doc.get("draft_inbound_prompt") or doc.get("inbound_prompt")
+        draft_inbound_welcome = doc.get("draft_inbound_welcome_message") or doc.get("inbound_welcome_message")
+        published_inbound = doc.get("published_inbound_prompt")
+        published_inbound_welcome = doc.get("published_inbound_welcome_message")
+        if not status:
+            status = doc.get("status")
+
+    # 3. If still empty, initialize with template definition
+    default_prompt = template_def.get("prompt", DEFAULT_PROMPT)
+    default_welcome = template_def.get("welcome_message", DEFAULT_WELCOME)
+    default_inbound_prompt = template_def.get("inbound_prompt", "")
+    default_inbound_welcome = template_def.get("inbound_welcome_message", "")
+
+    offering = ind_entry.get("offering") or (doc.get("offering") if doc and doc.get("industry") == active_ind else "")
+    location = ind_entry.get("location") or (doc.get("location") if doc and doc.get("industry") == active_ind else "")
+    if "cyber" in location.lower() or "dlf" in location.lower():
+        location = ""
+    
+    # Merge variables so freshest configured variables are never shadowed
+    merged_vars = {}
+    if doc and isinstance(doc.get("variables"), dict):
+        merged_vars.update(doc["variables"])
+    if ind_entry and isinstance(ind_entry.get("variables"), dict):
+        merged_vars.update(ind_entry["variables"])
+    variables = merged_vars
 
     return {
         "status": "success",
-        "prompt": draft or published or DEFAULT_PROMPT,
-        "welcome_message": draft_welcome or published_welcome or DEFAULT_WELCOME,
+        "industry": active_ind,
+        "template_name": ind_entry.get("name") or template_def.get("name", active_ind),
+        "template_description": ind_entry.get("description") or template_def.get("description", ""),
+        "default_offering_label": template_def.get("default_offering_label", "Product / Offering"),
+        "offering_placeholder": template_def.get("offering_placeholder", ""),
+        "specific_variables": template_def.get("specific_variables", []),
+        "prompt": draft or published or default_prompt,
+        "welcome_message": draft_welcome or published_welcome or default_welcome,
         "published_prompt": published,
         "published_welcome_message": published_welcome,
-        "inbound_prompt": draft_inbound or published_inbound or "",
-        "inbound_welcome_message": draft_inbound_welcome or published_inbound_welcome or "",
+        "inbound_prompt": draft_inbound or published_inbound or default_inbound_prompt,
+        "inbound_welcome_message": draft_inbound_welcome or published_inbound_welcome or default_inbound_welcome,
         "published_inbound_prompt": published_inbound,
         "published_inbound_welcome_message": published_inbound_welcome,
-        "prompt_status": doc.get("status", "Published" if published else "Draft"),
-        "published_at": doc.get("published_at"),
+        "prompt_status": status or ("Published" if published else "Draft"),
+        "published_at": ind_entry.get("published_at") or (doc.get("published_at") if doc else None),
+        "offering": offering,
+        "location": location,
+        "variables": variables or {},
+        "active_company_industry": (doc.get("industry") if doc else "real_estate"),
+        "custom_templates": custom_templates,
+        "industry_prompts_summary": {
+            k: {"status": v.get("status", "Draft"), "offering": v.get("offering", ""), "name": v.get("name", k)}
+            for k, v in ind_prompts.items()
+        }
     }
 
 
 @app.get("/api/v1/prompt")
-async def get_prompt(current_user: dict = Depends(require_company_access)):
+async def get_prompt(industry: str | None = None, current_user: dict = Depends(require_company_access)):
     db = mongodb.get_db()
     doc = await db.prompts.find_one({"company_id": current_user["company_id"]})
-    return _prompt_view(doc)
+    return _prompt_view(doc, industry=industry)
+
 
 @app.post("/api/v1/prompt")
 async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):
@@ -272,39 +349,83 @@ async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(re
     welcome_message = payload.get("welcome_message")
     inbound_prompt = payload.get("inbound_prompt")
     inbound_welcome_message = payload.get("inbound_welcome_message")
-    industry = payload.get("industry")
+    industry = payload.get("industry") or "real_estate"
+    offering = payload.get("offering")
+    location = payload.get("location")
+    variables = payload.get("variables")
 
-    update_fields = {
+    now = datetime.utcnow()
+    ind_update = {
+        f"industry_prompts.{industry}.draft_prompt": prompt,
+        f"industry_prompts.{industry}.draft_welcome_message": welcome_message,
+        f"industry_prompts.{industry}.prompt": prompt,
+        f"industry_prompts.{industry}.welcome_message": welcome_message,
+        f"industry_prompts.{industry}.status": "Draft",
+        f"industry_prompts.{industry}.updated_at": now,
+    }
+    if inbound_prompt is not None:
+        ind_update[f"industry_prompts.{industry}.draft_inbound_prompt"] = inbound_prompt
+        ind_update[f"industry_prompts.{industry}.inbound_prompt"] = inbound_prompt
+    if inbound_welcome_message is not None:
+        ind_update[f"industry_prompts.{industry}.draft_inbound_welcome_message"] = inbound_welcome_message
+        ind_update[f"industry_prompts.{industry}.inbound_welcome_message"] = inbound_welcome_message
+    if offering is not None:
+        ind_update[f"industry_prompts.{industry}.offering"] = str(offering).strip()
+    if location is not None:
+        ind_update[f"industry_prompts.{industry}.location"] = str(location).strip()
+    if variables is not None and isinstance(variables, dict):
+        ind_update[f"industry_prompts.{industry}.variables"] = variables
+
+    # Also keep top-level draft in sync
+    ind_update.update({
         "draft_prompt": prompt,
         "draft_welcome_message": welcome_message,
         "prompt": prompt,
         "welcome_message": welcome_message,
         "status": "Draft",
-        "updated_at": datetime.utcnow(),
-    }
+        "industry": industry,
+        "updated_at": now,
+    })
+    if offering is not None:
+        ind_update["offering"] = str(offering).strip()
+    if location is not None:
+        ind_update["location"] = str(location).strip()
+    if variables is not None and isinstance(variables, dict):
+        ind_update["variables"] = variables
     if inbound_prompt is not None:
-        update_fields["draft_inbound_prompt"] = inbound_prompt
-        update_fields["inbound_prompt"] = inbound_prompt
+        ind_update["draft_inbound_prompt"] = inbound_prompt
+        ind_update["inbound_prompt"] = inbound_prompt
     if inbound_welcome_message is not None:
-        update_fields["draft_inbound_welcome_message"] = inbound_welcome_message
-        update_fields["inbound_welcome_message"] = inbound_welcome_message
-    if industry:
-        update_fields["industry"] = industry
+        ind_update["draft_inbound_welcome_message"] = inbound_welcome_message
+        ind_update["inbound_welcome_message"] = inbound_welcome_message
 
     await db.prompts.update_one(
         {"company_id": current_user["company_id"]},
-        {"$set": update_fields},
+        {"$set": ind_update},
         upsert=True
     )
-    # Deliberately does NOT touch db.companies.industry here. Loading/editing
-    # a template is a preview, not a declaration of the company's business
-    # vertical - that field also drives what industry new Quick Calls get
-    # tagged with and what the Dashboard filters by, so overwriting it on
-    # every draft autosave caused real calls to silently disappear from the
-    # Dashboard whenever someone browsed a different template earlier the
-    # same day. The company's actual industry only changes on /publish
-    # (a deliberate "make this live" action) or via Settings.
-    return {"status": "success"}
+    if industry.startswith("custom_"):
+        custom_patch = {
+            "custom_templates.$.prompt": prompt,
+            "custom_templates.$.draft_prompt": prompt,
+            "custom_templates.$.welcome_message": welcome_message,
+            "custom_templates.$.draft_welcome_message": welcome_message,
+            "custom_templates.$.updated_at": now.isoformat()
+        }
+        if inbound_prompt is not None:
+            custom_patch["custom_templates.$.inbound_prompt"] = inbound_prompt
+            custom_patch["custom_templates.$.draft_inbound_prompt"] = inbound_prompt
+        if inbound_welcome_message is not None:
+            custom_patch["custom_templates.$.inbound_welcome_message"] = inbound_welcome_message
+            custom_patch["custom_templates.$.draft_inbound_welcome_message"] = inbound_welcome_message
+        if variables is not None:
+            tag_list = [f"{{{{{k.replace('{','').replace('}','')}}}}}" for k in variables.keys()] if isinstance(variables, dict) else list(variables)
+            custom_patch["custom_templates.$.variables"] = tag_list
+        await db.prompts.update_one(
+            {"company_id": current_user["company_id"], "custom_templates.id": industry},
+            {"$set": custom_patch}
+        )
+    return {"status": "success", "industry": industry}
 
 
 @app.post("/api/v1/prompt/publish")
@@ -315,11 +436,18 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
     company_id = current_user["company_id"]
 
     doc = await db.prompts.find_one({"company_id": company_id})
-    prompt = (payload or {}).get("prompt") or (doc or {}).get("draft_prompt") or (doc or {}).get("prompt")
-    welcome = (payload or {}).get("welcome_message") or (doc or {}).get("draft_welcome_message") or (doc or {}).get("welcome_message")
-    inbound_prompt = (payload or {}).get("inbound_prompt") or (doc or {}).get("draft_inbound_prompt") or (doc or {}).get("inbound_prompt")
-    inbound_welcome = (payload or {}).get("inbound_welcome_message") or (doc or {}).get("draft_inbound_welcome_message") or (doc or {}).get("inbound_welcome_message")
-    industry = (payload or {}).get("industry") or (doc or {}).get("industry")
+    industry = payload.get("industry") or (doc or {}).get("industry") or "real_estate"
+    
+    ind_entry = ((doc or {}).get("industry_prompts") or {}).get(industry, {})
+
+    prompt = payload.get("prompt") or ind_entry.get("draft_prompt") or ind_entry.get("prompt") or (doc or {}).get("draft_prompt") or (doc or {}).get("prompt")
+    welcome = payload.get("welcome_message") or ind_entry.get("draft_welcome_message") or ind_entry.get("welcome_message") or (doc or {}).get("draft_welcome_message") or (doc or {}).get("welcome_message")
+    inbound_prompt = payload.get("inbound_prompt") or ind_entry.get("draft_inbound_prompt") or ind_entry.get("inbound_prompt") or (doc or {}).get("draft_inbound_prompt") or (doc or {}).get("inbound_prompt")
+    inbound_welcome = payload.get("inbound_welcome_message") or ind_entry.get("draft_inbound_welcome_message") or ind_entry.get("inbound_welcome_message") or (doc or {}).get("draft_inbound_welcome_message") or (doc or {}).get("inbound_welcome_message")
+    offering = payload.get("offering") or ind_entry.get("offering") or (doc or {}).get("offering") or ""
+    location = payload.get("location") or ind_entry.get("location") or (doc or {}).get("location") or ""
+    variables = payload.get("variables") or ind_entry.get("variables") or (doc or {}).get("variables") or {}
+
     if not prompt:
         raise HTTPException(status_code=400, detail="Nothing to publish - save a draft first")
 
@@ -345,39 +473,179 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
         except Exception as e:
             print(f"Bolna agent update notice for company {company_id}: {e}")
 
-    update_fields = {
+    now = datetime.utcnow()
+    pub_update = {
+        f"industry_prompts.{industry}.published_prompt": prompt,
+        f"industry_prompts.{industry}.published_welcome_message": welcome,
+        f"industry_prompts.{industry}.draft_prompt": prompt,
+        f"industry_prompts.{industry}.draft_welcome_message": welcome,
+        f"industry_prompts.{industry}.prompt": prompt,
+        f"industry_prompts.{industry}.welcome_message": welcome,
+        f"industry_prompts.{industry}.published_inbound_prompt": inbound_prompt,
+        f"industry_prompts.{industry}.published_inbound_welcome_message": inbound_welcome,
+        f"industry_prompts.{industry}.draft_inbound_prompt": inbound_prompt,
+        f"industry_prompts.{industry}.draft_inbound_welcome_message": inbound_welcome,
+        f"industry_prompts.{industry}.inbound_prompt": inbound_prompt,
+        f"industry_prompts.{industry}.inbound_welcome_message": inbound_welcome,
+        f"industry_prompts.{industry}.offering": str(offering).strip() if offering else "",
+        f"industry_prompts.{industry}.location": str(location).strip() if location else "",
+        f"industry_prompts.{industry}.variables": variables,
+        f"industry_prompts.{industry}.status": "Published",
+        f"industry_prompts.{industry}.published_at": now,
+        f"industry_prompts.{industry}.updated_at": now,
+
         "published_prompt": prompt,
         "published_welcome_message": welcome,
         "draft_prompt": prompt,
         "draft_welcome_message": welcome,
         "prompt": prompt,
         "welcome_message": welcome,
+        "published_inbound_prompt": inbound_prompt,
+        "published_inbound_welcome_message": inbound_welcome,
+        "draft_inbound_prompt": inbound_prompt,
+        "draft_inbound_welcome_message": inbound_welcome,
+        "inbound_prompt": inbound_prompt,
+        "inbound_welcome_message": inbound_welcome,
+        "offering": str(offering).strip() if offering else "",
+        "location": str(location).strip() if location else "",
+        "variables": variables,
         "status": "Published",
-        "published_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "industry": industry,
+        "published_at": now,
+        "updated_at": now,
     }
-    if inbound_prompt:
-        update_fields["published_inbound_prompt"] = inbound_prompt
-        update_fields["draft_inbound_prompt"] = inbound_prompt
-        update_fields["inbound_prompt"] = inbound_prompt
-    if inbound_welcome:
-        update_fields["published_inbound_welcome_message"] = inbound_welcome
-        update_fields["draft_inbound_welcome_message"] = inbound_welcome
-        update_fields["inbound_welcome_message"] = inbound_welcome
-    if industry:
-        update_fields["industry"] = industry
 
     await db.prompts.update_one(
         {"company_id": company_id},
-        {"$set": update_fields},
+        {"$set": pub_update},
         upsert=True,
     )
-    if industry:
-        await db.companies.update_one(
-            {"company_id": company_id},
-            {"$set": {"industry": industry, "updated_at": datetime.utcnow()}}
+    if industry.startswith("custom_"):
+        await db.prompts.update_one(
+            {"company_id": company_id, "custom_templates.id": industry},
+            {
+                "$set": {
+                    "custom_templates.$.prompt": prompt,
+                    "custom_templates.$.published_prompt": prompt,
+                    "custom_templates.$.welcome_message": welcome,
+                    "custom_templates.$.published_welcome_message": welcome,
+                    "custom_templates.$.inbound_prompt": inbound_prompt,
+                    "custom_templates.$.published_inbound_prompt": inbound_prompt,
+                    "custom_templates.$.inbound_welcome_message": inbound_welcome,
+                    "custom_templates.$.published_inbound_welcome_message": inbound_welcome,
+                    "custom_templates.$.variables": [f"{{{{{k.replace('{','').replace('}','')}}}}}" for k in variables.keys()] if isinstance(variables, dict) else (list(variables) if variables else ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}"]),
+                    "custom_templates.$.published_at": now.isoformat(),
+                    "custom_templates.$.updated_at": now.isoformat()
+                }
+            }
         )
-    return {"status": "success", "bolna_synced": bolna_synced, "agent_id": agent_id}
+    comp_update = {"industry": industry, "updated_at": now}
+    if offering:
+        comp_update["offering"] = str(offering).strip()
+    await db.companies.update_one(
+        {"company_id": company_id},
+        {"$set": comp_update}
+    )
+    return {"status": "success", "industry": industry, "bolna_synced": bolna_synced, "agent_id": agent_id}
+
+
+@app.post("/api/v1/prompt/auto-build")
+async def auto_build_agent_prompt(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):
+    """Generates a complete, tailored Voice Agent prompt and greeting using AI builder."""
+    from services.prompt_builder_service import prompt_builder_service
+    db = mongodb.get_db()
+    company_id = current_user["company_id"]
+    
+    # Auto-fill company_name if missing
+    if not payload.get("company_name"):
+        comp = await db.companies.find_one({"company_id": company_id})
+        if comp and comp.get("name"):
+            payload["company_name"] = comp["name"]
+
+    generated = await prompt_builder_service.build_custom_agent_prompt(payload)
+    if not generated:
+        raise HTTPException(status_code=500, detail="Failed to generate agent prompt")
+
+    save_immediately = bool(payload.get("save_immediately", True))
+    if save_immediately:
+        t_id = generated["template_id"]
+        now = datetime.utcnow()
+        custom_entry = {
+            "id": t_id,
+            "name": generated["template_name"],
+            "description": generated["description"],
+            "icon": "Sparkles",
+            "default_offering_label": generated.get("default_offering_label", "Offering"),
+            "offering_placeholder": generated.get("offering_placeholder", ""),
+            "welcome_message": generated["welcome_message"],
+            "prompt": generated["prompt"],
+            "inbound_welcome_message": generated.get("inbound_welcome_message", ""),
+            "inbound_prompt": generated.get("inbound_prompt", ""),
+            "variables": generated.get("suggested_variables", ["{{company_name}}", "{{customer_name}}", "{{offering}}"]),
+            "specific_variables": generated.get("specific_variables", []),
+            "created_at": now.isoformat()
+        }
+
+        # Store in db.prompts under custom_templates array and industry_prompts dict
+        ind_save = {
+            f"industry_prompts.{t_id}.prompt": generated["prompt"],
+            f"industry_prompts.{t_id}.draft_prompt": generated["prompt"],
+            f"industry_prompts.{t_id}.welcome_message": generated["welcome_message"],
+            f"industry_prompts.{t_id}.draft_welcome_message": generated["welcome_message"],
+            f"industry_prompts.{t_id}.inbound_prompt": generated.get("inbound_prompt", ""),
+            f"industry_prompts.{t_id}.draft_inbound_prompt": generated.get("inbound_prompt", ""),
+            f"industry_prompts.{t_id}.inbound_welcome_message": generated.get("inbound_welcome_message", ""),
+            f"industry_prompts.{t_id}.draft_inbound_welcome_message": generated.get("inbound_welcome_message", ""),
+            f"industry_prompts.{t_id}.name": generated["template_name"],
+            f"industry_prompts.{t_id}.description": generated["description"],
+            f"industry_prompts.{t_id}.default_offering_label": generated.get("default_offering_label", "Offering"),
+            f"industry_prompts.{t_id}.offering_placeholder": generated.get("offering_placeholder", ""),
+            f"industry_prompts.{t_id}.specific_variables": generated.get("specific_variables", []),
+            f"industry_prompts.{t_id}.status": "Draft",
+            f"industry_prompts.{t_id}.updated_at": now
+        }
+
+        # Pull existing if duplicate id, then push
+        await db.prompts.update_one(
+            {"company_id": company_id},
+            {"$pull": {"custom_templates": {"id": t_id}}},
+            upsert=True
+        )
+        await db.prompts.update_one(
+            {"company_id": company_id},
+            {
+                "$set": ind_save,
+                "$push": {"custom_templates": custom_entry}
+            },
+            upsert=True
+        )
+
+    return {"status": "success", "template": generated}
+
+
+@app.get("/api/v1/prompt/custom-templates")
+async def get_custom_templates(current_user: dict = Depends(require_company_access)):
+    """Retrieves all custom agent templates created by the current company."""
+    db = mongodb.get_db()
+    doc = await db.prompts.find_one({"company_id": current_user["company_id"]})
+    templates = (doc or {}).get("custom_templates") or []
+    return {"status": "success", "templates": templates}
+
+
+@app.delete("/api/v1/prompt/custom-templates/{template_id}")
+async def delete_custom_template(template_id: str, current_user: dict = Depends(require_company_access)):
+    """Deletes a company custom agent template."""
+    db = mongodb.get_db()
+    company_id = current_user["company_id"]
+    await db.prompts.update_one(
+        {"company_id": company_id},
+        {
+            "$pull": {"custom_templates": {"id": template_id}},
+            "$unset": {f"industry_prompts.{template_id}": ""}
+        }
+    )
+    return {"status": "success", "message": f"Template {template_id} deleted"}
+
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
@@ -497,17 +765,42 @@ async def delete_bulk_calls(payload: dict = Body(...), current_user: dict = Depe
 @app.get("/api/v1/calls/{call_id}")
 async def get_call(call_id: str, current_user: dict = Depends(require_company_access)):
     db = mongodb.get_db()
-    doc = await db.calls.find_one(tenant_filter(current_user, {"call_id": call_id}))
+    # 1. First check if there is a completed call specifically associated with this lead_id (most recent first)
+    doc = await db.calls.find_one(
+        tenant_filter(current_user, {"lead_id": call_id, "transcript": {"$regex": r"\S"}}),
+        sort=[("created_at", -1)]
+    )
+    # 2. If no call by lead_id with transcript, check exact call_id
     if not doc:
-        # Check if call_id is actually a lead_id or if lead has a phone number
+        exact_doc = await db.calls.find_one(tenant_filter(current_user, {"call_id": call_id}))
+        if exact_doc and exact_doc.get("transcript"):
+            doc = exact_doc
+        elif not doc:
+            doc = exact_doc
+
+    # 3. If doc still has no transcript, look up by lead's phone number for latest completed call
+    if not doc or not doc.get("transcript"):
         lead = await db.leads.find_one(tenant_filter(current_user, {"lead_id": call_id}))
         if lead and lead.get("phone"):
             clean_digits = "".join(filter(str.isdigit, str(lead["phone"])))
             if clean_digits:
-                doc = await db.calls.find_one(
-                    tenant_filter(current_user, {"customer_id": {"$regex": clean_digits}}),
+                phone_call = await db.calls.find_one(
+                    tenant_filter(current_user, {
+                        "customer_id": {"$regex": clean_digits},
+                        "transcript": {"$regex": r"\S"}
+                    }),
                     sort=[("created_at", -1)]
                 )
+                if phone_call:
+                    doc = phone_call
+
+    # 4. Fallback to latest call by lead_id even without transcript
+    if not doc:
+        doc = await db.calls.find_one(
+            tenant_filter(current_user, {"lead_id": call_id}),
+            sort=[("created_at", -1)]
+        )
+
     if not doc:
         raise HTTPException(status_code=404, detail="Call not found")
     doc["_id"] = None
@@ -620,13 +913,24 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         )
         quick_lead_id = existing_quick_lead["lead_id"] if existing_quick_lead else lead_id
         resolved_lead_id = quick_lead_id
+        
+        # Resolve offering: if payload provides an explicit offering, use it.
+        # If payload offering is omitted (e.g. quick call from modal), only retain
+        # existing lead's offering if their stored industry matches call_industry.
+        # If switching industries, purge stale cross-industry offering.
+        resolved_offering = str(payload.get("offering") or "").strip()
+        if not resolved_offering and existing_quick_lead:
+            ex_ind = (existing_quick_lead.get("industry") or "").strip().lower()
+            if not ex_ind or ex_ind == call_industry:
+                resolved_offering = str(existing_quick_lead.get("offering") or existing_quick_lead.get("property") or "").strip()
+        
         await db.leads.update_one(
             {"lead_id": quick_lead_id, "company_id": current_user["company_id"]},
             {"$set": {
                 "name": customer_name,
                 "phone": phone_number,
-                "offering": payload.get("offering", ""),
-                "property": payload.get("offering", ""),
+                "offering": resolved_offering,
+                "property": resolved_offering,
                 "location": payload.get("location", ""),
                 "industry": call_industry,
                 "status": "Calling",
@@ -642,6 +946,25 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
             upsert=True
         )
     
+    # Resolve lead attributes for call record
+    lead_amount = (
+        payload.get("amount_due")
+        or (lead.get("amount_due") if 'lead' in locals() and lead else None)
+        or (lead.get("custom_fields", {}).get("amount_due") if 'lead' in locals() and lead else None)
+        or (lead.get("custom_fields", {}).get("Loan Amount") if 'lead' in locals() and lead else None)
+    )
+    lead_due = (
+        payload.get("due_date")
+        or (lead.get("due_date") if 'lead' in locals() and lead else None)
+        or (lead.get("custom_fields", {}).get("due_date") if 'lead' in locals() and lead else None)
+        or (lead.get("custom_fields", {}).get("due date") if 'lead' in locals() and lead else None)
+    )
+    lead_custom = (
+        payload.get("custom_fields")
+        or (lead.get("custom_fields") if 'lead' in locals() and lead else {})
+        or {}
+    )
+
     await db.calls.update_one(
         {"call_id": lead_id, "company_id": current_user["company_id"]},
         {"$set": {
@@ -661,7 +984,10 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
             "regional_accent": regional_accent,
             "company_id": current_user["company_id"],
             "campaign_id": lead.get("campaign_id") if 'lead' in locals() and lead else None,
-            "industry": call_industry
+            "industry": call_industry,
+            "amount_due": lead_amount,
+            "due_date": lead_due,
+            "custom_fields": lead_custom
         }},
         upsert=True
     )
@@ -690,7 +1016,7 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
 
     # Fetch custom prompt from DB (published prompt is what live calls use)
     prompt_doc = await db.prompts.find_one({"company_id": current_user["company_id"]})
-    _bp, _wm = _effective_prompt(prompt_doc)
+    _bp, _wm = _effective_prompt(prompt_doc, industry=call_industry)
     base_prompt = _bp or "You are an AI sales agent for TalklyAI. Be polite and helpful."
 
     # Replace variables (supports {{customer_name}}, {customer_name}, {{lead_name}}, {lead_name}, etc.)
@@ -723,15 +1049,66 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
     prompt_text = prompt_text.replace("{{company_name}}", company_name_val)
 
     # Dynamic variables from lead record
-    lead_obj = await db.leads.find_one({"lead_id": lead_id})
+    lead_obj = None
+    if 'lead' in locals() and lead:
+        lead_obj = lead
+    elif lead_id and not str(lead_id).startswith("test-agent-call-"):
+        lead_obj = await db.leads.find_one({"lead_id": lead_id, "company_id": current_user["company_id"]})
+        if not lead_obj:
+            try:
+                from bson import ObjectId
+                lead_obj = await db.leads.find_one({"_id": ObjectId(lead_id), "company_id": current_user["company_id"]})
+            except Exception:
+                pass
+    if not lead_obj and resolved_lead_id:
+        lead_obj = await db.leads.find_one({"lead_id": resolved_lead_id, "company_id": current_user["company_id"]})
+
     lead_dict = lead_obj or {}
-    offering_val = str(lead_dict.get("offering") or lead_dict.get("property") or "").strip()
+    is_test_call = bool(lead_id and str(lead_id).startswith("test-agent-call"))
+
+    offering_val = ""
+    # 1. Payload offering override
+    if payload.get("offering"):
+        offering_val = str(payload.get("offering")).strip()
+
+    # 2. Lead offering (only if not a test call and industry matches)
+    if not offering_val and not is_test_call:
+        lead_ind = (lead_dict.get("industry") or "").strip().lower()
+        if not lead_ind or lead_ind == "general_sales" or lead_ind == call_industry:
+            offering_val = str(lead_dict.get("offering") or lead_dict.get("property") or "").strip()
+
+    # 3. Campaign offering
     if not offering_val and lead_dict.get("campaign_id"):
         camp = await db.campaigns.find_one({"campaign_id": lead_dict["campaign_id"]})
         if camp:
             offering_val = str(camp.get("offering") or camp.get("property") or "").strip()
-    if not offering_val:
-        offering_val = str(payload.get("offering") or "").strip()
+
+    # 4. Cross-industry sanity filter
+    if offering_val and call_industry:
+        off_lower = offering_val.lower()
+        cross_mismatched = False
+        if call_industry == "real_estate" and any(w in off_lower for w in ["certification", "course", "curriculum", "scholarship", "degree", "doctor", "clinic", "patient", "loan emi"]):
+            cross_mismatched = True
+        elif call_industry == "edtech" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "doctor", "clinic", "patient"]):
+            cross_mismatched = True
+        elif call_industry == "healthcare" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "course", "certification", "degree", "curriculum"]):
+            cross_mismatched = True
+        elif call_industry == "bfsi" and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "curriculum", "doctor", "clinic"]):
+            cross_mismatched = True
+        if cross_mismatched:
+            offering_val = ""
+
+    # 5. Prompt document offering
+    if not offering_val and prompt_doc:
+        ind_entry = (prompt_doc.get("industry_prompts") or {}).get(call_industry, {})
+        if ind_entry and ind_entry.get("offering"):
+            offering_val = str(ind_entry.get("offering")).strip()
+        elif prompt_doc.get("industry") == call_industry and prompt_doc.get("offering"):
+            prompt_off = str(prompt_doc.get("offering")).strip()
+            if prompt_off and not (call_industry == "real_estate" and any(w in prompt_off.lower() for w in ["certification", "course", "degree"])):
+                offering_val = prompt_off
+
+    # 6. Industry fallback
     if not offering_val:
         industry_fallbacks = {
             "real_estate": "property",
@@ -740,16 +1117,96 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
             "bfsi": "loan",
             "general_sales": "solution"
         }
-        offering_val = industry_fallbacks.get(call_industry, "service")
+        custom_templates = (prompt_doc.get("custom_templates") or []) if prompt_doc else []
+        custom_map = {t["id"]: t for t in custom_templates if isinstance(t, dict) and t.get("id")}
+        template_def = custom_map.get(call_industry, {})
+        offering_val = (
+            industry_fallbacks.get(call_industry)
+            or template_def.get("offering")
+            or template_def.get("offering_placeholder")
+            or template_def.get("default_offering_label")
+            or "service"
+        )
 
     location_val = str(lead_dict.get("location") or payload.get("location") or "")
+    if "cyber" in location_val.lower() or "dlf" in location_val.lower():
+        location_val = ""
     prompt_text = prompt_text.replace("{{offering}}", offering_val)
     prompt_text = prompt_text.replace("{{property_name}}", offering_val)
     prompt_text = prompt_text.replace("{{property_location}}", location_val)
     prompt_text = prompt_text.replace("{{location}}", location_val)
     for ck, cv in lead_dict.get("custom_fields", {}).items():
         if cv is not None:
-            prompt_text = prompt_text.replace(f"{{{{{ck}}}}}", str(cv))
+            prompt_text = prompt_text.replace(f"{{{{{ck}}}}}", str(cv)).replace(f"{{{ck}}}", str(cv))
+
+    # Dynamic variables from prompt document, lead document, and industry settings
+    dyn_dispatch = {}
+    if prompt_doc and isinstance(prompt_doc.get("variables"), dict):
+        dyn_dispatch.update(prompt_doc["variables"])
+    if ind_entry and isinstance(ind_entry.get("variables"), dict):
+        dyn_dispatch.update(ind_entry["variables"])
+
+    # Include lead custom fields and root attributes
+    if lead_dict:
+        for k in ["amount_due", "due_date", "loan_amount", "tenure", "company_size", "doctor_name", "budget"]:
+            if lead_dict.get(k):
+                dyn_dispatch[k] = str(lead_dict[k]).strip()
+        for ck, cv in (lead_dict.get("custom_fields") or {}).items():
+            if cv is not None:
+                dyn_dispatch[ck] = str(cv).strip()
+
+    # Include payload overrides
+    if payload.get("amount_due"):
+        dyn_dispatch["amount_due"] = str(payload["amount_due"]).strip()
+    if payload.get("due_date"):
+        dyn_dispatch["due_date"] = str(payload["due_date"]).strip()
+
+    # Universal aliases for loan/overdue amount
+    amt_val = (
+        dyn_dispatch.get("amount_due")
+        or dyn_dispatch.get("loan_amount")
+        or dyn_dispatch.get("Loan Amount")
+        or dyn_dispatch.get("loan amount")
+        or dyn_dispatch.get("amount")
+        or dyn_dispatch.get("order_amount")
+        or lead_dict.get("amount_due")
+        or ""
+    )
+    if amt_val:
+        clean_amt = str(amt_val).replace("₹", "").replace("Rs.", "").replace(",", "").strip()
+        dyn_dispatch["amount_due"] = clean_amt
+        dyn_dispatch["loan_amount"] = clean_amt
+        dyn_dispatch["Loan Amount"] = clean_amt
+
+    # Universal aliases for due date with spoken date format
+    due_val = (
+        dyn_dispatch.get("due_date")
+        or dyn_dispatch.get("due date")
+        or dyn_dispatch.get("Due Date")
+        or dyn_dispatch.get("payment_date")
+        or dyn_dispatch.get("date")
+        or lead_dict.get("due_date")
+        or ""
+    )
+    if due_val:
+        spoken_due = str(due_val).strip()
+        if spoken_due.endswith(" 00:00:00"):
+            spoken_due = spoken_due[:-9].strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", spoken_due):
+            try:
+                parsed_dt = datetime.strptime(spoken_due, "%Y-%m-%d")
+                spoken_due = parsed_dt.strftime("%d %B %Y")
+            except Exception:
+                pass
+        dyn_dispatch["due_date"] = spoken_due
+        dyn_dispatch["due date"] = spoken_due
+        dyn_dispatch["Due Date"] = spoken_due
+
+    for vk, vv in dyn_dispatch.items():
+        prompt_text = prompt_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
+    
+    # Strip double currency symbols in prompt
+    prompt_text = re.sub(r"₹\s*₹", "₹", prompt_text)
     
     bolna_payload["user_data"]["company_name"] = company_name_val
     # Add language instructions if not English
@@ -773,7 +1230,11 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         welcome_text = welcome_text.replace("{{location}}", location_val)
         for ck, cv in lead_dict.get("custom_fields", {}).items():
             if cv is not None:
-                welcome_text = welcome_text.replace(f"{{{{{ck}}}}}", str(cv))
+                welcome_text = welcome_text.replace(f"{{{{{ck}}}}}", str(cv)).replace(f"{{{ck}}}", str(cv))
+        for vk, vv in dyn_dispatch.items():
+            welcome_text = welcome_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
+        welcome_text = re.sub(r"₹\s*₹", "₹", welcome_text)
+        welcome_text = re.sub(r"Rs\.?\s*₹", "₹", welcome_text, flags=re.IGNORECASE)
         bolna_payload["agent_config"] = {
             "agent_welcome_message": welcome_text
         }
@@ -816,6 +1277,27 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
                     "plivo_request_uuid": plivo_res.get("plivo_request_uuid")
                 }}
             )
+
+            # Pre-synthesize the welcome greeting in background while the phone is ringing
+            try:
+                company_engine = (company.get("conversation_engine") if company else None) or "decoupled"
+                if company_engine == "decoupled" and welcome_text:
+                    from routes.plivo_decoupled import prewarm_decoupled_greeting
+                    from services.bakbak_tts import bakbak_voice_for
+                    lang_hint = "hi" if any("\u0900" <= c <= "\u097f" for c in welcome_text) else "en"
+                    b_voice = bakbak_voice_for(lang_hint)
+                    if b_voice:
+                        prewarm_decoupled_greeting(
+                            call_id=lead_id,
+                            company_id=current_user["company_id"],
+                            welcome_text=welcome_text,
+                            bakbak_voice_id=b_voice["voice_id"],
+                            bakbak_language=b_voice["language"],
+                            bakbak_model=b_voice.get("model", "m1")
+                        )
+            except Exception as pw_err:
+                print(f"[PREWARM TRIGGER NOTICE]: {pw_err}")
+
             return {
                 "status": "success",
                 "execution_id": plivo_res.get("plivo_request_uuid"),
@@ -920,6 +1402,7 @@ async def process_bulk_calls(contacts: list, campaign_language: str = "English",
         
         await db.calls.insert_one({
             "call_id": lead_id,
+            "lead_id": contact.get("lead_id") or lead_id,
             "customer_id": phone_str,
             "customer_name": customer_name,
             "direction": "outbound",
@@ -935,7 +1418,10 @@ async def process_bulk_calls(contacts: list, campaign_language: str = "English",
             "regional_accent": regional_accent,
             "company_id": company_id,
             "campaign_id": campaign_id_val,
-            "industry": contact_industry
+            "industry": contact_industry,
+            "amount_due": contact.get("amount_due"),
+            "due_date": contact.get("due_date"),
+            "custom_fields": contact.get("custom_fields") or {}
         })
         
         bolna_payload = {
@@ -1064,6 +1550,24 @@ async def process_bulk_calls(contacts: list, campaign_language: str = "English",
                         "plivo_request_uuid": plivo_res.get("plivo_request_uuid")
                     }}
                 )
+                try:
+                    company_engine = (company.get("conversation_engine") if company else None) or "decoupled"
+                    if company_engine == "decoupled" and welcome_text:
+                        from routes.plivo_decoupled import prewarm_decoupled_greeting
+                        from services.bakbak_tts import bakbak_voice_for
+                        lang_hint = "hi" if any("\u0900" <= c <= "\u097f" for c in welcome_text) else "en"
+                        b_voice = bakbak_voice_for(lang_hint)
+                        if b_voice:
+                            prewarm_decoupled_greeting(
+                                call_id=lead_id,
+                                company_id=company_id,
+                                welcome_text=welcome_text,
+                                bakbak_voice_id=b_voice["voice_id"],
+                                bakbak_language=b_voice["language"],
+                                bakbak_model=b_voice.get("model", "m1")
+                            )
+                except Exception as pw_err:
+                    print(f"[PREWARM BULK NOTICE]: {pw_err}")
                 await asyncio.sleep(0.5)
                 continue
             except Exception as e:
@@ -1228,7 +1732,11 @@ async def trigger_campaign_calls(
                 "lead_id": lead.get("lead_id"),
                 "phone": lead.get("phone"),
                 "name": lead.get("name", "Lead"),
-                "campaign_id": lead.get("campaign_id")
+                "campaign_id": lead.get("campaign_id"),
+                "amount_due": lead.get("amount_due") or (lead.get("custom_fields") or {}).get("amount_due") or (lead.get("custom_fields") or {}).get("Loan Amount"),
+                "due_date": lead.get("due_date") or (lead.get("custom_fields") or {}).get("due_date") or (lead.get("custom_fields") or {}).get("due date"),
+                "custom_fields": lead.get("custom_fields") or {},
+                "offering": lead.get("offering") or lead.get("property") or ""
             })
             
     if not contacts:
@@ -1712,7 +2220,10 @@ async def send_followup_email(call_id: str, current_user: dict = Depends(require
 @app.get("/api/v1/industry-templates")
 async def get_industry_templates():
     """Returns pre-built prompt templates for multiple industries."""
-    return {"status": "success", "templates": INDUSTRY_TEMPLATES}
+    return {
+        "status": "success",
+        "templates": INDUSTRY_TEMPLATES
+    }
 
 @app.post("/api/v1/settings/test-webhook")
 async def test_webhook_endpoint(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):

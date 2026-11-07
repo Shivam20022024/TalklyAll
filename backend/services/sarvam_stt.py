@@ -35,9 +35,11 @@ class SarvamSTTSession:
         self._socket_cm = self._client.speech_to_text_realtime_streaming.connect(
             language_code=self._language_code,
             model=SARVAM_STT_MODEL,
+            stream_type="fast",
             encoding="mulaw",
             sample_rate="8000",
             endpointing="vad",
+            silence_duration_ms="250",
             api_subscription_key=self._api_key,
         )
         self._socket = await self._socket_cm.__aenter__()

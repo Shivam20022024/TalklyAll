@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   Save,
   Play,
@@ -14,7 +14,23 @@ import {
   CreditCard,
   Briefcase,
   Mic,
-  Banknote
+  Banknote,
+  RotateCcw,
+  Copy,
+  Eye,
+  Settings2,
+  HelpCircle,
+  Radio,
+  Zap,
+  LayoutGrid,
+  Trash2,
+  ArrowRight,
+  ArrowLeft,
+  Loader2,
+  FileText,
+  Check,
+  Plus,
+  Wand2
 } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi } from '@/lib/api'
@@ -28,11 +44,13 @@ interface IndustryTemplate {
   icon: string
   description: string
   default_offering_label: string
+  offering_placeholder: string
   welcome_message: string
   prompt: string
   inbound_welcome_message: string
   inbound_prompt: string
   variables: string[]
+  specific_variables?: { key: string; label: string; placeholder: string }[]
 }
 
 const CLIENT_TEMPLATES: Record<string, IndustryTemplate> = {
@@ -42,6 +60,7 @@ const CLIENT_TEMPLATES: Record<string, IndustryTemplate> = {
     icon: "Building2",
     description: "Qualify home buyers, check budget & location, schedule site tours.",
     default_offering_label: "Project / Property Name",
+    offering_placeholder: "e.g. Green Valley Heights / 3BHK Luxury Apartments",
     welcome_message: "नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ। आपके {{offering}} प्रोजेक्ट की इन्क्वायरी के बारे में बात करने के लिए कॉल किया है। क्या अभी 2 मिनट बात करना convenient है?",
     prompt: `You are an experienced real estate sales consultant representing {{company_name}}.
 Your goal is to politely qualify prospective buyers who expressed interest in {{offering}} and schedule an in-person site visit.
@@ -54,7 +73,7 @@ Key Objectives:
 1. Warm Greeting: Acknowledge the customer's inquiry for {{offering}} in {{location}}.
 2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing to your other questions.
 3. Ask Configuration: Ask what configuration they are looking for (e.g. 2BHK, 3BHK, Villa).
-4. Ask Budget: Ask their budget range.
+4. Ask Budget: Ask their budget range {{budget}}.
 5. Ask Timeline: Ask their timeline to purchase.
 6. Highlight Key Selling Points: Mention location connectivity, luxury amenities, and ongoing spot-booking offers.
 7. Schedule Site Visit: Propose a convenient time (e.g., this weekend or tomorrow morning) for a guided site tour.
@@ -75,47 +94,53 @@ Key Objectives:
 6. साइट विज़िट ऑफर करें: एक सुविधाजनक समय पर साइट विज़िट शेड्यूल करने का सुझाव दें।
 7. टोन: विनम्र, सहायक, और ग्राहक की भाषा (हिंदी/इंग्लिश/हिंग्लिश) में स्वाभाविक रूप से जवाब दें।
 8. विदाई: संतुष्ट होने पर गर्मजोशी से विदाई लें और end_call फंक्शन को कॉल करें।`,
-    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", "{{budget}}"]
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", "{{budget}}"],
+    specific_variables: [
+      { key: "budget", label: "Default Budget Range", placeholder: "e.g. ₹75 Lakhs - ₹1.5 Cr" }
+    ]
   },
   healthcare: {
     id: "healthcare",
     name: "Healthcare & Clinic",
     icon: "Stethoscope",
     description: "Confirm doctor appointments, clinic timings, and collect visit notes.",
-    default_offering_label: "Doctor / Clinic Specialty",
-    welcome_message: "नमस्ते {{customer_name}}, मैं {{company_name}} से बोल रही हूँ। आपके {{offering}} के लिए अपॉइंटमेंट के सिलसिले में बात करने के लिए कॉल किया है। क्या अभी बात करने का सही समय है?",
-    prompt: `You are a compassionate, professional clinic coordinator for {{company_name}}.
-Your goal is to assist {{customer_name}} with booking their medical consultation appointment for {{offering}} at {{location}}.
+    default_offering_label: "Specialty / Clinic Service",
+    offering_placeholder: "e.g. Dental Checkup / Cardiology Consultation",
+    welcome_message: "नमस्ते {{customer_name}} जी, मैं {{company_name}} से बोल रही हूँ। आपके {{offering}} के लिए अपॉइंटमेंट के सिलसिले में बात करने के लिए कॉल किया है। क्या अभी बात करने का सही समय है?",
+    prompt: `आप {{company_name}} के लिए एक सहानुभूतिपूर्ण, विनम्र और प्रोफेशनल क्लिनिक कोऑर्डिनेटर हैं।
+आपका लक्ष्य {{customer_name}} की {{location}} में {{doctor_name}} के साथ {{offering}} के लिए मेडिकल कंसल्टेशन अपॉइंटमेंट बुक या कन्फर्म करने में मदद करना है।
 
-IMPORTANT RULE 1 (avoid repetition): You have already delivered the welcome message above once. If the customer gives a short acknowledgment like "Hello," "Yes," "Okay," or "Haan," do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective, as if the conversation is already underway.
-IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the customer's answer before asking the next one. Never combine multiple questions into a single response.
-IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the customer clearly and consistently speaks in a different language. A single short word like "Hello," "Yes," or "OK" from the customer is not a signal to switch languages - continue naturally in the language you started with.
+महत्वपूर्ण नियम:
+1. दोहराव से बचें: आप ऊपर दिया गया वेलकम मैसेज पहले ही एक बार बोल चुकी हैं। अगर मरीज सिर्फ "हाँ", "Hello", "बोलिए", या "जी" कहे, तो अपना परिचय या कंपनी का नाम दोबारा मत दोहराइए - सीधे अपने अगले सवाल पर बढ़िए।
+2. एक बार में सिर्फ एक सवाल: एक टर्न में केवल एक छोटा और स्पष्ट सवाल पूछिए, फिर रुककर मरीज के जवाब का इंतज़ार कीजिए।
+3. भाषा और लहज़ा: पूरी तरह शुद्ध, शांत, आदरणीय और स्वाभाविक हिंदी में बात करें। संक्षिप्त (1 से 2 छोटे वाक्य प्रति टर्न) बोलें।
 
-Key Objectives:
-1. Warm Greeting: Acknowledge their inquiry for {{offering}}.
-2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing.
-3. Language: Speak fluently and naturally in Hindi (or Hinglish/English according to customer preference). If the customer speaks Hindi or asks for Hindi, speak completely in polite, natural Hindi.
-4. Ask Preferred Day: Politely ask their preferred consultation day, in your own natural words - weekday or weekend, or a specific day.
-5. Ask Preferred Time: Once the day is confirmed, ask their preferred time slot (morning/evening).
-6. Confirm Appointment: Lock in their chosen consultation slot (e.g. Sunday evening at 5 PM), confirm doctor availability at {{location}}, and inform them that an SMS/WhatsApp confirmation will follow.
-7. Polite Closing & End Call: Conclude politely with "बहुत-बहुत धन्यवाद, आपका अपॉइंटमेंट तय कर दिया गया है। आपका दिन शुभ हो! अलविदा।" and call the end_call tool to finish the call.
-8. Tone: Empathetic, calm, respectful, and concise (1 to 2 short sentences per turn).`,
-    inbound_welcome_message: "Hello {{customer_name}}, thank you for calling {{company_name}}. How may I assist you today?",
-    inbound_prompt: `You are a compassionate clinic receptionist for {{company_name}}. A patient or their family member has called your direct helpline.
+मुख्य उद्देश्य व बातचीत का प्रवाह:
+1. वार्म ग्रीटिंग व पहचान की पुष्टि: पूछें कि क्या आप {{customer_name}} जी से बात कर रही हैं, और आगे बढ़ने से पहले स्पष्ट हाँ का इंतज़ार करें।
+2. दिन जानें: उनके पसंदीदा कंसल्टेशन दिन (जैसे कल या वीकेंड) के बारे में विनम्रता से पूछें।
+3. समय स्लॉट जानें: पसंदीदा टाइम स्लॉट {{preferred_time}} (सुबह या शाम) पूछें।
+4. तुरंत कन्फर्मेशन: स्लॉट तय होते ही कहें: "बहुत बढ़िया! {{location}} क्लिनिक में {{doctor_name}} के साथ आपका अपॉइंटमेंट सफलतापूर्वक तय कर दिया गया है। सारी डिटेल्स आपके व्हाट्सएप पर भी भेज दी गई हैं।"
+5. विनम्र विदाई व समाप्ति: गर्मजोशी से कहें: "हमसे बात करने के लिए बहुत धन्यवाद, अपना ख्याल रखिए! अलविदा।" और end_call टूल चलाएं।
+6. टोन: सहानुभूतिपूर्ण, शांत, सम्मानजनक और मददगार।`,
+    inbound_welcome_message: "नमस्ते {{customer_name}} जी, {{company_name}} क्लिनिक हेल्पलाइन में कॉल करने के लिए धन्यवाद। मैं आपकी क्या सहायता कर सकती हूँ?",
+    inbound_prompt: `आप {{company_name}} के लिए एक सहानुभूतिपूर्ण क्लिनिक रिसेप्शनिस्ट हैं। एक मरीज या उनके परिवार का सदस्य आपकी डायरेक्ट हेल्पलाइन पर कॉल कर रहा है।
 
-IMPORTANT RULE 1 (avoid repetition): You have already delivered the greeting above once. If the caller gives a short acknowledgment like "Hello," "Yes," "Okay," or "Haan," do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective, as if the conversation is already underway.
-IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the caller's answer before asking the next one. Never combine multiple questions into a single response.
-IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the caller clearly and consistently speaks in a different language. A single short word like "Hello," "Yes," or "OK" from the caller is not a signal to switch languages - continue naturally in the language you started with.
+महत्वपूर्ण नियम:
+1. दोहराव से बचें: आप ऊपर दिया गया ग्रीटिंग पहले ही बोल चुकी हैं। अगर कॉलर सिर्फ "हाँ", "Hello", या "जी" कहे, तो दोबारा परिचय न दें - सीधे उनकी समस्या सुनें।
+2. एक बार में एक सवाल: एक टर्न में एक ही सवाल पूछें।
 
-Key Objectives:
-1. Listen First: Understand what they're calling about - a new appointment, confirming an existing one, or general information.
-2. Confirm Identity: Ask if you're speaking with {{customer_name}} (or confirm you're speaking with the right family member/contact), in your own words, and wait for a clear yes before continuing.
-3. Share Information: Give clear details on {{offering}} availability, clinic timings, and location.
-4. Ask Preferred Day: Ask their preferred day.
-5. Ask Preferred Time: Once the day is confirmed, ask their preferred time slot, then confirm the appointment immediately.
-6. Tone: Calm, empathetic, concise (1 to 2 short sentences per turn).
-7. Closing: End warmly and invoke the end_call function.`,
-    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", "{{doctor_name}}", "{{preferred_time}}"]
+मुख्य उद्देश्य:
+1. ध्यान से सुनें: कॉलर की पूछताछ सुनें - नई अपॉइंटमेंट, मौजूदा अपॉइंटमेंट कन्फर्मेशन, या सामान्य जानकारी।
+2. पहचान की पुष्टि: पूछें क्या आप {{customer_name}} जी से बात कर रही हैं।
+3. जानकारी दें: {{offering}} की उपलब्धता, क्लिनिक का समय और लोकेशन साझा करें।
+4. अपॉइंटमेंट बुक करें: उनका पसंदीदा दिन और समय स्लॉट पूछकर तुरंत कन्फर्म करें।
+5. टोन: शांत, सहानुभूतिपूर्ण, संक्षिप्त (1-2 वाक्य प्रति टर्न)।
+6. विदाई: गर्मजोशी से समाप्त करें और end_call फंक्शन को कॉल करें।`,
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", "{{doctor_name}}", "{{preferred_time}}"],
+    specific_variables: [
+      { key: "doctor_name", label: "Default Doctor / Specialist", placeholder: "e.g. Dr. Priya Sharma" },
+      { key: "preferred_time", label: "Default Slot Timing", placeholder: "e.g. Evening (5 PM - 8 PM)" }
+    ]
   },
   edtech: {
     id: "edtech",
@@ -123,6 +148,7 @@ Key Objectives:
     icon: "GraduationCap",
     description: "Qualify student goals, program interests, and book free demo sessions.",
     default_offering_label: "Course / Program Name",
+    offering_placeholder: "e.g. Full-Stack AI & Data Science Certification",
     welcome_message: "Hi {{customer_name}}, this is {{company_name}} calling regarding your inquiry for our {{offering}} program. Do you have a quick minute to chat?",
     prompt: `You are an enthusiastic educational counselor representing {{company_name}}.
 Your goal is to understand {{customer_name}}'s learning background and invite them to an upcoming live demo session for {{offering}}.
@@ -134,8 +160,8 @@ IMPORTANT RULE 3 (language consistency): Reply in the same language you opened w
 Key Objectives:
 1. Connect: Acknowledge their recent inquiry for the {{offering}} curriculum.
 2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing.
-3. Background Discovery: Ask whether they are currently a college student, working professional, or career switcher.
-4. Program Value: Highlight industry-led projects, guaranteed placement support, flexible weekend batches, and mentor guidance.
+3. Background Discovery: Ask whether they are currently a college student, working professional, or career switcher ({{current_role}}).
+4. Program Value: Highlight industry-led projects, guaranteed placement support, flexible weekend batches ({{batch_time}}), and mentor guidance.
 5. Free Demo / Counseling: Invite them to attend a free live workshop or schedule a 1-on-1 career roadmap call this week.
 6. Tone: Motivating, encouraging, informative, and professional.`,
     inbound_welcome_message: "Hi {{customer_name}}, thanks for calling {{company_name}}! How can I help you today?",
@@ -153,7 +179,11 @@ Key Objectives:
 5. Offer Next Step: Invite them to a free demo class or a 1-on-1 counseling call this week.
 6. Tone: Warm, informative, encouraging, and professional.
 7. Closing: Once satisfied, say a warm goodbye and invoke the end_call function.`,
-    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{batch_time}}", "{{current_role}}"]
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{batch_time}}", "{{current_role}}"],
+    specific_variables: [
+      { key: "batch_time", label: "Default Batch Schedule", placeholder: "e.g. Weekend Live Sessions" },
+      { key: "current_role", label: "Target Audience Role", placeholder: "e.g. Working Professional / Graduate" }
+    ]
   },
   bfsi: {
     id: "bfsi",
@@ -161,38 +191,41 @@ Key Objectives:
     icon: "CreditCard",
     description: "Check eligibility for personal/business loans or policies and schedule callbacks.",
     default_offering_label: "Financial Product / Loan Type",
-    welcome_message: "Hello {{customer_name}}, I am calling from {{company_name}} regarding your recent inquiry for our {{offering}} options. Am I speaking with {{customer_name}}?",
-    prompt: `You are a knowledgeable financial advisory agent for {{company_name}}.
-Your goal is to qualify {{customer_name}} for {{offering}} and arrange a verification call with a senior loan officer.
+    offering_placeholder: "e.g. Pre-Approved Business Loan / Home Loan",
+    welcome_message: "नमस्ते {{customer_name}} जी, मैं {{company_name}} से बात कर रहा हूँ। आपने हमारे {{offering}} के लिए इन्क्वायरी की थी - क्या अभी 2 मिनट बात करने का सही समय है?",
+    prompt: `आप {{company_name}} के एक सीनियर और भरोसेमंद फाइनेंशियल एडवाइजर हैं।
+आपका मुख्य उद्देश्य उन संभावित ग्राहकों को क्वालिफाई करना है जिन्होंने {{offering}} में रुचि दिखाई है, और एक सीनियर लोन ऑफिसर के साथ डॉक्यूमेंटेशन या सैंक्शन कॉल शेड्यूल करना है।
 
-IMPORTANT RULE 1 (avoid repetition): You have already delivered the welcome message above once. If the customer gives a short acknowledgment like "Hello," "Yes," "Okay," or "Haan," do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective, as if the conversation is already underway.
-IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the customer's answer before asking the next one. Never combine multiple questions into a single response.
-IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the customer clearly and consistently speaks in a different language. A single short word like "Hello," "Yes," or "OK" from the customer is not a signal to switch languages - continue naturally in the language you started with.
+महत्वपूर्ण नियम:
+1. दोहराव से बचें: आप ऊपर दिया गया वेलकम मैसेज पहले ही एक बार बोल चुके हैं। अगर ग्राहक सिर्फ "हाँ", "बोलिए", "Hello", या "Okay" कहे, तो अपना परिचय या कंपनी का नाम दोबारा मत दोहराइए - सीधे अपने अगले सवाल पर बढ़िए।
+2. एक बार में सिर्फ एक सवाल: एक टर्न में केवल एक छोटा और स्पष्ट सवाल पूछिए। कभी भी दो सवाल एक साथ मत पूछिए और रुककर ग्राहक के जवाब का इंतज़ार कीजिए।
+3. भाषा में निरंतरता: जिस भाषा (हिंदी/हिंग्लिश) में बातचीत शुरू हुई है, उसी में स्वाभाविक रूप से बात करें।
 
-Key Objectives:
-1. Verification: Confirm the customer applied or checked eligibility for {{offering}}.
-2. Ask the Amount: Ask the approximate loan or coverage amount they need.
-3. Ask Employment Type: Ask whether they are salaried or self-employed.
-4. Ask Income: Ask their approximate monthly income.
-5. Value Proposition: Mention competitive interest rates, zero foreclosure charges (if applicable), and same-day instant pre-approval.
-6. Next Step: Confirm their interest in receiving a customized sanction quote and schedule a documentation callback.
-7. Tone: Trustworthy, professional, compliant, and discreet.`,
-    inbound_welcome_message: "Hello {{customer_name}}, thank you for calling {{company_name}}. How may I assist you today?",
-    inbound_prompt: `You are a professional financial services representative for {{company_name}}, answering an inbound call.
+मुख्य बातचीत का प्रवाह:
+1. पहचान की पुष्टि: अगर ग्राहक के पहले जवाब में पहचान स्पष्ट न हो, तो विनम्रता से पुष्टि करें: "क्या मेरी बात {{customer_name}} जी से ही हो रही है?" और स्पष्ट "हाँ" का इंतज़ार करें।
+2. लोन की आवश्यकता समझें: पूछें कि उन्हें लगभग कितनी राशि की आवश्यकता है (जैसे {{loan_amount}} तक)।
+3. रोजगार का प्रकार जानें: पूछें: "क्या आप अभी Salaried हैं या अपना कोई Business/Self-employed काम करते हैं?"
+4. अनुमानित मासिक आय: पूछें: "आपकी अनुमानित मंथली टेक-होम इनकम कितनी है?"
+5. खास खूबियां बताएं: बताएं कि उनके लिए मिनिमम डॉक्यूमेंटेशन, आकर्षक ब्याज दर, और {{tenure}} तक के आसान ईएमआई ऑप्शन्स उपलब्ध हैं।
+6. अगला कदम: पूछें कि क्या आज दोपहर या कल सुबह डॉक्यूमेंटेशन वेरिफिकेशन कॉल के लिए सही समय रहेगा।
+7. विदाई और कॉल समाप्त: समय तय होने पर कहें: "बहुत-बहुत धन्यवाद {{customer_name}} जी! हमारी टीम जल्द ही आपसे संपर्क करेगी। आपका दिन शुभ हो! अलविदा।" और end_call टूल को कॉल करें।
+8. टोन: शांत, पेशेवर, पारदर्शी और आदरणीय।`,
+    inbound_welcome_message: "नमस्ते {{customer_name}} जी, {{company_name}} लोन और फाइनेंशियल सर्विसेज में कॉल करने के लिए धन्यवाद। मैं आपकी कैसे मदद कर सकता हूँ?",
+    inbound_prompt: `आप {{company_name}} के लिए एक पेशेवर फाइनेंशियल सर्विसेज कंसल्टेंट हैं। एक ग्राहक ने हेल्पलाइन पर कॉल किया है।
 
-IMPORTANT RULE 1 (avoid repetition): You have already delivered the greeting above once. If the caller gives a short acknowledgment like "Hello," "Yes," "Okay," or "Haan," do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective, as if the conversation is already underway.
-IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the caller's answer before asking the next one. Never combine multiple questions into a single response.
-IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the caller clearly and consistently speaks in a different language. A single short word like "Hello," "Yes," or "OK" from the caller is not a signal to switch languages - continue naturally in the language you started with.
-
-Key Objectives:
-1. Listen First: Understand the caller's need - a new loan/insurance inquiry about {{offering}}, application status, or document submission.
-2. Answer Clearly: Share eligibility basics, required documents, and processing timelines concisely.
-3. Ask Amount: Ask the loan/coverage amount needed.
-4. Ask Employment Type: If relevant, ask their employment type.
-5. Next Step: Offer to schedule a callback from a senior advisor or send details over WhatsApp.
-6. Tone: Trustworthy, professional, compliant, and discreet.
-7. Closing: Say a warm goodbye and invoke the end_call function.`,
-    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{loan_amount}}", "{{tenure}}"]
+मुख्य उद्देश्य:
+1. ध्यान से सुनें: कॉलर की जरूरत समझें - नया लोन, इंश्योरेंस या एप्लीकेशन स्टेटस।
+2. पहचान की पुष्टि: पूछें क्या आप {{customer_name}} से बात कर रहे हैं।
+3. स्पष्ट जानकारी दें: एलिजिबिलिटी नियम, जरूरी दस्तावेज और ब्याज दरों के बारे में संक्षिप्त उत्तर दें।
+4. लोन राशि पूछें: उन्हें कितनी लोन राशि की जरूरत है।
+5. अगला कदम: सीनियर एडवाइजर का कॉलबैक या व्हाट्सएप पर कोटेशन भेजने का सुझाव दें।
+6. टोन: भरोसेमंद, पेशेवर और विनम्र।
+7. विदाई: धन्यवाद देकर end_call टूल को कॉल करें।`,
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{loan_amount}}", "{{tenure}}"],
+    specific_variables: [
+      { key: "loan_amount", label: "Default Loan / Cover Amount", placeholder: "e.g. ₹10,00,000" },
+      { key: "tenure", label: "Default Tenure Period", placeholder: "e.g. 5 Years (60 Months)" }
+    ]
   },
   general_sales: {
     id: "general_sales",
@@ -200,6 +233,7 @@ Key Objectives:
     icon: "Briefcase",
     description: "Cold outreach, qualify pain points, and book 15-minute executive walkthroughs.",
     default_offering_label: "Product / Service Solution",
+    offering_placeholder: "e.g. AI Workflow Automation Platform",
     welcome_message: "Hi {{customer_name}}, this is {{company_name}} reaching out. I noticed your interest in our {{offering}} solutions. Do you have a brief moment?",
     prompt: `You are an outbound sales development representative (SDR) for {{company_name}}.
 Your goal is to understand {{customer_name}}'s needs and interest regarding {{offering}} specifically, and move them toward a clear next step (e.g. a demo, trial, or purchase decision) for {{offering}}.
@@ -211,11 +245,11 @@ IMPORTANT RULE 3 (language consistency): Reply in the same language you opened w
 Key Questions and Flow to ask in order:
 1. Warm Introduction: Acknowledge speaking with {{customer_name}} and confirm if they have a quick minute.
 2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing to your other questions.
-3. Discovery: Ask ONE open question about their current situation or needs related to {{offering}} - e.g. what they use today, what matters most to them, or what prompted their interest. Phrase this naturally for whatever {{offering}} actually is (a physical product, a service, software, or anything else) - do not assume it is a calling, CRM, or lead-management tool unless {{offering}} itself says so.
-4. Qualification: Based on their answer, ask ONE relevant follow-up question that digs into what matters most to them specifically about {{offering}} - for a physical product this might be a key feature, use case, or priority; for a service, a specific requirement or concern. Always tie this question to {{offering}} itself, never to generic business processes, workflows, or lead-management topics unless {{offering}} is actually a business/workflow/lead-management product.
-5. Value Pitch: Highlight 2-3 benefits of {{offering}} that are relevant to what they just told you matters to them. Use ONLY features, specifications, or claims about {{offering}} that you have actually been given in this prompt or company information - never invent capabilities, numbers, or guarantees about {{offering}} that were not provided to you.
-6. Call to Action: Propose a 15-minute live screen-share demo with your specialist. Offer two concrete upcoming days (e.g. the next two weekdays from today) and ask which works better - never default to naming the same two fixed weekdays on every call regardless of what day it actually is.
-7. Language & Accent: Speak with a natural, polite Indian English accent. If the customer speaks in Hindi or asks for Hindi ('हिंदी में बात करो'), converse naturally and fluently in polite Hindi.
+3. Discovery: Ask ONE open question about their current situation or needs related to {{offering}} - e.g. what they use today, what matters most to them, or what prompted their interest.
+4. Qualification: Based on their answer, ask ONE relevant follow-up question that digs into what matters most to them specifically about {{offering}} and their team size ({{company_size}}).
+5. Value Pitch: Highlight 2-3 benefits of {{offering}} that are relevant to what they just told you matters to them.
+6. Call to Action: Propose a 15-minute live screen-share demo with your specialist. Offer two concrete upcoming days and ask which works better.
+7. Language & Accent: Speak with a natural, polite Indian English accent. If the customer speaks in Hindi or asks for Hindi, converse naturally and fluently in polite Hindi.
 8. Tone: Consultative, articulate, respectful, and concise (1 to 2 short sentences per turn).
 9. Wrap-up & Auto Hangup: Once they select a day/time, confirm the demo, say a warm goodbye, and execute the end_call function.`,
     inbound_welcome_message: "Hi {{customer_name}}, thanks for calling {{company_name}}. How can I help you today?",
@@ -229,11 +263,14 @@ Key Objectives:
 1. Listen First: Understand what the caller needs - product information about {{offering}}, pricing, a demo, or support.
 2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing.
 3. Answer Clearly: Give concise, helpful answers (1-2 short sentences per turn).
-4. Qualify Gently: If it's a new inquiry, ask ONE relevant question about their situation or use case for {{offering}} specifically - phrased naturally for whatever {{offering}} actually is, not assumed to be a business/team tool unless {{offering}} says so.
+4. Qualify Gently: If it's a new inquiry, ask ONE relevant question about their situation or use case for {{offering}} specifically.
 5. Offer Next Step: Propose a 15-minute demo or connect them with the right specialist.
 6. Language & Accent: Speak with a natural, polite Indian English accent, switching to Hindi if the caller does.
 7. Closing: Once their question is resolved, say a warm goodbye and invoke the end_call function.`,
-    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{company_size}}", "{{industry}}"]
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{company_size}}", "{{industry}}"],
+    specific_variables: [
+      { key: "company_size", label: "Target Organization Size", placeholder: "e.g. 10 - 50 employees" }
+    ]
   },
   collections: {
     id: "collections",
@@ -241,6 +278,7 @@ Key Objectives:
     icon: "Banknote",
     description: "Remind borrowers of overdue payments, secure a promise to pay, and escalate hardship cases to a human agent.",
     default_offering_label: "Loan / Account Type",
+    offering_placeholder: "e.g. Personal Loan EMI / Credit Line",
     welcome_message: "Hello {{customer_name}}, I am calling from {{company_name}} regarding your {{offering}} account. Is this a good time to talk for a couple of minutes?",
     prompt: `You are a collections executive for {{company_name}}, calling {{customer_name}} about an overdue payment on their {{offering}}.
 
@@ -251,7 +289,7 @@ IMPORTANT RULE 3 (language consistency): Reply in the same language you opened w
 Key Objectives:
 1. Identity Verification: Before discussing any account or payment details, confirm you are speaking with the account holder. If it is not them, do not disclose any account or payment information - politely ask to be connected or call back later.
 2. State the Purpose Clearly: Once verified, clearly state the overdue amount of {{amount_due}} and the due date {{due_date}} for their {{offering}}. Be factual and direct, never vague about why you are calling.
-3. Ask for Payment Today: Ask if they are able to make the payment today. If yes, ask if they'd like you to share the available payment options, rather than immediately listing specific channels - only mention a payment method you have actually been told is real and approved. Never invent, assume, or name a specific channel (e.g. a UPI ID, bank account, branch, or payment link) that wasn't explicitly provided to you.
+3. Ask for Payment Today: Ask if they are able to make the payment today. If yes, ask if they'd like you to share the available payment options, rather than immediately listing specific channels.
 4. Negotiate a Specific Promise to Pay: If they cannot pay today, ask for a specific date and amount they can commit to. A vague "I'll try" or "soon" is not enough - politely ask for a specific day and amount before ending the call.
 5. Hardship Handling: If they mention financial hardship (job loss, medical emergency, inability to pay), acknowledge it with empathy, let them know a specialist from the team will personally follow up on their situation, and do not keep negotiating amounts yourself.
 6. Tone: Calm, respectful, professional, and non-confrontational at all times - never threatening, even if the customer is upset.
@@ -271,89 +309,245 @@ Key Objectives:
 5. Hardship Handling: If they mention financial hardship, acknowledge it with empathy and offer to have a specialist follow up - do not keep pushing for a commitment.
 6. Tone: Calm, respectful, and non-confrontational at all times.
 7. Closing: Confirm whatever was agreed, thank them, say a polite goodbye, and execute the end_call function.`,
-    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{amount_due}}", "{{due_date}}"]
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{amount_due}}", "{{due_date}}"],
+    specific_variables: [
+      { key: "amount_due", label: "Default Overdue Amount", placeholder: "e.g. ₹15,000" },
+      { key: "due_date", label: "Default Overdue Date", placeholder: "e.g. 5th of this month" }
+    ]
   }
 }
 
 export default function PromptPage() {
   const { user, refreshUser } = useAuth()
-  const [promptText, setPromptText] = useState("Loading...")
-  const [welcomeMessage, setWelcomeMessage] = useState("Loading...")
-  const [inboundPromptText, setInboundPromptText] = useState("Loading...")
-  const [inboundWelcomeMessage, setInboundWelcomeMessage] = useState("Loading...")
+  const [selectedIndustry, setSelectedIndustry] = useState<string>('real_estate')
+  const [activeLiveIndustry, setActiveLiveIndustry] = useState<string>('real_estate')
+  const [industrySummary, setIndustrySummary] = useState<Record<string, { status: string; offering: string }>>({})
+
+  const [promptText, setPromptText] = useState("")
+  const [welcomeMessage, setWelcomeMessage] = useState("")
+  const [inboundPromptText, setInboundPromptText] = useState("")
+  const [inboundWelcomeMessage, setInboundWelcomeMessage] = useState("")
+  const [offering, setOffering] = useState("")
+  const [location, setLocation] = useState("")
+  const [industryVariables, setIndustryVariables] = useState<Record<string, string>>({})
+
   const [activeDirection, setActiveDirection] = useState<'outbound' | 'inbound'>('outbound')
   const [saving, setSaving] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [promptStatus, setPromptStatus] = useState<string>('Draft')
+  const [loadingIndustry, setLoadingIndustry] = useState(false)
+
   const [showTestModal, setShowTestModal] = useState(false)
   const [showLiveVoicePlayground, setShowLiveVoicePlayground] = useState(false)
   const [testPhone, setTestPhone] = useState('')
-  const [testLanguage, setTestLanguage] = useState('English')
-  const [selectedIndustry, setSelectedIndustry] = useState<string>('healthcare')
+  const [testLanguage, setTestLanguage] = useState('Hindi')
+  const [testCustomerName, setTestCustomerName] = useState('Rahul')
+  const [testOffering, setTestOffering] = useState('')
+  const [testLocation, setTestLocation] = useState('')
 
+  const [showLivePreview, setShowLivePreview] = useState(false)
+  const activeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Auto Build & Custom Template States (Bolna-inspired Self-Made Agent Creator)
+  const [customTemplates, setCustomTemplates] = useState<any[]>([])
+  const [showStartChoiceModal, setShowStartChoiceModal] = useState(false)
+  const [showAutoBuildWizard, setShowAutoBuildWizard] = useState(false)
+  const [builderStep, setBuilderStep] = useState<number>(1)
+  const [generatingAgent, setGeneratingAgent] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState('')
+
+  // Wizard fields
+  const [wizardAgentName, setWizardAgentName] = useState('Saanvi')
+  const [wizardCompanyName, setWizardCompanyName] = useState('')
+  const [wizardIndustry, setWizardIndustry] = useState('')
+  const [wizardAgentDesignation, setWizardAgentDesignation] = useState('Consultation Specialist')
+  const [wizardLanguage, setWizardLanguage] = useState('Hindi / Hinglish')
+  const [wizardVoiceTone, setWizardVoiceTone] = useState('Warm, consultative, professional')
+  const [wizardSopText, setWizardSopText] = useState('')
+  const [wizardPrimaryObjective, setWizardPrimaryObjective] = useState('')
+  const [wizardMustAskQuestions, setWizardMustAskQuestions] = useState('')
+  const [wizardOfferingsUsps, setWizardOfferingsUsps] = useState('')
+  const [wizardObjections, setWizardObjections] = useState('')
+  const [wizardClosingCta, setWizardClosingCta] = useState('')
+
+  // Initial load
   useEffect(() => {
+    if (user?.company_name && !wizardCompanyName) {
+      setWizardCompanyName(user.company_name)
+    }
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const t = params.get('template')
-      if (t && CLIENT_TEMPLATES[t]) {
+      if (t && (CLIENT_TEMPLATES[t] || t.startsWith('custom_'))) {
         setSelectedIndustry(t)
+        loadIndustryPrompt(t)
         return
       }
     }
-    if (user?.industry && CLIENT_TEMPLATES[user.industry]) {
-      setSelectedIndustry(user.industry)
-    }
-  }, [user?.industry])
+    const initInd = user?.industry && CLIENT_TEMPLATES[user.industry] ? user.industry : 'real_estate'
+    setSelectedIndustry(initInd)
+    loadIndustryPrompt(initInd)
+  }, [user?.industry, user?.company_name])
 
-  useEffect(() => {
-    const fetchPrompt = async () => {
-      try {
-        const data = await fetchApi('/api/v1/prompt')
-        if (data) {
-          if (data.prompt) setPromptText(data.prompt)
-          if (data.welcome_message) setWelcomeMessage(data.welcome_message)
-          else setWelcomeMessage("नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ। क्या अभी 2 मिनट बात करना convenient है?")
-          if (data.prompt_status) setPromptStatus(data.prompt_status)
-          // Fall back to the caller's own industry template, not the
-          // `selectedIndustry` state default - this effect can run before the
-          // separate [user?.industry] effect below has corrected that state,
-          // so closing over `selectedIndustry` here risked silently saving
-          // the wrong industry's inbound script on first publish.
-          const fallbackIndustry = (user?.industry && CLIENT_TEMPLATES[user.industry]) ? user.industry : selectedIndustry
-          if (data.inbound_prompt) setInboundPromptText(data.inbound_prompt)
-          else setInboundPromptText(CLIENT_TEMPLATES[fallbackIndustry]?.inbound_prompt || '')
-          if (data.inbound_welcome_message) setInboundWelcomeMessage(data.inbound_welcome_message)
-          else setInboundWelcomeMessage(CLIENT_TEMPLATES[fallbackIndustry]?.inbound_welcome_message || '')
+  const loadIndustryPrompt = async (industryKey: string) => {
+    setLoadingIndustry(true)
+    try {
+      const data = await fetchApi(`/api/v1/prompt?industry=${industryKey}`)
+      if (data) {
+        if (data.custom_templates) {
+          setCustomTemplates(data.custom_templates)
         }
-      } catch (e) {
-        console.error("Failed to load prompt")
-      }
-    }
-    fetchPrompt()
-  }, [user?.industry])
+        const customDef = (data.custom_templates || []).find((ct: any) => ct.id === industryKey)
+        const fallback = customDef || CLIENT_TEMPLATES[industryKey]
 
-  const handleApplyTemplate = async (key: string) => {
-    const tmpl = CLIENT_TEMPLATES[key]
+        setPromptText(data.prompt || fallback?.prompt || '')
+        setWelcomeMessage(data.welcome_message || fallback?.welcome_message || '')
+        setInboundPromptText(data.inbound_prompt || fallback?.inbound_prompt || '')
+        setInboundWelcomeMessage(data.inbound_welcome_message || fallback?.inbound_welcome_message || '')
+        setOffering(data.offering || '')
+        setLocation(data.location || '')
+        setIndustryVariables(data.variables || {})
+        setPromptStatus(data.prompt_status || 'Draft')
+        if (data.active_company_industry) {
+          setActiveLiveIndustry(data.active_company_industry)
+        }
+        if (data.industry_prompts_summary) {
+          setIndustrySummary(data.industry_prompts_summary)
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load prompt for industry:", industryKey, e)
+      const customDef = customTemplates.find((ct: any) => ct.id === industryKey)
+      const fallbackTmpl = customDef || CLIENT_TEMPLATES[industryKey]
+      if (fallbackTmpl) {
+        setPromptText(fallbackTmpl.prompt)
+        setWelcomeMessage(fallbackTmpl.welcome_message)
+        setInboundPromptText(fallbackTmpl.inbound_prompt)
+        setInboundWelcomeMessage(fallbackTmpl.inbound_welcome_message)
+        setPromptStatus('Draft')
+      }
+    } finally {
+      setLoadingIndustry(false)
+    }
+  }
+
+  const handleSelectIndustry = (key: string) => {
+    if (key === selectedIndustry) return
+    setSelectedIndustry(key)
+    loadIndustryPrompt(key)
+  }
+
+  const handleGenerateAutoBuild = async () => {
+    if (!wizardIndustry && !wizardSopText && !wizardPrimaryObjective) {
+      alert('Please provide your business industry or brief to generate the voice agent.')
+      return
+    }
+
+    setGeneratingAgent(true)
+    setGenerationProgress('Analyzing business requirements and tone...')
+
+    try {
+      setTimeout(() => setGenerationProgress('Formulating high-converting conversation flow & anti-repetition rules...'), 1400)
+      setTimeout(() => setGenerationProgress('Drafting natural Hindi/English welcome message & dynamic tags...'), 2800)
+
+      const payload = {
+        agent_name: wizardAgentName.trim() || 'Saanvi',
+        company_name: wizardCompanyName.trim() || user?.company_name || 'Talkly',
+        industry: wizardIndustry.trim() || 'Custom Business',
+        agent_designation: wizardAgentDesignation.trim() || 'Consultation Specialist',
+        language: wizardLanguage,
+        voice_tone: wizardVoiceTone,
+        sop_or_brief: wizardSopText.trim(),
+        primary_objective: wizardPrimaryObjective.trim(),
+        must_ask_questions: wizardMustAskQuestions.trim(),
+        offerings_and_usps: wizardOfferingsUsps.trim(),
+        objections_playbook: wizardObjections.trim(),
+        closing_call_to_action: wizardClosingCta.trim(),
+        save_immediately: true
+      }
+
+      const res = await fetchApi('/api/v1/prompt/auto-build', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      })
+
+      if (res && res.template) {
+        const t = res.template
+        // Add to customTemplates state
+        setCustomTemplates(prev => {
+          const filtered = prev.filter(item => item.id !== t.template_id)
+          return [
+            ...filtered,
+            {
+              id: t.template_id,
+              name: t.template_name,
+              description: t.description,
+              icon: 'Sparkles',
+              default_offering_label: t.default_offering_label || 'Offering',
+              offering_placeholder: t.offering_placeholder || '',
+              welcome_message: t.welcome_message,
+              prompt: t.prompt,
+              inbound_welcome_message: t.inbound_welcome_message,
+              inbound_prompt: t.inbound_prompt,
+              variables: t.suggested_variables || ["{{company_name}}", "{{customer_name}}", "{{offering}}"],
+              specific_variables: t.specific_variables || []
+            }
+          ]
+        })
+
+        // Switch to this new template
+        setSelectedIndustry(t.template_id)
+        setPromptText(t.prompt)
+        setWelcomeMessage(t.welcome_message)
+        setInboundPromptText(t.inbound_prompt || '')
+        setInboundWelcomeMessage(t.inbound_welcome_message || '')
+        setOffering(t.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || '')
+        setPromptStatus('Draft')
+        setShowAutoBuildWizard(false)
+        setShowStartChoiceModal(false)
+
+        alert(`🎉 Agent "${t.template_name}" generated successfully! Your custom agent prompt, dynamic variables, and greetings are ready in Prompt Studio.`)
+      }
+    } catch (e: any) {
+      alert(`Auto Build failed: ${e.message || 'Error communicating with AI service'}`)
+    } finally {
+      setGeneratingAgent(false)
+      setGenerationProgress('')
+    }
+  }
+
+  const handleDeleteCustomTemplate = async (templateId: string, templateName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm(`Are you sure you want to delete the custom template "${templateName}"?`)) return
+    try {
+      await fetchApi(`/api/v1/prompt/custom-templates/${templateId}`, { method: 'DELETE' })
+      setCustomTemplates(prev => prev.filter(t => t.id !== templateId))
+      if (selectedIndustry === templateId) {
+        setSelectedIndustry('real_estate')
+        loadIndustryPrompt('real_estate')
+      }
+    } catch (e: any) {
+      alert(e.message || 'Failed to delete template')
+    }
+  }
+
+  const handleResetToTemplate = () => {
+    const tmpl = CLIENT_TEMPLATES[selectedIndustry]
     if (!tmpl) return
-    if (confirm(`Load the "${tmpl.name}" preset? This will update your prompt and welcome message.`)) {
-      setSelectedIndustry(key)
+    if (confirm(`Reset the "${tmpl.name}" prompt back to its default high-converting template? This will replace your current edits with the preset.`)) {
       setPromptText(tmpl.prompt)
       setWelcomeMessage(tmpl.welcome_message)
       setInboundPromptText(tmpl.inbound_prompt)
       setInboundWelcomeMessage(tmpl.inbound_welcome_message)
       setPromptStatus('Draft')
-      try {
-        await fetchApi('/api/v1/prompt', {
-          method: 'POST',
-          body: JSON.stringify({
-            prompt: tmpl.prompt, welcome_message: tmpl.welcome_message,
-            inbound_prompt: tmpl.inbound_prompt, inbound_welcome_message: tmpl.inbound_welcome_message,
-            industry: key
-          })
-        })
-      } catch (err) {
-        console.error('Failed to auto-save template draft', err)
-      }
+    }
+  }
+
+  const handleInsertVariable = (varTag: string) => {
+    if (activeDirection === 'outbound') {
+      setWelcomeMessage(prev => prev ? `${prev} ${varTag}` : varTag)
+    } else {
+      setInboundWelcomeMessage(prev => prev ? `${prev} ${varTag}` : varTag)
     }
   }
 
@@ -363,53 +557,59 @@ export default function PromptPage() {
       await fetchApi('/api/v1/prompt', {
         method: 'POST',
         body: JSON.stringify({
-          prompt: promptText, welcome_message: welcomeMessage,
-          inbound_prompt: inboundPromptText, inbound_welcome_message: inboundWelcomeMessage,
-          industry: selectedIndustry
+          prompt: promptText,
+          welcome_message: welcomeMessage,
+          inbound_prompt: inboundPromptText,
+          inbound_welcome_message: inboundWelcomeMessage,
+          industry: selectedIndustry,
+          offering: offering,
+          location: location,
+          variables: industryVariables
         })
       })
       setPromptStatus('Draft')
-      alert("Draft saved.")
-    } catch (e) {
-      alert("Failed to save prompt.")
+      alert(`Draft saved successfully for ${CLIENT_TEMPLATES[selectedIndustry]?.name || selectedIndustry}!`)
+    } catch (e: any) {
+      alert(`Failed to save prompt: ${e.message}`)
     } finally {
       setSaving(false)
     }
   }
 
   const handlePublish = async () => {
-    if (!confirm('Publish this prompt to your company’s live AI agent? This updates both your outbound and inbound call scripts.')) return
+    const tmplName = CLIENT_TEMPLATES[selectedIndustry]?.name || selectedIndustry
+    if (!confirm(`Publish this ${tmplName} prompt as your live AI agent? Both outbound and inbound calls for your company will immediately use this vertical.`)) return
+
     setPublishing(true)
     try {
-      await fetchApi('/api/v1/prompt', {
-        method: 'POST',
-        body: JSON.stringify({
-          prompt: promptText, welcome_message: welcomeMessage,
-          inbound_prompt: inboundPromptText, inbound_welcome_message: inboundWelcomeMessage,
-          industry: selectedIndustry
-        })
-      })
       await fetchApi('/api/v1/prompt/publish', {
         method: 'POST',
         body: JSON.stringify({
-          prompt: promptText, welcome_message: welcomeMessage,
-          inbound_prompt: inboundPromptText, inbound_welcome_message: inboundWelcomeMessage,
-          industry: selectedIndustry
+          prompt: promptText,
+          welcome_message: welcomeMessage,
+          inbound_prompt: inboundPromptText,
+          inbound_welcome_message: inboundWelcomeMessage,
+          industry: selectedIndustry,
+          offering: offering,
+          location: location,
+          variables: industryVariables
         })
       })
       setPromptStatus('Published')
-      // Publishing changes company.industry server-side, but the cached
-      // `user` object in AuthProvider doesn't know that - without this,
-      // every other page reading user.industry (e.g. Leads' Quick Call)
-      // keeps using whatever industry was cached at login, silently
-      // mismatching the template that was just published.
+      setActiveLiveIndustry(selectedIndustry)
       await refreshUser()
-      alert(`Published! Live AI agent is now configured with the ${CLIENT_TEMPLATES[selectedIndustry]?.name || ''} template.`)
+      alert(`Successfully published! Your live AI agent is now active with the ${tmplName} prompt.`)
     } catch (e: any) {
       alert(e.message || 'Failed to publish.')
     } finally {
       setPublishing(false)
     }
+  }
+
+  const handleOpenTestModal = () => {
+    setTestOffering(offering || '')
+    setTestLocation(location || '')
+    setShowTestModal(true)
   }
 
   const handleTestCall = async (e: React.FormEvent) => {
@@ -420,16 +620,64 @@ export default function PromptPage() {
         method: 'POST',
         body: JSON.stringify({
           phone_number: testPhone,
+          customer_name: testCustomerName.trim() || 'Valued Customer',
           lead_id: 'test-agent-call',
           campaign_language: testLanguage,
-          industry: selectedIndustry
+          industry: selectedIndustry,
+          offering: testOffering.trim(),
+          location: testLocation.trim(),
+          amount_due: industryVariables.amount_due || '₹15,000',
+          due_date: industryVariables.due_date || '10 November 2026',
+          custom_fields: industryVariables || {}
         })
       })
-      alert("Test call initiated successfully! Your phone should ring shortly.")
+      alert(`Test call initiated successfully to ${testPhone}! Pick up to hear your dynamic AI agent.`)
       setShowTestModal(false)
-    } catch (e) {
-      alert("Failed to initiate test call")
+    } catch (e: any) {
+      alert(`Failed to initiate test call: ${e.message}`)
     }
+  }
+
+  // Compute live rendered preview string
+  const allTemplates: Record<string, any> = {
+    ...CLIENT_TEMPLATES,
+    ...customTemplates.reduce((acc, ct) => {
+      if (ct?.id) acc[ct.id] = ct
+      return acc
+    }, {} as Record<string, any>)
+  }
+  const currentTemplate = allTemplates[selectedIndustry] || CLIENT_TEMPLATES['real_estate']
+  const sampleCompanyName = user?.company_name || 'Talkly'
+  const sampleCustomerName = 'Rahul Sharma'
+  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
+  const sampleLocation = location.trim() || 'Connaught Place, New Delhi'
+
+  const computeSimulatedGreeting = (raw: string) => {
+    let out = raw || ''
+    out = out.replace(/\{\{customer_name\}\}|\{customer_name\}/g, sampleCustomerName)
+    out = out.replace(/\{\{company_name\}\}|\{company_name\}/g, sampleCompanyName)
+    out = out.replace(/\{\{offering\}\}|\{offering\}|\{\{property_name\}\}/g, sampleOffering)
+    out = out.replace(/\{\{location\}\}|\{location\}|\{\{property_location\}\}/g, sampleLocation)
+    out = out.replace(/\{\{budget\}\}/g, industryVariables.budget || '₹80 Lakhs')
+    out = out.replace(/\{\{doctor_name\}\}/g, industryVariables.doctor_name || 'Dr. Priya Sharma')
+    out = out.replace(/\{\{preferred_time\}\}/g, industryVariables.preferred_time || 'Tomorrow 5 PM')
+    out = out.replace(/\{\{batch_time\}\}/g, industryVariables.batch_time || 'Weekend Batch')
+    out = out.replace(/\{\{current_role\}\}/g, industryVariables.current_role || 'Working Professional')
+    out = out.replace(/\{\{loan_amount\}\}/g, industryVariables.loan_amount || '₹10,00,000')
+    out = out.replace(/\{\{tenure\}\}/g, industryVariables.tenure || '5 Years')
+    const rawAmt = industryVariables.amount_due || '₹15,000'
+    const cleanAmt = rawAmt.replace(/^₹\s*/, '')
+    out = out.replace(/₹\s*\{\{amount_due\}\}/g, `₹${cleanAmt}`)
+    out = out.replace(/\{\{amount_due\}\}/g, rawAmt)
+    out = out.replace(/\{\{due_date\}\}/g, industryVariables.due_date || '10 November 2026')
+    out = out.replace(/\{\{company_size\}\}/g, industryVariables.company_size || '25 employees')
+    out = out.replace(/\{\{shop_address\}\}/g, industryVariables.shop_address || 'our store')
+    out = out.replace(/\{\{landmark\}\}/g, industryVariables.landmark || '')
+    out = out.replace(/\{\{city\}\}/g, industryVariables.city || '')
+    out = out.replace(/\{\{shop_timings\}\}/g, industryVariables.shop_timings || '')
+    out = out.replace(/\{\{contact_number\}\}/g, industryVariables.contact_number || '')
+    out = out.replace(/₹\s*₹/g, '₹')
+    return out
   }
 
   return (
@@ -437,31 +685,74 @@ export default function PromptPage() {
       <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
         <div>
           <p className="eyebrow text-primary">Workspace / AI Prompt</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">Agent Configuration</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Manage your AI agent's instructions, use-case presets, and behavior.</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">Prompt Studio</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Setup, customize, and publish dynamic AI prompts for all 6 industry verticals.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowLiveVoicePlayground(true)}
-            className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-bold shadow-md hover:opacity-90 transition-all cursor-pointer"
-            style={{ backgroundColor: '#059669', color: '#ffffff' }}
+            className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-bold shadow-md hover:opacity-90 transition-all cursor-pointer bg-emerald-600 text-white"
           >
-            <Mic size={15} className="text-white" /> Test in Browser (LiveKit)
+            <Mic size={15} /> Test in Browser (LiveKit)
           </button>
-          <button onClick={() => setShowTestModal(true)} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted">
-            <Play size={15} />Test on Phone
+          <button onClick={handleOpenTestModal} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted transition-all">
+            <Play size={15} /> Test on Phone
           </button>
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-50">
+          <button onClick={handleResetToTemplate} className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-all" title="Reset this vertical to factory template">
+            <RotateCcw size={14} /> Reset
+          </button>
+          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-50 transition-all">
             <Save size={15} />{saving ? "Saving..." : "Save Draft"}
           </button>
-          <button onClick={handlePublish} disabled={publishing} className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50">
-            <CheckCircle2 size={15} />{publishing ? "Publishing..." : "Publish"}
+          <button onClick={handlePublish} disabled={publishing} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50 transition-all">
+            <CheckCircle2 size={15} />{publishing ? "Publishing..." : "Publish for Live Calls"}
           </button>
         </div>
       </section>
 
-      {/* Multi-Industry Preset Bar */}
-      <section className="mt-6 rounded-2xl border-2 border-border bg-card p-5 shadow-sm">
+      {/* Auto Build vs Start from Template Hero Banner (Bolna-inspired) */}
+      <section className="mt-6 rounded-2xl border-2 border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-card p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
+              <Zap size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-foreground">Custom AI Agent Builder (Auto Build)</h2>
+                <span className="rounded-full bg-primary/20 px-2.5 py-0.5 text-[10px] font-black text-primary uppercase tracking-wider">
+                  RECOMMENDED
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground max-w-2xl leading-relaxed">
+                Have a unique business or SOP? Answer a few quick questions or paste your company brief, and Talkly AI will automatically generate a tailored voice agent with anti-repetition rules, dynamic variables, and custom greetings.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setBuilderStep(1)
+                setShowAutoBuildWizard(true)
+              }}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-md hover:opacity-90 transition-all cursor-pointer"
+            >
+              <Sparkles size={14} /> Auto Build Custom Agent &rarr;
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowStartChoiceModal(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2.5 text-xs font-semibold text-foreground hover:bg-muted transition-all cursor-pointer"
+            >
+              How it works
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Industry Selector & Custom Agents Cards */}
+      <section className="mt-5 rounded-2xl border-2 border-border bg-card p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-border">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
@@ -469,181 +760,469 @@ export default function PromptPage() {
             </div>
             <div>
               <h2 className="text-sm font-extrabold uppercase tracking-wider text-foreground">
-                LOAD PRE-BUILT INDUSTRY TEMPLATE
+                SELECT INDUSTRY PRESET OR YOUR CUSTOM AGENTS
               </h2>
-              <p className="text-xs font-bold text-muted-foreground">
-                Instant one-click setup tailored for your vertical
+              <p className="text-xs text-muted-foreground">
+                Each vertical maintains its own independent prompt, greeting, and dynamic variables.
               </p>
             </div>
           </div>
-          <span className="inline-flex items-center self-start sm:self-auto rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-            Click to load full prompt &amp; greeting
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBuilderStep(1)
+                setShowAutoBuildWizard(true)
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 hover:bg-primary/20 px-3 py-1 text-xs font-bold text-primary transition-all cursor-pointer"
+            >
+              <Plus size={13} /> New Custom Agent
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
           {Object.entries(CLIENT_TEMPLATES).map(([key, t]) => {
             const isSelected = selectedIndustry === key
+            const isLiveActive = activeLiveIndustry === key
             return (
               <button
                 key={key}
                 type="button"
-                onClick={() => handleApplyTemplate(key)}
-                className={`flex flex-col items-start justify-between p-4 rounded-xl border-2 text-left transition-all ${
-                  isSelected
-                    ? 'border-primary bg-primary/15 shadow-md ring-2 ring-primary/20 scale-[1.02]'
-                    : 'border-border/80 bg-background hover:bg-muted/40 hover:border-primary/50 hover:shadow-sm'
-                }`}
+                onClick={() => handleSelectIndustry(key)}
+                className={`w-full min-w-0 overflow-hidden flex flex-col justify-between p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${isSelected
+                  ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/20 z-10'
+                  : 'border-border/80 bg-background hover:bg-muted/40 hover:border-primary/50'
+                  }`}
               >
-                <div className="w-full">
+                <div className="w-full min-w-0">
                   <div className="flex w-full items-center justify-between gap-1 mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted shrink-0">
-                        {key === 'real_estate' && <Building2 size={16} className="text-primary" />}
-                        {key === 'healthcare' && <Stethoscope size={16} className="text-emerald-500" />}
-                        {key === 'edtech' && <GraduationCap size={16} className="text-blue-500" />}
-                        {key === 'bfsi' && <CreditCard size={16} className="text-amber-500" />}
-                        {key === 'general_sales' && <Briefcase size={16} className="text-purple-500" />}
-                        {key === 'collections' && <Banknote size={16} className="text-rose-500" />}
-                      </div>
-                      <span className="font-extrabold text-sm tracking-tight text-foreground">
-                        {t.name}
-                      </span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+                      {key === 'real_estate' && <Building2 size={16} className="text-primary" />}
+                      {key === 'healthcare' && <Stethoscope size={16} className="text-emerald-500" />}
+                      {key === 'edtech' && <GraduationCap size={16} className="text-blue-500" />}
+                      {key === 'bfsi' && <CreditCard size={16} className="text-amber-500" />}
+                      {key === 'general_sales' && <Briefcase size={16} className="text-purple-500" />}
+                      {key === 'collections' && <Banknote size={16} className="text-rose-500" />}
                     </div>
-                    {user?.industry === key && (
-                      <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary-foreground shadow-sm">
-                        Default
-                      </span>
-                    )}
+                    <div className="flex flex-wrap gap-1 justify-end min-w-0">
+                      {isLiveActive && (
+                        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-xs">
+                          Live
+                        </span>
+                      )}
+                      {industrySummary[key]?.status === 'Published' && !isLiveActive && (
+                        <span className="shrink-0 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                          Published
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs font-bold text-foreground/80 dark:text-foreground/90 line-clamp-2 leading-relaxed">
+                  <h3 className="font-extrabold text-xs sm:text-[13px] tracking-tight text-foreground leading-snug line-clamp-2 break-words">
+                    {t.name}
+                  </h3>
+                  <p className="mt-1 text-[11px] font-medium text-muted-foreground line-clamp-2 leading-relaxed">
                     {t.description}
                   </p>
                 </div>
                 <div className="mt-3 pt-2 w-full border-t border-border/50 flex items-center justify-between text-[11px] font-extrabold">
                   <span className={isSelected ? 'text-primary' : 'text-muted-foreground'}>
-                    {isSelected ? '✓ Currently Loaded' : 'Load Template →'}
+                    {isSelected ? '✓ Editing Now' : 'Edit Prompt →'}
                   </span>
                 </div>
               </button>
             )
           })}
+
+          {/* User's Self-Made Custom Agent Templates */}
+          {customTemplates.map((ct) => {
+            const isSelected = selectedIndustry === ct.id
+            const isLiveActive = activeLiveIndustry === ct.id
+            return (
+              <div
+                key={ct.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleSelectIndustry(ct.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleSelectIndustry(ct.id)
+                  }
+                }}
+                className={`group relative w-full min-w-0 overflow-hidden flex flex-col justify-between p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${isSelected
+                  ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/20 z-10'
+                  : 'border-border/80 bg-background hover:bg-muted/40 hover:border-primary/50'
+                  }`}
+              >
+                <div className="w-full min-w-0">
+                  <div className="flex w-full items-center justify-between gap-1 mb-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary shrink-0">
+                      <Sparkles size={16} />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="shrink-0 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                        Custom
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteCustomTemplate(ct.id, ct.name, e)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 hover:text-destructive p-1 rounded transition-opacity cursor-pointer"
+                        title="Delete this custom template"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <h3 className="font-extrabold text-xs sm:text-[13px] tracking-tight text-foreground leading-snug line-clamp-2 break-words" title={ct.name}>
+                    {ct.name}
+                  </h3>
+                  <p className="mt-1 text-[11px] font-medium text-muted-foreground line-clamp-2 leading-relaxed">
+                    {ct.description || 'Custom company agent prompt'}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 w-full border-t border-border/50 flex items-center justify-between text-[11px] font-extrabold">
+                  <span className={isSelected ? 'text-primary' : 'text-muted-foreground'}>
+                    {isSelected ? '✓ Editing Now' : 'Edit Prompt →'}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+
+          {/* "+ Auto Build Custom Agent" Action Card in Grid */}
+          <button
+            type="button"
+            onClick={() => {
+              setBuilderStep(1)
+              setShowAutoBuildWizard(true)
+            }}
+            className="w-full min-w-0 flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary text-center transition-all cursor-pointer group min-h-[140px]"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary group-hover:scale-110 transition-transform mb-2">
+              <Plus size={18} />
+            </div>
+            <span className="font-extrabold text-xs tracking-tight text-foreground">
+              + Auto Build Agent
+            </span>
+            <p className="mt-1 text-[10px] text-muted-foreground leading-tight">
+              Create custom agent for your business
+            </p>
+          </button>
         </div>
       </section>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_300px]">
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div>
-              <h2 className="text-lg font-bold">Agent Configuration</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Setup the welcome message and system prompt for your agent.</p>
-            </div>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${promptStatus === 'Published' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}`}>
-              <CheckCircle2 size={12} />{promptStatus === 'Published' ? 'Published' : 'Draft — not published'}
-            </span>
-          </div>
+      {/* Main Workspace Layout */}
+      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-5">
 
-          {/* Outbound / Inbound Direction Tabs */}
-          <div className="mt-4 inline-flex rounded-lg border border-border bg-muted/40 p-1">
-            <button
-              type="button"
-              onClick={() => setActiveDirection('outbound')}
-              className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${activeDirection === 'outbound' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Outbound Calls (You call them)
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveDirection('inbound')}
-              className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${activeDirection === 'inbound' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Inbound Calls (They call you)
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {activeDirection === 'outbound'
-              ? 'This script is used when your AI agent initiates the call to a lead or customer.'
-              : 'This script is used when a customer calls your dedicated or shared Talkly number directly - it starts by listening, not pitching.'}
-          </p>
-
-          <div className="mt-5 space-y-6">
-
-            {/* Welcome Message Section */}
-            <div>
-              <h2 className="text-sm font-bold text-foreground">
-                {activeDirection === 'outbound' ? 'Agent Welcome Message' : 'Inbound Greeting'}
-              </h2>
-              <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
-                {activeDirection === 'outbound'
-                  ? 'The very first sentence your AI agent speaks when the prospect picks up.'
-                  : 'The very first sentence your AI agent speaks when it answers an incoming call.'}
-              </p>
-              <textarea
-                value={activeDirection === 'outbound' ? welcomeMessage : inboundWelcomeMessage}
-                onChange={(e) => activeDirection === 'outbound' ? setWelcomeMessage(e.target.value) : setInboundWelcomeMessage(e.target.value)}
-                className="w-full resize-y rounded-xl border border-border bg-background p-4 text-sm font-mono leading-relaxed outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 min-h-[90px]"
-                placeholder={activeDirection === 'outbound'
-                  ? "e.g. Hello {{customer_name}}, this is {{company_name}} calling regarding {{offering}}..."
-                  : "e.g. Hello, thank you for calling {{company_name}}! How may I help you today?"}
-              />
-            </div>
-
-            {/* System Prompt Section */}
-            <div className="border-t border-border pt-6">
-              <h2 className="text-sm font-bold text-foreground">
-                {activeDirection === 'outbound' ? 'System Prompt Instructions' : 'Inbound System Prompt Instructions'}
-              </h2>
-              <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
-                {activeDirection === 'outbound'
-                  ? 'The master AI persona, objection handling scripts, and conversation flow.'
-                  : 'How your agent handles an incoming call - what to listen for, how to answer, and when to offer a next step.'}
-              </p>
-              <FlowBuilder
-                key={activeDirection}
-                value={activeDirection === 'outbound' ? promptText : inboundPromptText}
-                onChange={(next) => activeDirection === 'outbound' ? setPromptText(next) : setInboundPromptText(next)}
-                placeholderRole={`You are a professional representative for {{company_name}}, handling ${activeDirection === 'outbound' ? 'outbound' : 'inbound'} calls.`}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-border bg-card p-5 h-fit">
-          <h2 className="text-lg font-bold">Dynamic Variables</h2>
-          <p className="mt-1 text-xs text-muted-foreground mb-4">Injected automatically per contact from your uploaded CSV.</p>
-          
-          <div className="space-y-2.5">
-            {[
-              { tag: '{{customer_name}}', desc: 'Contact / Lead name' },
-              { tag: '{{company_name}}', desc: 'Your company name' },
-              { tag: '{{offering}}', desc: 'Product, course, clinic service, or property' },
-              { tag: '{{location}}', desc: 'City or branch location' },
-              { tag: '{{budget}}', desc: 'Budget range or price' },
-              { tag: '{{campaign_name}}', desc: 'Active campaign name' },
-              { tag: '{{any_csv_column}}', desc: 'Any extra CSV column (e.g. doctor, date)' }
-            ].map(v => (
-              <div key={v.tag} className="flex flex-col gap-0.5 rounded-lg bg-muted/40 p-2.5 border border-border/40">
-                <span className="font-mono text-xs font-semibold text-primary">{v.tag}</span>
-                <span className="text-[11px] text-muted-foreground">{v.desc}</span>
+          {/* Dynamic Offering & Variables Quick-Config Card */}
+          <section className="rounded-xl border-2 border-primary/30 bg-card p-5 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Settings2 size={18} className="text-primary" />
+                <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">
+                  {currentTemplate.name} — Dynamic Variables Defaults
+                </h2>
               </div>
-            ))}
-          </div>
-        </section>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Injected into <code className="text-primary font-mono">&#123;&#123;offering&#125;&#125;</code> and placeholders
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1">
+                  {currentTemplate.default_offering_label} <span className="text-primary font-mono text-[11px]">(&#123;&#123;offering&#125;&#125;)</span>
+                </label>
+                <input
+                  type="text"
+                  value={offering}
+                  onChange={(e) => setOffering(e.target.value)}
+                  placeholder={currentTemplate.offering_placeholder}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  The primary product, property, course, or service your agent speaks about.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1">
+                  Default Location / Branch <span className="text-primary font-mono text-[11px]">(&#123;&#123;location&#125;&#125;)</span>
+                </label>
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. Connaught Place, New Delhi / Sector 62, Noida"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Default office, clinic, or site visit location used if lead has no location.
+                </p>
+              </div>
+            </div>
+
+            {/* Vertical-Specific Extra Variables */}
+            {currentTemplate.specific_variables && currentTemplate.specific_variables.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border/60 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {currentTemplate.specific_variables
+                  .filter((sv, i, arr) => arr.findIndex(x => x.key === sv.key) === i)
+                  .map((sv, idx) => (
+                    <div key={`${sv.key}-${idx}`}>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        {sv.label} <span className="text-primary font-mono text-[11px]">(&#123;&#123;{sv.key}&#125;&#125;)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={industryVariables[sv.key] || ''}
+                        onChange={(e) => setIndustryVariables({ ...industryVariables, [sv.key]: e.target.value })}
+                        placeholder={sv.placeholder}
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
+
+          {/* Prompt & Greeting Editor Card */}
+          <section className="rounded-xl border border-border bg-card p-5">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <span>{currentTemplate.name} Prompt Instructions</span>
+                  {loadingIndustry && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">Setup the welcome message and system persona for this vertical.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${promptStatus === 'Published' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}`}>
+                  <CheckCircle2 size={12} />
+                  {activeLiveIndustry === selectedIndustry ? 'Active for Live Calls' : promptStatus === 'Published' ? 'Published' : 'Draft'}
+                </span>
+              </div>
+            </div>
+
+            {/* Outbound / Inbound Direction Tabs */}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+              <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveDirection('outbound')}
+                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all cursor-pointer ${activeDirection === 'outbound' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Outbound Calls (You call them)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDirection('inbound')}
+                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all cursor-pointer ${activeDirection === 'inbound' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Inbound Calls (They call you)
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowLivePreview(!showLivePreview)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${showLivePreview ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-foreground hover:bg-muted'}`}
+              >
+                <Eye size={14} /> {showLivePreview ? 'Hide Live Preview' : 'Show Live Preview'}
+              </button>
+            </div>
+
+            {/* Live Preview Box if enabled */}
+            {showLivePreview && (
+              <div className="mt-4 p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-primary">
+                  <span className="flex items-center gap-1.5">
+                    <Radio size={14} className="animate-pulse text-primary" /> Live Call Simulation (What your prospect will hear)
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">Sample: {sampleCustomerName} • {sampleCompanyName}</span>
+                </div>
+                <div className="p-3 rounded-lg bg-card border border-border text-sm font-medium leading-relaxed">
+                  <p className="text-xs font-bold text-muted-foreground mb-1 uppercase tracking-wider">AI Agent Speaks:</p>
+                  <p className="text-foreground">
+                    &ldquo;{computeSimulatedGreeting(activeDirection === 'outbound' ? welcomeMessage : inboundWelcomeMessage)}&rdquo;
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Dynamic Insertion Pills */}
+            <div className="mt-4 pt-2">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-bold text-muted-foreground">Insert Variable:</span>
+                <span className="text-[11px] text-muted-foreground">(Click to append to greeting)</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(() => {
+                  const tagList: string[] = ['{{company_name}}', '{{customer_name}}', '{{offering}}', '{{location}}']
+                  const rawVars = currentTemplate?.variables
+                  if (Array.isArray(rawVars)) {
+                    rawVars.forEach((v: any) => {
+                      if (typeof v === 'string') tagList.push(v)
+                    })
+                  } else if (rawVars && typeof rawVars === 'object') {
+                    Object.keys(rawVars).forEach((k: string) => {
+                      const clean = k.replace(/^\{\{|\}\}$/g, '')
+                      tagList.push(`{{${clean}}}`)
+                    })
+                  }
+                  if (Array.isArray(currentTemplate?.specific_variables)) {
+                    currentTemplate.specific_variables.forEach((sv: any) => {
+                      if (sv?.key) {
+                        const clean = sv.key.replace(/^\{\{|\}\}$/g, '')
+                        tagList.push(`{{${clean}}}`)
+                      }
+                    })
+                  }
+                  return Array.from(new Set(tagList))
+                })().map((tag, idx) => (
+                  <button
+                    key={`${tag}-${idx}`}
+                    type="button"
+                    onClick={() => handleInsertVariable(tag)}
+                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-mono font-medium text-foreground hover:bg-primary hover:text-primary-foreground transition-all cursor-pointer border border-border/50"
+                  >
+                    <span>+</span> {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-6">
+              {/* Welcome Message Section */}
+              <div>
+                <h2 className="text-sm font-bold text-foreground">
+                  {activeDirection === 'outbound' ? 'Agent Welcome Message' : 'Inbound Greeting'}
+                </h2>
+                <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
+                  {activeDirection === 'outbound'
+                    ? 'The very first sentence your AI agent speaks when the prospect answers.'
+                    : 'The opening greeting spoken when a prospect calls your inbound number.'}
+                </p>
+                <textarea
+                  ref={activeTextareaRef}
+                  value={activeDirection === 'outbound' ? welcomeMessage : inboundWelcomeMessage}
+                  onChange={(e) => activeDirection === 'outbound' ? setWelcomeMessage(e.target.value) : setInboundWelcomeMessage(e.target.value)}
+                  className="w-full resize-y rounded-xl border border-border bg-background p-4 text-sm font-mono leading-relaxed outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 min-h-[90px]"
+                  placeholder="e.g. नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ..."
+                />
+              </div>
+
+              {/* System Prompt Section */}
+              <div className="border-t border-border pt-6">
+                <h2 className="text-sm font-bold text-foreground">
+                  {activeDirection === 'outbound' ? 'System Prompt Persona & Rules' : 'Inbound System Persona & Rules'}
+                </h2>
+                <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
+                  Master conversation structure, identity checks, and qualification steps for this vertical.
+                </p>
+                <FlowBuilder
+                  key={`${selectedIndustry}-${activeDirection}`}
+                  value={activeDirection === 'outbound' ? promptText : inboundPromptText}
+                  onChange={(next) => activeDirection === 'outbound' ? setPromptText(next) : setInboundPromptText(next)}
+                  placeholderRole={`You are a professional representative for {{company_name}}, handling ${activeDirection === 'outbound' ? 'outbound' : 'inbound'} calls.`}
+                />
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Right Sidebar: Dynamic Variables Reference & How It Works */}
+        <div className="space-y-5">
+          <section className="rounded-xl border border-border bg-card p-5 h-fit shadow-sm">
+            <h2 className="text-base font-bold flex items-center gap-2">
+              <Sparkles size={16} className="text-primary" /> Supported Dynamic Tags
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground mb-4">
+              Auto-substituted from your uploaded CSV, lead record, or company defaults.
+            </p>
+
+            <div className="space-y-2.5">
+              {(() => {
+                const standardKeys = new Set(['{{customer_name}}', '{{company_name}}', '{{offering}}', '{{location}}'])
+                const extraTags = (currentTemplate.specific_variables || [])
+                  .map(sv => {
+                    const cleanKey = sv.key.replace(/^\{\{|\}\}$/g, '')
+                    return {
+                      tag: `{{${cleanKey}}}`,
+                      desc: sv.label
+                    }
+                  })
+                  .filter(item => !standardKeys.has(item.tag))
+
+                const rawList = [
+                  { tag: '{{customer_name}}', desc: 'Contact / Lead name' },
+                  { tag: '{{company_name}}', desc: 'Your company name' },
+                  { tag: '{{offering}}', desc: currentTemplate.default_offering_label },
+                  { tag: '{{location}}', desc: 'City, branch, or property location' },
+                  ...extraTags,
+                  { tag: '{{any_csv_column}}', desc: 'Any extra CSV column (e.g. doctor, date)' }
+                ]
+
+                const seen = new Set<string>()
+                const uniqueList = rawList.filter(item => {
+                  if (seen.has(item.tag)) return false
+                  seen.add(item.tag)
+                  return true
+                })
+
+                return uniqueList.map((v, idx) => (
+                  <div key={`${v.tag}-${idx}`} className="flex flex-col gap-0.5 rounded-lg bg-muted/40 p-2.5 border border-border/40">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-semibold text-primary">{v.tag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleInsertVariable(v.tag)}
+                        className="text-[10px] text-muted-foreground hover:text-primary font-bold cursor-pointer"
+                      >
+                        + Insert
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">{v.desc}</span>
+                  </div>
+                ))
+              })()}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-5 h-fit shadow-sm">
+            <h2 className="text-sm font-bold flex items-center gap-1.5 text-foreground">
+              <HelpCircle size={15} className="text-primary" /> How Dynamic Variables Work
+            </h2>
+            <ol className="mt-2.5 space-y-2 text-xs text-muted-foreground list-decimal pl-4 leading-relaxed">
+              <li><strong className="text-foreground">Lead / CSV Value:</strong> If an uploaded CSV has an <code className="text-primary">offering</code> or custom column, Talkly uses it first.</li>
+              <li><strong className="text-foreground">Vertical Default:</strong> If the lead has no offering, Talkly injects your configured default offering from above.</li>
+              <li><strong className="text-foreground">No Cross-Industry Leaks:</strong> Talkly automatically prevents an old EdTech or loan offering from ever appearing in a Real Estate call.</li>
+            </ol>
+          </section>
+        </div>
       </div>
 
-      {/* Test Call Modal */}
+      {/* Test Call Modal with Realistic Dynamic Fields */}
       {showTestModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-2xl border border-border">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Test Agent</h2>
-              <button onClick={() => setShowTestModal(false)} className="text-muted-foreground hover:text-foreground">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl border border-border">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-border">
+              <div>
+                <h2 className="text-lg font-bold">Test {currentTemplate.name} Agent</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Dispatches a live phone call with dynamic variables</p>
+              </div>
+              <button onClick={() => setShowTestModal(false)} className="text-muted-foreground hover:text-foreground cursor-pointer">
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">Enter your phone number to receive a test call from the AI agent using your saved prompt.</p>
+
             <form onSubmit={handleTestCall} className="space-y-4">
               <div>
-                <label className="mb-2 block text-xs font-semibold text-muted-foreground">Phone Number</label>
+                <label className="mb-1 block text-xs font-bold text-foreground">Your Phone Number</label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-2.5 text-muted-foreground" size={14} />
                   <input
@@ -651,27 +1230,67 @@ export default function PromptPage() {
                     type="text"
                     value={testPhone}
                     onChange={(e) => setTestPhone(e.target.value)}
-                    placeholder="+919876543210"
-                    className="w-full rounded-lg border border-border bg-background p-2.5 pl-9 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    placeholder="+91 98765 43210"
+                    className="w-full rounded-lg border border-border bg-background p-2.5 pl-9 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
                   />
                 </div>
               </div>
+
               <div>
-                <label className="mb-2 block text-xs font-semibold text-muted-foreground">Voice Language</label>
+                <label className="mb-1 block text-xs font-bold text-foreground">Test Lead Name (Spoken to You)</label>
+                <input
+                  type="text"
+                  value={testCustomerName}
+                  onChange={(e) => setTestCustomerName(e.target.value)}
+                  placeholder="e.g. Rahul"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-foreground">
+                  Test Offering <span className="text-primary font-mono text-[11px]">(&#123;&#123;offering&#125;&#125;)</span>
+                </label>
+                <input
+                  type="text"
+                  value={testOffering}
+                  onChange={(e) => setTestOffering(e.target.value)}
+                  placeholder={currentTemplate.offering_placeholder}
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-foreground">
+                  Test Location <span className="text-primary font-mono text-[11px]">(&#123;&#123;location&#125;&#125;)</span>
+                </label>
+                <input
+                  type="text"
+                  value={testLocation}
+                  onChange={(e) => setTestLocation(e.target.value)}
+                  placeholder="e.g. Gurgaon / Delhi"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-foreground">Call Voice Language</label>
                 <select
                   value={testLanguage}
                   onChange={(e) => setTestLanguage(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
                 >
-                  <option value="English">English</option>
-                  <option value="Hindi">Hindi</option>
-                  <option value="Hinglish">Hinglish</option>
+                  <option value="Hindi">Hindi (Urban Indian Accent)</option>
+                  <option value="Hinglish">Hinglish (Code-mixed Hindi + English)</option>
+                  <option value="English">Indian English</option>
                 </select>
-                <p className="mt-1 text-[11px] text-muted-foreground">Sets the TTS voice for the whole call - pick the language your prompt and welcome message are actually written in.</p>
               </div>
-              <button type="submit" className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">
-                Call Me Now
-              </button>
+
+              <div className="pt-2">
+                <button type="submit" className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20 transition-all cursor-pointer">
+                  Call Me Now
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -685,6 +1304,421 @@ export default function PromptPage() {
         welcomeMessage={welcomeMessage}
         industry={selectedIndustry}
       />
+
+      {/* 1. "How do you want to start?" Choice Modal (Bolna Image 1) */}
+      {showStartChoiceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <button
+              onClick={() => setShowStartChoiceModal(false)}
+              className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center pt-2 pb-6">
+              <span className="text-[11px] font-extrabold uppercase tracking-widest text-primary flex items-center justify-center gap-1.5 mb-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" /> NEW AGENT
+              </span>
+              <h2 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl">
+                How do you want to start?
+              </h2>
+              <p className="mt-2 text-xs text-muted-foreground max-w-md mx-auto">
+                You can change everything later. This just decides where we begin.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-2">
+              {/* Option A: Auto Build */}
+              <div
+                onClick={() => {
+                  setShowStartChoiceModal(false)
+                  setBuilderStep(1)
+                  setShowAutoBuildWizard(true)
+                }}
+                className="group relative flex flex-col justify-between p-5 rounded-2xl border-2 border-primary/40 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all cursor-pointer shadow-sm hover:shadow-md"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm group-hover:scale-105 transition-transform">
+                      <Zap size={20} />
+                    </div>
+                    <span className="rounded-full bg-primary px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary-foreground">
+                      RECOMMENDED
+                    </span>
+                  </div>
+                  <h3 className="text-base font-extrabold text-foreground group-hover:text-primary transition-colors">
+                    Auto Build
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    Answer a few quick questions or upload a brief, and we'll generate the voice agent for you.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground font-mono">⏱ ~3 min • 📄 Upload optional</span>
+                  <span className="font-bold text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    Start building &rarr;
+                  </span>
+                </div>
+              </div>
+
+              {/* Option B: Start from Template */}
+              <div
+                onClick={() => {
+                  setShowStartChoiceModal(false)
+                  window.scrollTo({ top: 120, behavior: 'smooth' })
+                }}
+                className="group relative flex flex-col justify-between p-5 rounded-2xl border-2 border-border/80 bg-background hover:border-primary/50 hover:bg-muted/30 transition-all cursor-pointer shadow-sm hover:shadow-md"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-foreground group-hover:scale-105 transition-transform">
+                      <LayoutGrid size={20} />
+                    </div>
+                  </div>
+                  <h3 className="text-base font-extrabold text-foreground group-hover:text-primary transition-colors">
+                    Start from Template
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    Choose a ready-made template tailored to your workflow and business vertical.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground font-mono">⏱ ~1 min • 📄 6 templates</span>
+                  <span className="font-bold text-foreground group-hover:text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    Browse templates &rarr;
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={() => setShowStartChoiceModal(false)}
+                className="text-xs text-muted-foreground hover:text-foreground underline transition-colors cursor-pointer"
+              >
+                No thanks, I'd like to start from scratch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Auto Build Multi-Step Wizard Modal (Bolna Image 2) */}
+      {showAutoBuildWizard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <button
+              onClick={() => {
+                if (!generatingAgent) setShowAutoBuildWizard(false)
+              }}
+              disabled={generatingAgent}
+              className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Stepper Header */}
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                <span className="text-[11px] font-black uppercase tracking-wider text-primary">NEW AGENT • AUTO BUILD</span>
+              </div>
+
+              {/* Progress Steps */}
+              <div className="flex items-center gap-3 text-xs font-bold text-muted-foreground mb-2">
+                <span className={builderStep === 1 ? 'text-primary font-black' : builderStep > 1 ? 'text-foreground' : ''}>
+                  (1) Identity
+                </span>
+                <span className="opacity-40">&gt;</span>
+                <span className={builderStep === 2 ? 'text-primary font-black' : builderStep > 2 ? 'text-foreground' : ''}>
+                  (2) Conversation
+                </span>
+                <span className="opacity-40">&gt;</span>
+                <span className={builderStep === 3 ? 'text-primary font-black' : ''}>
+                  (3) Closing
+                </span>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: builderStep === 1 ? '33%' : builderStep === 2 ? '66%' : '100%' }}
+                />
+              </div>
+
+              <div className="mt-4">
+                <h2 className="text-xl font-black text-foreground">
+                  {builderStep === 1 && "Who is your agent?"}
+                  {builderStep === 2 && "What is your agent's conversation flow?"}
+                  {builderStep === 3 && "Closing & call wrap-up"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {builderStep === 1 && "Tell us about the agent, its voice, and tone. Or upload a brief and we'll fill it in."}
+                  {builderStep === 2 && "Define the key qualification questions, offerings, and common objections."}
+                  {builderStep === 3 && "Set the call-to-action, first greeting style, and generate your production voice agent."}
+                </p>
+              </div>
+            </div>
+
+            {generatingAgent ? (
+              <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Sparkles size={32} className="animate-spin" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-foreground">Generating Your Custom Voice Agent</h3>
+                  <p className="mt-1 text-xs text-muted-foreground font-mono animate-pulse">
+                    {generationProgress || 'Crafting prompt architecture...'}
+                  </p>
+                </div>
+                <div className="max-w-xs text-[11px] text-muted-foreground/80">
+                  Applying Talkly's anti-repetition rules, one-question pacing, and dynamic lead variable bindings.
+                </div>
+              </div>
+            ) : (
+              <div>
+                {/* STEP 1: IDENTITY */}
+                {builderStep === 1 && (
+                  <div className="space-y-4">
+                    {/* SOP / Brief paste card */}
+                    <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <FileText size={16} className="text-primary" />
+                        <span className="text-xs font-bold text-foreground">Have a brief, brochure, or SOP?</span>
+                        <span className="text-[10px] text-muted-foreground font-semibold">(Optional)</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mb-2">
+                        Paste any text, product catalog, sales pitch, or training instructions. Our AI will extract all details automatically.
+                      </p>
+                      <textarea
+                        value={wizardSopText}
+                        onChange={(e) => setWizardSopText(e.target.value)}
+                        placeholder="e.g. We are Tata Solar. We offer 3kW-10kW residential solar panel installations across Pune & Mumbai with 40% PM Surya Ghar subsidy. Need to confirm homeowner status and monthly electricity bill > ₹2,500..."
+                        rows={3}
+                        className="w-full rounded-lg border border-border bg-background p-3 text-xs outline-none focus:border-primary font-mono"
+                      />
+                    </div>
+
+                    <div className="relative flex py-1 items-center">
+                      <div className="flex-grow border-t border-border"></div>
+                      <span className="flex-shrink mx-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                        OR FILL IN MANUALLY
+                      </span>
+                      <div className="flex-grow border-t border-border"></div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">Agent Spoken Name *</label>
+                        <input
+                          type="text"
+                          value={wizardAgentName}
+                          onChange={(e) => setWizardAgentName(e.target.value)}
+                          placeholder="e.g. Saanvi / Priya / Rahul"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">Company / Brand Name *</label>
+                        <input
+                          type="text"
+                          value={wizardCompanyName}
+                          onChange={(e) => setWizardCompanyName(e.target.value)}
+                          placeholder="e.g. Tata Power Solar / My Clinic"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">Industry / Vertical *</label>
+                        <input
+                          type="text"
+                          value={wizardIndustry}
+                          onChange={(e) => setWizardIndustry(e.target.value)}
+                          placeholder="e.g. Renewable Solar Energy, Logistics, Clinic, Car Dealership"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">Agent Designation / Role *</label>
+                        <input
+                          type="text"
+                          value={wizardAgentDesignation}
+                          onChange={(e) => setWizardAgentDesignation(e.target.value)}
+                          placeholder="e.g. Solar Consultation Specialist, Admissions Advisor"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">Spoken Language</label>
+                        <select
+                          value={wizardLanguage}
+                          onChange={(e) => setWizardLanguage(e.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                        >
+                          <option value="Hindi / Hinglish">Hindi / Hinglish (Code-mixed Natural Indian)</option>
+                          <option value="Indian English">Indian English (Professional & Fluent)</option>
+                          <option value="Pure Hindi">Pure Hindi (Polite & Traditional)</option>
+                          <option value="Tamil">Tamil (Urban Native)</option>
+                          <option value="Telugu">Telugu (Urban Native)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">Voice Personality & Tone</label>
+                        <select
+                          value={wizardVoiceTone}
+                          onChange={(e) => setWizardVoiceTone(e.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                        >
+                          <option value="Warm, consultative, professional">Warm, Consultative & Professional</option>
+                          <option value="Confident, persuasive, energetic">Confident, Persuasive & Energetic (Sales)</option>
+                          <option value="Empathetic, calm, respectful">Empathetic, Calm & Respectful (Support/Clinic)</option>
+                          <option value="Direct, concise, firm">Direct & Polite (Finance / Collections)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2: CONVERSATION & GOALS */}
+                {builderStep === 2 && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Primary Call Objective *
+                      </label>
+                      <input
+                        type="text"
+                        value={wizardPrimaryObjective}
+                        onChange={(e) => setWizardPrimaryObjective(e.target.value)}
+                        placeholder="e.g. Qualify roof ownership and electricity bill, then book a free site survey."
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                      />
+                      <p className="mt-1 text-[11px] text-muted-foreground">What must this call achieve before concluding?</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Must-Ask Qualification Questions *
+                      </label>
+                      <textarea
+                        value={wizardMustAskQuestions}
+                        onChange={(e) => setWizardMustAskQuestions(e.target.value)}
+                        placeholder="e.g.&#10;1. Do you own an independent house or rooftop?&#10;2. What is your average monthly electricity bill?&#10;3. Which city/area is the property located in?"
+                        rows={3}
+                        className="w-full rounded-lg border border-border bg-background p-3 text-xs outline-none focus:border-primary font-mono"
+                      />
+                      <p className="mt-1 text-[11px] text-muted-foreground">The AI agent will ask these questions one-by-one to qualify the lead.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">
+                          Key Offerings, Pricing & USPs
+                        </label>
+                        <textarea
+                          value={wizardOfferingsUsps}
+                          onChange={(e) => setWizardOfferingsUsps(e.target.value)}
+                          placeholder="e.g. 40% government subsidy, ₹0 upfront financing, 25-year warranty, saves 90% bills."
+                          rows={3}
+                          className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">
+                          Common Objections & Playbook
+                        </label>
+                        <textarea
+                          value={wizardObjections}
+                          onChange={(e) => setWizardObjections(e.target.value)}
+                          placeholder="e.g. If customer says too expensive -> explain ₹0 down payment EMI is lower than electricity bill. If busy -> offer callback tomorrow."
+                          rows={3}
+                          className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 3: CLOSING & NEXT STEPS */}
+                {builderStep === 3 && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Closing Call-to-Action & Agreement *
+                      </label>
+                      <input
+                        type="text"
+                        value={wizardClosingCta}
+                        onChange={(e) => setWizardClosingCta(e.target.value)}
+                        placeholder="e.g. Propose two timeslots for a free site visit this weekend, confirm time, say goodbye, and invoke end_call."
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
+                      />
+                    </div>
+
+                    {/* Agent Architecture Summary Card */}
+                    <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-primary">AGENT BLUEPRINT SUMMARY</span>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div><span className="text-muted-foreground font-semibold">Agent:</span> <span className="font-bold">{wizardAgentName} ({wizardAgentDesignation})</span></div>
+                        <div><span className="text-muted-foreground font-semibold">Company:</span> <span className="font-bold">{wizardCompanyName || user?.company_name || 'Talkly'}</span></div>
+                        <div><span className="text-muted-foreground font-semibold">Industry:</span> <span className="font-bold">{wizardIndustry || 'Custom'}</span></div>
+                        <div><span className="text-muted-foreground font-semibold">Language:</span> <span className="font-bold">{wizardLanguage}</span></div>
+                      </div>
+                      <div className="text-xs pt-1 border-t border-border/50">
+                        <span className="text-muted-foreground font-semibold">Goal:</span> <span className="font-bold">{wizardPrimaryObjective || 'Consultative qualification'}</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-2">
+                      <CheckCircle2 size={16} className="shrink-0" />
+                      <span>Ready to generate! Talkly AI will formulate your outbound greeting, anti-repetition rules, dynamic variables, and system prompt.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Navigation Footer */}
+                <div className="mt-6 pt-4 border-t border-border flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setBuilderStep(prev => Math.max(1, prev - 1))}
+                    disabled={builderStep === 1}
+                    className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+                  >
+                    <ArrowLeft size={14} /> Back
+                  </button>
+
+                  {builderStep < 3 ? (
+                    <button
+                      type="button"
+                      onClick={() => setBuilderStep(prev => Math.min(3, prev + 1))}
+                      className="flex items-center gap-1.5 rounded-lg bg-foreground text-background px-4 py-2 text-xs font-bold hover:opacity-90 transition-all cursor-pointer shadow-sm"
+                    >
+                      Continue <ArrowRight size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleGenerateAutoBuild}
+                      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/25 transition-all cursor-pointer"
+                    >
+                      <Sparkles size={15} /> Generate Custom Voice Agent
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </AppLayout>
   )
 }

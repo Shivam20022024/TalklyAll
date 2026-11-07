@@ -14,17 +14,21 @@ campaign_router = APIRouter()
 @campaign_router.post("/campaigns")
 async def create_campaign(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):
     enforce_no_foreign_company(current_user, payload)
+    db = mongodb.get_db()
     name = payload.get("name")
     offering_name = payload.get("offering") or payload.get("property") or ""
     industry = payload.get("industry")
     if not industry:
-        comp = await db.companies.find_one({"company_id": current_user["company_id"]})
-        industry = comp.get("industry") if comp else "general_sales"
+        prompt_doc = await db.prompts.find_one({"company_id": current_user["company_id"]})
+        if prompt_doc and prompt_doc.get("industry"):
+            industry = prompt_doc.get("industry")
+        else:
+            comp = await db.companies.find_one({"company_id": current_user["company_id"]})
+            industry = comp.get("industry") if comp else "general_sales"
 
     if not name:
         raise HTTPException(status_code=400, detail="Campaign name is required")
 
-    db = mongodb.get_db()
     campaign_id = str(uuid.uuid4())
 
     doc = {

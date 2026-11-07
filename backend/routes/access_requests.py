@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 
 import mongodb
 from auth import require_super_admin, get_password_hash
+from industry_templates import INDUSTRY_TEMPLATES
 
 access_requests_router = APIRouter()
 
@@ -168,16 +169,66 @@ async def approve_access_request(req_id: str, current_user: dict = Depends(requi
     now = datetime.utcnow()
 
     # 2. Create Company (dedicated tenant, no Bolna agent yet - super admin sets it later)
+    req_industry = request.get("industry") or "real_estate"
     company_doc = {
         "company_id": company_id,
         "name": request["company_name"],
+        "industry": req_industry,
         "plan_type": "trial",
         "status": "ACTIVE",
+        "voice_engine": "bakbak",
+        "conversation_engine": "decoupled",
+        "use_sarvam_voice": True,
         "bolna_agent_id": None,
         "created_at": now,
         "updated_at": now,
     }
     await db.companies.insert_one(company_doc)
+
+    # 2b. Initialize default prompt and pre-seed all 6 industry presets for the company
+    tmpl = INDUSTRY_TEMPLATES.get(req_industry, INDUSTRY_TEMPLATES.get("real_estate", {}))
+    industry_prompts = {}
+    for k, tmpl_data in INDUSTRY_TEMPLATES.items():
+        is_chosen = (k == req_industry)
+        industry_prompts[k] = {
+            "prompt": tmpl_data.get("prompt", ""),
+            "welcome_message": tmpl_data.get("welcome_message", ""),
+            "draft_prompt": tmpl_data.get("prompt", ""),
+            "draft_welcome_message": tmpl_data.get("welcome_message", ""),
+            "published_prompt": tmpl_data.get("prompt", ""),
+            "published_welcome_message": tmpl_data.get("welcome_message", ""),
+            "inbound_prompt": tmpl_data.get("inbound_prompt", ""),
+            "inbound_welcome_message": tmpl_data.get("inbound_welcome_message", ""),
+            "draft_inbound_prompt": tmpl_data.get("inbound_prompt", ""),
+            "draft_inbound_welcome_message": tmpl_data.get("inbound_welcome_message", ""),
+            "published_inbound_prompt": tmpl_data.get("inbound_prompt", ""),
+            "published_inbound_welcome_message": tmpl_data.get("inbound_welcome_message", ""),
+            "offering": "",
+            "location": "",
+            "variables": {},
+            "status": "Published" if is_chosen else "Draft",
+            "updated_at": now
+        }
+
+    if tmpl:
+        await db.prompts.insert_one({
+            "company_id": company_id,
+            "industry": req_industry,
+            "draft_prompt": tmpl.get("prompt", ""),
+            "published_prompt": tmpl.get("prompt", ""),
+            "draft_welcome_message": tmpl.get("welcome_message", ""),
+            "published_welcome_message": tmpl.get("welcome_message", ""),
+            "draft_inbound_prompt": tmpl.get("inbound_prompt", ""),
+            "published_inbound_prompt": tmpl.get("inbound_prompt", ""),
+            "draft_inbound_welcome_message": tmpl.get("inbound_welcome_message", ""),
+            "published_inbound_welcome_message": tmpl.get("inbound_welcome_message", ""),
+            "industry_prompts": industry_prompts,
+            "offering": "",
+            "location": "",
+            "status": "Published",
+            "created_at": now,
+            "updated_at": now
+        })
 
     # 3. Create the company admin user, bound to the new company_id.
     user_doc = {

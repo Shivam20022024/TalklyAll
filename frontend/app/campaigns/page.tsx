@@ -41,13 +41,13 @@ export default function CampaignsPage() {
   const [selected, setSelected] = useState<string[]>([])
   const [verticalFilter, setVerticalFilter] = useState<string>('active') // 'active', 'all', or specific key
   const [showModal, setShowModal] = useState(false)
-  const [newCampaign, setNewCampaign] = useState<{ name: string; offering: string; industry: IndustryKey }>({ 
-    name: '', 
-    offering: '', 
-    industry: activeIndustry 
+  const [newCampaign, setNewCampaign] = useState<{ name: string; offering: string; industry: IndustryKey }>({
+    name: '',
+    offering: '',
+    industry: activeIndustry
   })
   const [creating, setCreating] = useState(false)
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingCampaignId, setUploadingCampaignId] = useState<string | null>(null)
 
@@ -111,10 +111,10 @@ export default function CampaignsPage() {
   }
 
   const openCreateModal = (targetIndustry?: IndustryKey) => {
-    setNewCampaign({ 
-      name: '', 
-      offering: '', 
-      industry: targetIndustry || activeIndustry 
+    setNewCampaign({
+      name: '',
+      offering: '',
+      industry: targetIndustry || activeIndustry
     })
     setShowModal(true)
   }
@@ -141,7 +141,7 @@ export default function CampaignsPage() {
       })
 
       if (!response.ok) throw new Error('Upload failed')
-      
+
       const result = await response.json()
       alert(`Successfully uploaded ${result.inserted_count} leads to the campaign!`)
       loadCampaigns()
@@ -206,8 +206,8 @@ export default function CampaignsPage() {
           <p className="mt-2 text-sm text-muted-foreground">Manage and launch your industry-tailored AI outbound calling campaigns.</p>
         </div>
         <div className="flex gap-2">
-          <button 
-            onClick={() => openCreateModal(activeIndustry)} 
+          <button
+            onClick={() => openCreateModal(activeIndustry)}
             className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90"
           >
             <Plus size={15} />Create {INDUSTRY_CONFIGS[activeIndustry]?.shortLabel || ''} Campaign
@@ -226,11 +226,10 @@ export default function CampaignsPage() {
             {/* Active Company Sector Tab */}
             <button
               onClick={() => setVerticalFilter('active')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                verticalFilter === 'active'
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${verticalFilter === 'active'
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+                }`}
             >
               <ActiveIcon size={13} />
               {INDUSTRY_CONFIGS[activeIndustry]?.shortLabel || 'Active Vertical'} ({activeCount})
@@ -248,11 +247,10 @@ export default function CampaignsPage() {
                 <button
                   key={ind}
                   onClick={() => setVerticalFilter(ind)}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-                    verticalFilter === ind
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${verticalFilter === ind
                       ? 'bg-foreground text-background shadow-sm'
                       : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                  }`}
+                    }`}
                 >
                   <Icon size={13} />
                   {label} ({count})
@@ -263,11 +261,10 @@ export default function CampaignsPage() {
             {/* View All Campaigns Tab */}
             <button
               onClick={() => setVerticalFilter('all')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-                verticalFilter === 'all'
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${verticalFilter === 'all'
                   ? 'bg-foreground text-background shadow-sm'
                   : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+                }`}
             >
               <Layers size={13} />
               All ({campaigns.length})
@@ -278,15 +275,15 @@ export default function CampaignsPage() {
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-primary" size={14} />
-              <input 
-                value={query} 
-                onChange={(e) => setQuery(e.target.value)} 
-                placeholder="Search campaigns..." 
-                className="h-9 w-48 rounded-lg border border-border bg-background pl-9 pr-3 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary" 
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search campaigns..."
+                className="h-9 w-48 rounded-lg border border-border bg-background pl-9 pr-3 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
-            <button 
-              onClick={handleDownload} 
+            <button
+              onClick={handleDownload}
               className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               title="Export CSV"
             >
@@ -355,8 +352,8 @@ export default function CampaignsPage() {
                     <tr key={campaign.campaign_id} className="group h-16 hover:bg-muted/30 transition-colors">
                       <td className="px-4">
                         <div className="flex items-center gap-3">
-                          <button 
-                            onClick={() => toggleCampaign(campaign.campaign_id)} 
+                          <button
+                            onClick={() => toggleCampaign(campaign.campaign_id)}
                             className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${selected.includes(campaign.campaign_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:border-primary/50 bg-background'}`}
                           >
                             {selected.includes(campaign.campaign_id) && <Check size={12} strokeWidth={3} />}
@@ -367,13 +364,12 @@ export default function CampaignsPage() {
                                 {campaign.name}
                               </span>
                               {/* Industry Badge */}
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                campInd === 'bfsi' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                                campInd === 'healthcare' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                campInd === 'edtech' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                                campInd === 'real_estate' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' :
-                                'bg-primary/10 text-primary'
-                              }`}>
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${campInd === 'bfsi' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                                  campInd === 'healthcare' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                    campInd === 'edtech' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                                      campInd === 'real_estate' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' :
+                                        'bg-primary/10 text-primary'
+                                }`}>
                                 <CampIcon size={10} />
                                 {INDUSTRY_CONFIGS[campInd]?.shortLabel || campInd}
                               </span>
@@ -397,13 +393,13 @@ export default function CampaignsPage() {
                       </td>
                       <td className="px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <a 
+                          <a
                             href={`/leads?campaign_id=${campaign.campaign_id}`}
                             className="inline-flex h-8 items-center justify-center whitespace-nowrap gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition-opacity"
                           >
                             View Leads
                           </a>
-                          <button 
+                          <button
                             onClick={() => handleUploadClick(campaign.campaign_id)}
                             disabled={uploadingCampaignId === campaign.campaign_id}
                             className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
@@ -432,7 +428,7 @@ export default function CampaignsPage() {
         </div>
       </section>
 
-      <input type="file" accept=".csv,.xlsx" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+      <input type="file" accept=".csv,.xlsx,.xls,.tsv,.txt" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
 
       {/* Create Campaign Modal */}
       {showModal && (
@@ -450,7 +446,7 @@ export default function CampaignsPage() {
                 <label className="text-xs font-semibold text-muted-foreground">Industry / Sector</label>
                 <select
                   value={newCampaign.industry}
-                  onChange={(e) => setNewCampaign({...newCampaign, industry: e.target.value as IndustryKey})}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, industry: e.target.value as IndustryKey })}
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 >
                   <option value="bfsi">BFSI & Lending Advisory</option>
@@ -465,22 +461,22 @@ export default function CampaignsPage() {
 
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Campaign Name</label>
-                <input 
-                  required 
-                  value={newCampaign.name} 
-                  onChange={(e) => setNewCampaign({...newCampaign, name: e.target.value})} 
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" 
-                  placeholder={newCampaign.industry === 'bfsi' ? 'e.g. Q4 Personal Loan Campaign' : 'e.g. Summer Outreach Campaign'} 
+                <input
+                  required
+                  value={newCampaign.name}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  placeholder={newCampaign.industry === 'bfsi' ? 'e.g. Q4 Personal Loan Campaign' : 'e.g. Summer Outreach Campaign'}
                 />
               </div>
 
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Campaign Offering / Product / Service</label>
-                <input 
-                  value={newCampaign.offering} 
-                  onChange={(e) => setNewCampaign({...newCampaign, offering: e.target.value})} 
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" 
-                  placeholder={getOfferingPlaceholder(newCampaign.industry)} 
+                <input
+                  value={newCampaign.offering}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, offering: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  placeholder={getOfferingPlaceholder(newCampaign.industry)}
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">Passed to the AI agent as <code className="text-primary font-mono text-[10px]">&#123;&#123;offering&#125;&#125;</code> variable.</p>
               </div>
@@ -493,9 +489,9 @@ export default function CampaignsPage() {
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   type="submit"
-                  disabled={creating} 
+                  disabled={creating}
                   className="flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
                   {creating ? <Loader2 size={14} className="animate-spin" /> : 'Create Campaign'}

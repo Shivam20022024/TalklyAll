@@ -39,12 +39,16 @@ async def get_telephony_settings(current_user: dict = Depends(require_company_ac
             "connected_at": telephony.get("connected_at", datetime.utcnow().isoformat())
         }
 
+    base_url = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
+    inbound_webhook_url = f"{base_url}/api/v1/plivo/answer"
+
     return {
         "status": "success",
         "mode": mode,
         "shared_number": DEFAULT_SHARED_NUMBER,
         "shared_number_label": DEFAULT_SHARED_LABEL,
         "connected_line": connected_line,
+        "inbound_webhook_url": inbound_webhook_url,
         "inbound_routing": telephony.get("inbound_routing") or {
             "mode": "ai_agent",
             "fallback_number": ""
@@ -93,6 +97,14 @@ async def connect_telephony_line(payload: dict = Body(...), current_user: dict =
     elif provider == "plivo":
         if not account_sid or not auth_token:
             raise HTTPException(status_code=400, detail="Plivo requires Auth ID and Auth Token")
+        from telephony.plivo_provider import PlivoProvider
+        plivo_prov = PlivoProvider(account_sid, auth_token)
+        ver_res = await plivo_prov.verify_credentials()
+        if not ver_res.get("valid"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Plivo credential verification failed: {ver_res.get('error', 'Invalid Auth ID or Auth Token')}"
+            )
 
     telephony_doc = {
         "mode": "custom",

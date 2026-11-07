@@ -287,6 +287,39 @@ async def finalize_plivo_call(
     logger.info(f"Plivo call {call_id} finalized successfully.")
 
 
+def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = False) -> str:
+    """
+    Sanitize text before speech synthesis so TTS never pronounces formatting artifacts
+    like 'underscore', 'asterisk', or placeholder leaks like 'customer_name'.
+    On mid-call turns (is_subsequent=True), also strips repetitive customer name vocatives.
+    """
+    if not text:
+        return ""
+    if customer_name and not is_subsequent:
+        text = re.sub(r'(?i)\b_?customer[_\s]?name_?\b', customer_name, text)
+    else:
+        text = re.sub(r'(?i)\b_?customer[_\s]?name_?\b', '', text)
+    # Strip markdown bold/italics/code markers (*, _, ~, `) and brackets
+    cleaned = re.sub(r'[*_~`#\[\]]', '', text)
+
+    # On subsequent turns, strip repetitive customer name vocatives (e.g. 'I see, Mohit.' -> 'I see.')
+    if is_subsequent and customer_name:
+        parts = [p.strip() for p in customer_name.split() if len(p.strip()) > 1]
+        name_patterns = [re.escape(customer_name)] + [re.escape(p) for p in parts]
+        for np in name_patterns:
+            cleaned = re.sub(rf'(?i)\b(Got it|Sure|I see|Understood|Great|Alright|Okay|Thank you|You\'re welcome|Welcome|Thanks|No problem|Theek hai|Samajh gaya|Ji),?\s*{np}\b', r'\1', cleaned)
+            cleaned = re.sub(rf'(?i),\s*{np}\b([.!?])', r'\1', cleaned)
+            cleaned = re.sub(rf'(?i),\s*{np}\b,', ',', cleaned)
+            cleaned = re.sub(rf'(?i)\b{np}\b([.!?])', r'\1', cleaned)
+            cleaned = re.sub(rf'(?i)(^|[.!?]\s*){np},?\s*', r'\1', cleaned)
+
+    # Collapse extra whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
 async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -> dict:
     """Resolve the system prompt, opening greeting, transcription language, and
     company doc for a call. Shared by the /answer pre-warm path and the
@@ -327,8 +360,31 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         if cname.lower() not in ("valued customer", "unknown", "there", ""):
             customer_name = cname
 
-    if not lead_doc and call_doc and call_doc.get("customer_id") and company_id:
-        lead_doc = await db.leads.find_one({"phone": call_doc.get("customer_id"), "company_id": company_id})
+    call_lead_id = call_doc.get("lead_id") if call_doc else None
+    target_phone = call_doc.get("customer_id") if call_doc else None
+    target_name = customer_name or (call_doc.get("customer_name") if call_doc else None)
+
+    # Resolve lead_doc with high fidelity: first by lead_id, then by phone+name, then by latest phone record
+    if not lead_doc and call_lead_id and company_id:
+        lead_doc = await db.leads.find_one({"lead_id": call_lead_id, "company_id": company_id})
+        if not lead_doc:
+            try:
+                from bson import ObjectId
+                lead_doc = await db.leads.find_one({"_id": ObjectId(call_lead_id), "company_id": company_id})
+            except Exception:
+                pass
+
+    if not lead_doc and target_phone and target_name and target_name.lower() not in ("valued customer", "unknown", "") and company_id:
+        lead_doc = await db.leads.find_one(
+            {"phone": target_phone, "name": {"$regex": f"^{re.escape(target_name)}$", "$options": "i"}, "company_id": company_id},
+            sort=[("created_at", -1), ("_id", -1)]
+        )
+
+    if not lead_doc and target_phone and company_id:
+        lead_doc = await db.leads.find_one(
+            {"phone": target_phone, "company_id": company_id},
+            sort=[("created_at", -1), ("_id", -1)]
+        )
 
     if not customer_name and lead_doc and lead_doc.get("name"):
         cname = str(lead_doc.get("name")).strip()
@@ -336,25 +392,86 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             customer_name = cname
 
     call_industry = None
-    if prompt_doc and prompt_doc.get("industry"):
+    if call_doc and call_doc.get("industry") and call_doc.get("industry") != "general_sales":
+        call_industry = call_doc.get("industry")
+    elif prompt_doc and prompt_doc.get("industry"):
         call_industry = prompt_doc.get("industry")
     elif company and company.get("industry"):
         call_industry = company.get("industry")
-    elif call_doc and call_doc.get("industry") and call_doc.get("industry") != "general_sales":
-        call_industry = call_doc.get("industry")
     elif lead_doc and lead_doc.get("industry") and lead_doc.get("industry") != "general_sales":
         call_industry = lead_doc.get("industry")
     elif call_doc and call_doc.get("industry"):
         call_industry = call_doc.get("industry")
 
-    if not call_industry or call_industry not in INDUSTRY_TEMPLATES:
+    custom_templates = (prompt_doc or {}).get("custom_templates") or []
+    custom_map = {t["id"]: t for t in custom_templates if isinstance(t, dict) and t.get("id")}
+    ind_prompts = (prompt_doc or {}).get("industry_prompts", {})
+
+    is_valid_industry = bool(
+        call_industry
+        and (
+            call_industry in INDUSTRY_TEMPLATES
+            or call_industry in custom_map
+            or call_industry in ind_prompts
+        )
+    )
+    if not is_valid_industry:
         call_industry = "general_sales"
 
     is_inbound = bool(call_doc and call_doc.get("direction") == "inbound")
+    is_test_call = bool(call_id and str(call_id).startswith("test-agent-call"))
+
+    if call_industry in custom_map:
+        template_def = custom_map[call_industry]
+    elif call_industry in ind_prompts:
+        template_def = ind_prompts[call_industry]
+    else:
+        template_def = INDUSTRY_TEMPLATES.get(call_industry, INDUSTRY_TEMPLATES["general_sales"])
+
+    specific_ind_prompt = ind_prompts.get(call_industry, {})
 
     offering = ""
-    if lead_doc:
-        offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
+    # 1. Check if call_doc explicitly carries an offering override
+    if call_doc and call_doc.get("offering"):
+        offering = str(call_doc.get("offering")).strip()
+
+    # 2. Check lead_doc - only if this is NOT a test call and industry matches
+    if not offering and lead_doc and not is_test_call:
+        lead_ind = (lead_doc.get("industry") or "").strip().lower()
+        if not lead_ind or lead_ind == "general_sales" or lead_ind == call_industry:
+            offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
+
+    # 3. Sanity check: discard stale cross-industry contaminated offerings
+    if offering and call_industry:
+        off_lower = offering.lower()
+        cross_mismatched = False
+        if call_industry == "real_estate" and any(w in off_lower for w in ["certification", "course", "curriculum", "scholarship", "degree", "doctor", "clinic", "patient", "loan emi"]):
+            cross_mismatched = True
+        elif call_industry == "edtech" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "doctor", "clinic", "patient"]):
+            cross_mismatched = True
+        elif call_industry == "healthcare" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "course", "certification", "degree", "curriculum"]):
+            cross_mismatched = True
+        elif call_industry == "bfsi" and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "curriculum", "doctor", "clinic"]):
+            cross_mismatched = True
+        if cross_mismatched:
+            offering = ""
+
+    # 4. Check industry-specific prompt offering
+    if not offering and specific_ind_prompt and specific_ind_prompt.get("offering"):
+        offering = str(specific_ind_prompt.get("offering")).strip()
+
+    # 5. Check active prompt template offering
+    if not offering and prompt_doc and prompt_doc.get("industry") == call_industry and prompt_doc.get("offering"):
+        prompt_off = str(prompt_doc.get("offering")).strip()
+        # Ensure prompt offering also doesn't carry cross-industry mismatch
+        if prompt_off and not (call_industry == "real_estate" and any(w in prompt_off.lower() for w in ["certification", "course", "degree"])):
+            offering = prompt_off
+
+    # 6. Company default offering
+    if not offering and company and company.get("offering") and company.get("industry") == call_industry:
+        offering = str(company.get("offering")).strip()
+
+    # 7. Industry-tailored fallback
     if not offering:
         industry_fallbacks = {
             "real_estate": "luxury property",
@@ -364,40 +481,157 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "general_sales": "AI calling services",
             "collections": "loan EMI payment"
         }
-        offering = industry_fallbacks.get(call_industry, "AI calling services")
+        offering = (
+            industry_fallbacks.get(call_industry)
+            or (template_def.get("offering") if isinstance(template_def, dict) and template_def.get("offering") else None)
+            or (template_def.get("offering_placeholder") if isinstance(template_def, dict) and template_def.get("offering_placeholder") else None)
+            or (template_def.get("default_offering_label") if isinstance(template_def, dict) and template_def.get("default_offering_label") else None)
+            or "our services"
+        )
 
-    location = ""
+    # Collect dynamic variables from all configuration sources
+    dyn_vars = {}
+    if isinstance(template_def, dict) and isinstance(template_def.get("variables"), dict):
+        dyn_vars.update(template_def["variables"])
+    if specific_ind_prompt and isinstance(specific_ind_prompt.get("variables"), dict):
+        dyn_vars.update(specific_ind_prompt["variables"])
+    if prompt_doc and isinstance(prompt_doc.get("variables"), dict):
+        dyn_vars.update(prompt_doc["variables"])
+
+    var_fields = [
+        "budget", "doctor_name", "preferred_time", "batch_time", "current_role",
+        "loan_amount", "tenure", "company_size", "amount_due", "due_date",
+        "shop_address", "landmark", "city", "shop_timings", "contact_number"
+    ]
     if lead_doc:
-        location = str(lead_doc.get("location") or "").strip()
-    if not location:
-        location = "our office"
+        for k in var_fields:
+            if lead_doc.get(k):
+                dyn_vars[k] = str(lead_doc[k]).strip()
+        for ck, cv in (lead_doc.get("custom_fields") or {}).items():
+            if cv is not None:
+                dyn_vars[ck] = str(cv).strip()
+    if call_doc:
+        for k in var_fields:
+            if call_doc.get(k):
+                dyn_vars[k] = str(call_doc[k]).strip()
+        for ck, cv in (call_doc.get("custom_fields") or {}).items():
+            if cv is not None:
+                dyn_vars[ck] = str(cv).strip()
 
-    template_def = INDUSTRY_TEMPLATES.get(call_industry, INDUSTRY_TEMPLATES["general_sales"])
+    # Universal aliases for loan/overdue amount
+    amt_val = (
+        dyn_vars.get("amount_due")
+        or dyn_vars.get("loan_amount")
+        or dyn_vars.get("Loan Amount")
+        or dyn_vars.get("loan amount")
+        or dyn_vars.get("amount")
+        or dyn_vars.get("order_amount")
+        or (lead_doc.get("amount_due") if lead_doc else None)
+        or (call_doc.get("amount_due") if call_doc else None)
+        or ""
+    )
+    if amt_val:
+        clean_amt = str(amt_val).replace("₹", "").replace("Rs.", "").replace(",", "").strip()
+        dyn_vars["amount_due"] = clean_amt
+        dyn_vars["loan_amount"] = clean_amt
+        dyn_vars["Loan Amount"] = clean_amt
+
+    # Universal aliases for due date with human-friendly spoken date formatting
+    due_val = (
+        dyn_vars.get("due_date")
+        or dyn_vars.get("due date")
+        or dyn_vars.get("Due Date")
+        or dyn_vars.get("payment_date")
+        or dyn_vars.get("date")
+        or (lead_doc.get("due_date") if lead_doc else None)
+        or (call_doc.get("due_date") if call_doc else None)
+        or ""
+    )
+    if due_val:
+        spoken_due = str(due_val).strip()
+        if spoken_due.endswith(" 00:00:00"):
+            spoken_due = spoken_due[:-9].strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", spoken_due):
+            try:
+                parsed_dt = datetime.strptime(spoken_due, "%Y-%m-%d")
+                spoken_due = parsed_dt.strftime("%d %B %Y")
+            except Exception:
+                pass
+        dyn_vars["due_date"] = spoken_due
+        dyn_vars["due date"] = spoken_due
+        dyn_vars["Due Date"] = spoken_due
+
+    # Shop address single source of truth resolution
+    raw_shop_address = (
+        dyn_vars.get("shop_address")
+        or (call_doc.get("shop_address") if call_doc else None)
+        or (lead_doc.get("shop_address") if lead_doc else None)
+        or (prompt_doc.get("shop_address") if prompt_doc else None)
+        or (company.get("shop_address") if company else None)
+        or (company.get("address") if company else None)
+        or ""
+    )
+    shop_address = str(raw_shop_address).strip() if raw_shop_address else ""
+
+    # Supporting location information
+    landmark = str(dyn_vars.get("landmark") or (lead_doc.get("landmark") if lead_doc else "") or "").strip()
+    city = str(dyn_vars.get("city") or (lead_doc.get("city") if lead_doc else "") or (company.get("city") if company else "") or "").strip()
+    shop_timings = str(dyn_vars.get("shop_timings") or dyn_vars.get("timings") or "").strip()
+    contact_number = str(dyn_vars.get("contact_number") or dyn_vars.get("phone") or (company.get("phone") if company else "") or "").strip()
+
+    # Location resolution: Discard outdated hardcoded sample location (e.g. DLF Cyber Park)
+    location = ""
+    if call_doc and call_doc.get("location"):
+        loc_val = str(call_doc.get("location")).strip()
+        if "cyber" not in loc_val.lower() and "dlf" not in loc_val.lower():
+            location = loc_val
+    if not location and lead_doc and lead_doc.get("location"):
+        loc_val = str(lead_doc.get("location")).strip()
+        if "cyber" not in loc_val.lower() and "dlf" not in loc_val.lower():
+            location = loc_val
+    if not location and specific_ind_prompt and specific_ind_prompt.get("location"):
+        loc_val = str(specific_ind_prompt.get("location")).strip()
+        if "cyber" not in loc_val.lower() and "dlf" not in loc_val.lower():
+            location = loc_val
+    if not location and prompt_doc and prompt_doc.get("location"):
+        loc_val = str(prompt_doc.get("location")).strip()
+        if "cyber" not in loc_val.lower() and "dlf" not in loc_val.lower():
+            location = loc_val
+    if not location:
+        location = city or shop_address or "our office"
 
     system_prompt = None
     welcome_text = None
 
-    if prompt_doc:
+    # Load from industry_prompts if available
+    if specific_ind_prompt:
         if is_inbound:
-            cand_prompt = prompt_doc.get("published_inbound_prompt") or prompt_doc.get("inbound_prompt")
-            cand_welcome = prompt_doc.get("published_inbound_welcome_message") or prompt_doc.get("inbound_welcome_message")
-            is_stale_real_estate = False
+            system_prompt = specific_ind_prompt.get("published_inbound_prompt") or specific_ind_prompt.get("inbound_prompt") or specific_ind_prompt.get("draft_inbound_prompt")
+            welcome_text = specific_ind_prompt.get("published_inbound_welcome_message") or specific_ind_prompt.get("inbound_welcome_message") or specific_ind_prompt.get("draft_inbound_welcome_message")
         else:
-            cand_prompt = prompt_doc.get("published_prompt") or prompt_doc.get("prompt")
-            cand_welcome = prompt_doc.get("published_welcome_message") or prompt_doc.get("welcome_message")
-            is_stale_real_estate = (
-                call_industry != "real_estate" and cand_welcome and
-                ("फ्लैट" in cand_welcome or "nov" in cand_welcome or "प्रोजेक्ट" in cand_welcome or "फ्लैट लेने का" in cand_welcome)
-            )
-        if cand_prompt and not is_stale_real_estate:
-            system_prompt = cand_prompt
-        if cand_welcome and not is_stale_real_estate:
-            welcome_text = cand_welcome
+            system_prompt = specific_ind_prompt.get("published_prompt") or specific_ind_prompt.get("prompt") or specific_ind_prompt.get("draft_prompt")
+            welcome_text = specific_ind_prompt.get("published_welcome_message") or specific_ind_prompt.get("welcome_message") or specific_ind_prompt.get("draft_welcome_message")
 
+    # Fall back to legacy published prompt IF the prompt industry matches
+    if not system_prompt and prompt_doc and prompt_doc.get("industry") == call_industry:
+        if is_inbound:
+            system_prompt = prompt_doc.get("published_inbound_prompt") or prompt_doc.get("inbound_prompt") or prompt_doc.get("draft_inbound_prompt")
+            welcome_text = prompt_doc.get("published_inbound_welcome_message") or prompt_doc.get("inbound_welcome_message") or prompt_doc.get("draft_inbound_welcome_message")
+        else:
+            system_prompt = prompt_doc.get("published_prompt") or prompt_doc.get("prompt") or prompt_doc.get("draft_prompt")
+            welcome_text = prompt_doc.get("published_welcome_message") or prompt_doc.get("welcome_message") or prompt_doc.get("draft_welcome_message")
+
+    # If still not found, load the gold-standard preset from template_def
+    if not system_prompt and isinstance(template_def, dict):
+        system_prompt = (template_def.get("inbound_prompt") if is_inbound else template_def.get("prompt")) or template_def.get("prompt")
+    if not welcome_text and isinstance(template_def, dict):
+        welcome_text = (template_def.get("inbound_welcome_message") if is_inbound else template_def.get("welcome_message")) or template_def.get("welcome_message")
+
+    # Ultimate fallback if completely missing
     if not system_prompt:
-        system_prompt = template_def["inbound_prompt"] if is_inbound else template_def["prompt"]
+        system_prompt = INDUSTRY_TEMPLATES["general_sales"]["inbound_prompt"] if is_inbound else INDUSTRY_TEMPLATES["general_sales"]["prompt"]
     if not welcome_text:
-        welcome_text = template_def["inbound_welcome_message"] if is_inbound else template_def["welcome_message"]
+        welcome_text = INDUSTRY_TEMPLATES["general_sales"]["inbound_welcome_message"] if is_inbound else INDUSTRY_TEMPLATES["general_sales"]["welcome_message"]
 
     name_tags = ["{{customer_name}}", "{customer_name}", "{{lead_name}}", "{lead_name}", "{{name}}", "{name}", "{{lead}}", "{lead}"]
     if customer_name:
@@ -424,17 +658,31 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         welcome_text = welcome_text.replace(tag, location)
         system_prompt = system_prompt.replace(tag, location)
 
-    # Generic per-lead CSV columns (e.g. {{amount_due}}, {{due_date}} for a
-    # Collections upload) - mirrors the substitution server.py already does
-    # for the separate Bolna dialing path (see its lead_dict.get("custom_fields")
-    # loop), which this Plivo/Realtime path never had. Exact, case-sensitive
-    # match against the uploaded column name, same as that reference loop.
-    if lead_doc:
-        for ck, cv in (lead_doc.get("custom_fields") or {}).items():
-            if cv is not None:
-                tag = f"{{{{{ck}}}}}"
-                welcome_text = welcome_text.replace(tag, str(cv))
-                system_prompt = system_prompt.replace(tag, str(cv))
+    for vk, vv in dyn_vars.items():
+        welcome_text = welcome_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
+        system_prompt = system_prompt.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
+
+    # Natural language fallbacks for any remaining unassigned industry variable tags
+    natural_fallbacks = {
+        "{{budget}}": "budget",
+        "{{doctor_name}}": "doctor",
+        "{{preferred_time}}": "convenient time",
+        "{{batch_time}}": "flexible batch",
+        "{{current_role}}": "current background",
+        "{{loan_amount}}": "loan amount",
+        "{{tenure}}": "tenure",
+        "{{company_size}}": "team size",
+        "{{amount_due}}": "overdue amount",
+        "{{due_date}}": "due date",
+        "{{shop_address}}": shop_address or "our store representative",
+        "{{landmark}}": landmark or "",
+        "{{city}}": city or "",
+        "{{shop_timings}}": shop_timings or "",
+        "{{contact_number}}": contact_number or ""
+    }
+    for tag, fb in natural_fallbacks.items():
+        welcome_text = welcome_text.replace(tag, fb)
+        system_prompt = system_prompt.replace(tag, fb)
 
     # Collapse an exact word immediately repeated back-to-back ("options
     # options", "program program") - confirmed live, happens whenever a
@@ -449,47 +697,59 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     welcome_text = _dedupe_adjacent_word.sub(r"\1", welcome_text)
     system_prompt = _dedupe_adjacent_word.sub(r"\1", system_prompt)
 
-    indian_accent_directive = (
-        "CRITICAL VOICE & ACCENT DIRECTIVE:\n"
-        "- IDENTITY: You are an Indian professional voice representative calling from an office in India.\n"
-        "- ACCENT: Speak with an authentic, natural urban Indian English accent (Indian English cadence, syllable-timing, and clear intonation).\n"
-        "- PHONETICS: Use distinct Indian English articulation (crisp dental 't' and 'd' stops, clear vowels, NO American rhotic 'r' drawl, NO American slang or valley-girl inflection).\n"
-        "- PROHIBITED: NEVER speak in an American, British, or foreign Western accent. Avoid American filler sounds like 'gonna', 'wanna', 'kinda'.\n"
-        "- LANGUAGE MIRRORING: Match the language the customer is actually using, turn by turn - do not stay locked to your opening greeting's language. If they reply with a substantive phrase or sentence in English, continue in English (with your Indian English accent). If they speak Hindi or code-mixed Hinglish, respond in natural Hindi/Hinglish. If they explicitly ask for Hindi ('हिंदी में बात करो') or ask for English, switch immediately. If the customer has replied in English for the last two turns, keep speaking English even if your earlier turns were in Hindi.\n"
-        "- DO NOT SWITCH LANGUAGE ON A BARE FILLER WORD: A single short acknowledgment with no real content - 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Thanks' - is NOT a language switch signal on its own, even though the word itself is English. Keep speaking in whichever language you were already using until the customer actually says a substantive phrase or sentence in a different language.\n"
-        "- LANGUAGE LIMIT: You are only able to speak English and Hindi/Hinglish well. If the customer speaks a different language (e.g. Tamil, Telugu, Bengali, Kannada, Malayalam, or any other), do NOT attempt to reply in that language - politely say, in English, that you can continue in English or Hindi, and ask which they'd prefer. Never guess at or attempt a language outside English and Hindi/Hinglish.\n\n"
-    )
-
-    natural_speech_directive = (
-        "\n\nNATURAL HUMAN CONVERSATION STYLE:"
-        "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday phrasing beats long formal sentences."
-        "\n- MATCH YOUR ACKNOWLEDGMENT TO WHAT THE CUSTOMER ACTUALLY SAID - classify it first, don't pick from one generic pool:"
-        "\n   - A plain GREETING ('Hello', 'Hi', 'Hey', 'Haan ji' as a pickup) is not gratitude, agreement, or an answer to anything - there's nothing to thank them for yet, and nothing to greet back either (you already greeted them once in your opening line). Do NOT reply with a greeting word of your own at all - no 'Hi!', no 'नमस्ते!', no 'हाँ जी!', in any language. Go STRAIGHT into your next line with zero acknowledgment word first. Confirmed live: even a correctly-matched-language greeting-reply ('हाँ जी!' before a Hindi question) still read as two separate things being said back to back rather than one natural line - dropping the greeting-reply word entirely, not just fixing its language, is what actually fixes this. NEVER say 'Great, thanks!', 'Perfect!', 'Wonderful!', or 'That's great to hear!' in response to a bare greeting either - those only make sense as a reaction to something the customer actually gave you."
-        "\n   - An AFFIRMATION that genuinely confirms something ('Yes', 'Sure', 'Okay', 'Haan' in answer to a real question) is where 'Great, thanks!', 'Perfect', 'Sure thing', 'Got it', 'Alright', 'Noted' fit."
-        "\n   - GRATITUDE from the customer ('Thank you') gets a brief 'You're welcome' style reply, not a re-thanking."
-        "\n   - An actual answer to your question gets a reaction to its CONTENT ('Oh nice', 'I see', 'Makes sense') plus your next step, not a generic filler."
-        "\n   - Within whichever category applies, rotate through different phrasing - NEVER use the exact same acknowledgment word/phrase twice in the same call."
-        "\n- Ask ONE short, plain question at a time. Prefer 'What exactly are you looking for?' over a long compound sentence like 'Could you tell me a bit more about what you're looking for in the program, or any specific questions you have? That way I can assist you better.'"
-        "\n- Use natural contractions (I'm, you're, that's, don't, can't, we'll) instead of full formal forms."
-        "\n- React briefly to what the customer just said before moving on - a quick 'Oh nice', 'I see', 'Makes sense', 'Okay cool' shows you're actually listening, instead of jumping straight to your next scripted point."
-        "\n- Vary how you start each turn. Don't open every single turn the same way (e.g. always 'Could you tell me...' or always 'I understand...') - mix it up the way a real person would."
-        "\n- NEVER NARRATE YOUR OWN PROCESS OUT LOUD: Don't say things like 'I'm confirming that I'm speaking with you' or 'I'm now going to check your details' - a real person doesn't announce what they're internally doing. Just do the next natural thing (e.g. move straight into sharing the information) without describing the step itself."
-        "\n- Never sound like a call-center script, an email, or a formal announcement being read aloud. This is a live, warm, human conversation between two people."
-    )
+    # Clean double currency symbols like ₹₹7000 or Rs. ₹
+    welcome_text = re.sub(r"₹\s*₹", "₹", welcome_text)
+    welcome_text = re.sub(r"Rs\.?\s*₹", "₹", welcome_text, flags=re.IGNORECASE)
+    system_prompt = re.sub(r"₹\s*₹", "₹", system_prompt)
+    system_prompt = re.sub(r"Rs\.?\s*₹", "₹", system_prompt, flags=re.IGNORECASE)
 
     # Single-language versions of phrases that rules 2/4/7/12 below used to
-    # show as "Hindi: X / English: Y" side by side - confirmed live
-    # (shail/TCS/edtech, all-English call) that the model copied a Hindi
-    # option ("जी, बताइए।") straight out of rule 12's dual-language example
-    # into an all-English call, the exact same failure mode rule 14 already
-    # had fixed for itself. Same fix shape here: only the matching-language
-    # phrase is ever in the prompt, so there is nothing to copy from the
-    # wrong language. _is_hindi_call also drives the rule 14 worked example
-    # selection further below.
+    # show as "Hindi: X / English: Y" side by side.
     _is_hindi_call = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
     _goodbye_line = "बहुत-बहुत धन्यवाद, आपका दिन शुभ हो! अलविदा।" if _is_hindi_call else "Thank you so much, have a great day! Goodbye."
     _repeat_line = "माफ कीजिए, क्या आप फिर से बता सकते हैं?" if _is_hindi_call else "Sorry, could you repeat that?"
     _minimal_prompt_hint = "'जी?', 'हाँ, बोलिए', or 'जी, बताइए'" if _is_hindi_call else "'Yes?' or 'Go ahead'"
+
+    # Enforce strict language lock based on the prompt/greeting's language
+    if _is_hindi_call:
+        indian_accent_directive = (
+            "CRITICAL VOICE & ACCENT DIRECTIVE:\n"
+            "- IDENTITY: You are an Indian professional voice representative calling from an office in India.\n"
+            "- ACCENT: Speak in natural, everyday Hindi / Hinglish.\n"
+            "- STRICT LANGUAGE LOCK (HINDI): This call is configured in HINDI and your opening greeting was in Hindi. You MUST speak in natural Hindi/Hinglish throughout the entire call. Even when the customer gives a short English acknowledgment like 'Yes', 'Okay', 'Hello', or 'Sure', you MUST continue in Hindi/Hinglish. NEVER switch to English unless the customer explicitly demands English (e.g. 'talk in English' or 'speak in English').\n"
+            "- LANGUAGE LIMIT: You speak Hindi and English. If the customer speaks a different regional language, politely say that you can continue in Hindi or English.\n\n"
+        )
+        rule_10_language = (
+            "\n10. DO NOT DEFAULT TO ENGLISH ON A BARE FILLER WORD: Your opening greeting was in Hindi. If the customer's reply is only a short filler/acknowledgment like 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Sir', 'Thanks', 'Theek hai', 'Boliye', 'Bataiye', this is them confirming they are listening, NOT a request to switch to English. You MUST continue your very next response in Hindi/Hinglish, exactly as if they had said 'haan' instead. Only switch to English once the customer explicitly commands you to speak in English (e.g. 'talk in English', 'speak in English') - not before."
+        )
+    else:
+        indian_accent_directive = (
+            "CRITICAL VOICE & ACCENT DIRECTIVE:\n"
+            "- IDENTITY: You are an Indian professional voice representative calling from an office in India.\n"
+            "- ACCENT: Speak with an authentic, natural urban Indian English accent (Indian English cadence, syllable-timing, and clear intonation).\n"
+            "- PHONETICS: Use distinct Indian English articulation (crisp dental 't' and 'd' stops, clear vowels, NO American rhotic 'r' drawl, NO American slang or valley-girl inflection).\n"
+            "- PROHIBITED: NEVER speak in an American, British, or foreign Western accent. Avoid American filler sounds like 'gonna', 'wanna', 'kinda'.\n"
+            "- STRICT LANGUAGE LOCK (ENGLISH): This call is configured in ENGLISH and your opening greeting was in English. You MUST speak entirely and exclusively in English throughout the entire call. Even when the customer gives a short confirmation like 'Yes', 'Okay', 'Sure', 'Hello', or 'Tell me', you MUST continue in English. NEVER speak in Hindi or Hinglish unless the customer explicitly demands Hindi (e.g. 'हिंदी में बात करो' or 'speak in Hindi').\n"
+            "- LANGUAGE LIMIT: You speak English and Hindi. If the customer speaks a different regional language, politely say in English that you can continue in English or Hindi.\n\n"
+        )
+        rule_10_language = (
+            "\n10. STRICT ENGLISH CONTINUATION (NO HINDI SWITCH): Your opening greeting was in English. When the customer's reply is a short acknowledgment like 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Sure', 'Tell me', 'Haan', 'Boliye', this is them confirming they are listening. You MUST continue your very next response in English. Do NOT switch to Hindi or Hinglish on your own. ONLY switch to Hindi if the customer explicitly commands you to speak in Hindi (e.g. 'हिंदी में बात करो', 'speak in Hindi')."
+        )
+        # Clean any stale Hindi language instructions from English prompts
+        system_prompt = re.sub(r"(?i)Converse in Hindi/?Hinglish naturally", "Converse strictly in English naturally", system_prompt)
+        system_prompt = re.sub(r"(?i)हिंदी/?हिंग्लिश में स्वाभाविक रूप से", "English में स्वाभाविक रूप से", system_prompt)
+
+    natural_speech_directive = (
+        "\n\nNATURAL HUMAN CONVERSATION STYLE:"
+        "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday phrasing beats long formal sentences."
+        "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'I see,' NOT 'I see, [name],'; say 'Got it,' NOT 'Got it, [name],'; say 'You\\'re welcome!' NOT 'You\\'re welcome, [name]!'). In real life, humans never repeat someone's name on every single reply."
+        "\n- Keep acknowledgements brief and natural: 'Great, thanks!', 'Sure, no problem', 'Got it', 'Perfect' - not stiff transitions like 'Thank you for that information.'"
+        "\n- Ask ONE short, plain question at a time. Prefer 'What exactly are you looking for?' over a long compound sentence."
+        "\n- Use natural contractions (I'm, you're, that's, don't, can't, we'll) instead of full formal forms."
+        "\n- React briefly to what the customer just said before moving on - a quick 'Oh nice', 'I see', 'Makes sense', 'Okay cool' shows you're actually listening."
+        "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
+        "\n- Never sound like a call-center script, an email, or a formal announcement being read aloud. This is a live, warm, human conversation between two people.\n\n"
+    )
 
     conversation_rules = (
         "\n\nCRITICAL CONVERSATIONAL & REJECTION RULES:"
@@ -510,7 +770,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         f"\n7. HANDLE UNCLEAR INPUT: If what the customer said does not logically fit the conversation, sounds garbled, or like background noise rather than a real answer, DO NOT guess or respond as if you understood it. This includes a random name, place, or short phrase with no logical connection to the question you just asked (e.g. you asked for a day/time and the answer is an unrelated proper noun) - NEVER interpret that as agreement, enthusiasm, or a valid choice. A GARBLED PHRASE THAT HAPPENS TO SOUND FRIENDLY OR POSITIVE IS STILL GARBLED - e.g. a transcript like 'I'm with you, Sam' in reply to 'do you want to know when the camp is?' is nonsensical in context despite its warm tone; do NOT respond with enthusiasm ('Great to hear that!') just because the words sound pleasant. Judge every reply by whether it is a coherent, logical answer to the specific question you just asked - never by its tone alone. If you offered specific named options (e.g. 'loan, insurance, or something else?') and their answer does not clearly and unambiguously match ONE of those options, do NOT default to the option that sounds closest or was mentioned first/most recently in the conversation - treat it exactly like unclear input, not a selection. Politely ask them to repeat instead, for example: '{_repeat_line}' Only move forward once you get a clear, relevant answer to your last question. (Note: a coherent but off-topic remark is covered by rule 3, not this rule.)"
         "\n8. SERVICE MISMATCH - DON'T FORCE-FIT THE CALLER INTO YOUR SCRIPT: If the customer's very first clearly-stated need is for a different kind of business or service than what your company actually offers (e.g. they ask for a doctor's appointment but you are a loan/insurance company, or they ask about a property but you are a clinic), do NOT ignore what they said and funnel them into your own Key Objectives categories anyway. Briefly and politely clarify in one short sentence what your company actually does (using its name, from your role description above), and ask if that's what they meant or if there's something in that area you can help with. If they confirm they wanted something else entirely, politely let them know this may be the wrong number, wish them well in whichever language they've been using, and execute the end_call function - do not keep asking your scripted qualification questions (budget, loan amount, configuration, etc.) about a need they never actually expressed."
         "\n9. NEVER READ SLASHES OR PLACEHOLDERS OUT LOUD: Your welcome message or prompt text may occasionally contain a slash-separated pair meant as shorthand for a human editor (e.g. 'बोल रहा/रही हूँ', 'he/she', 'Mr./Ms.') rather than literal words to speak. If you see a pattern like this, NEVER say both options or the slash itself out loud - silently pick the single grammatically correct form that matches your own voice (for a female-sounding voice, use the feminine form; for a male-sounding voice, use the masculine form) and speak only that, even when an instruction elsewhere says to speak a line 'verbatim' - verbatim means deliver the message naturally, not recite formatting artifacts."
-        "\n10. DO NOT DEFAULT TO ENGLISH ON A BARE FILLER WORD: If your own last turn was in Hindi or Hinglish and the customer's reply is only a short filler/acknowledgment - 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Sir', 'Thanks', 'Theek hai', 'Boliye', 'Bataiye' - this is them confirming they are listening, NOT a request to switch to English. You MUST continue your very next line in Hindi/Hinglish, exactly as if they had said 'haan' instead. Only switch to English once the customer says a real sentence with actual content in English (e.g. a question, a requirement, a statement of fact) - not before."
+        f"{rule_10_language}"
         "\n11. A BARE GREETING STILL MEANS 'GO AHEAD' - DON'T RE-ASK YOUR OPENING QUESTION: This rule is specifically about an AVAILABILITY/permission question (e.g. 'Do you have a brief moment?'); if your opening line instead ends by asking whether you're speaking with the right person by name, rule 14 governs that case instead, with a stricter standard - do not apply this rule's 'any reply is enough' logic to an identity question. For an availability question: if your opening line ended with a yes/no question like that and the customer's reply is only a bare greeting or filler ('Hello', 'Hi', 'Hmm', 'Yes', 'Sir', 'Ji', 'Haan', 'Boliye', 'Bataiye'), treat that as them saying go ahead - they picked up and responded, that IS their answer. Do NOT ask a second, separate confirmation question repeating the same thing you already asked ('Is now a good time?') - that feels repetitive and robotic to a real person. Do NOT reply with a greeting word of your own either ('Hi!', 'हाँ जी!', or similar, in any language) - go STRAIGHT into your next real step (e.g. identity verification, or your first qualifying question) with no acknowledgment word first, in the SAME turn - do not add an extra standalone turn just to re-ask permission, and do not preface your real line with a separate greeting-reply (confirmed live: even a correctly-matched-language one still read as two things said back to back rather than one natural line). Only pause to actually ask about their availability again if they say something that genuinely signals they're busy or hesitant (covered by rule 2 above), not for an ordinary greeting or filler."
         f"\n12. A GREETING/ATTENTION SIGNAL MID-CALL IS STILL NOT AN ANSWER: This covers a different moment than rule 11 (which is only about your very first opening question) - this is about a greeting or attention-check phrase ('Hello', 'Hi', 'Hello?', 'Are you there?', 'Can you hear me?', 'One second', 'Sir', or Hindi/Hinglish equivalents like 'Haan bolo', 'Ji boliye', 'Haan', 'Ji', 'Bataiye') showing up as the reply to ANY later, substantive question you asked. This is clearly understandable speech (so rule 7's 'garbled/unclear input' handling doesn't apply), but it still is NOT an answer to your question - do not treat it as one. Do NOT paraphrase, restate, or re-ask your pending question in any form, and do NOT narrate what's happening ('I see you're responding' - that sounds robotic, see the anti-narration rule above) - confirmed live: even restating the question as 'Yes, I'm here! I was asking whether...' reads as repeating yourself and is exactly what this rule now forbids. The customer already heard the question once - your pending question stays exactly as it was, unchanged, still waiting for an answer. Respond with ONLY a minimal, brief prompt to continue, in this call's language - for example {_minimal_prompt_hint} - and then wait for their real answer. Do not add 'मैं यहाँ हूँ' or any other filler beyond that one short prompt unless it becomes genuinely necessary (see below). Only if the customer does this a SECOND time in a row for the SAME question should you change approach - now you may check the connection ('Can you hear me clearly?') or explicitly offer to repeat the actual question content ('Should I repeat the question?'), and wait for a real answer before moving forward. Never cycle the same minimal prompt more than twice, and never end up asking essentially the same question in different words - vary your approach each time this happens."
         "\n13. NOTICE A CONTRADICTION WITH SOMETHING ALREADY CONFIRMED: If the customer later gives a value that conflicts with something you already confirmed and locked in earlier in THIS SAME CALL (e.g. they agreed to Tuesday, and several turns later say Monday instead, with no mention of changing it), do NOT silently accept the new value and move on as if nothing happened - confirmed live: this produced a booking confirmed for the wrong day with no acknowledgment of the change. Briefly point out the conflict and ask which one they actually mean - e.g. 'Just to confirm - you mentioned Tuesday earlier, but now Monday. Which day would you like?' Only proceed once they clearly confirm. This does not apply to a customer deliberately correcting themselves in the same breath ('Tuesday - actually, make that Monday') - that is a normal, explicit change, not a contradiction to flag."
@@ -547,7 +807,15 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
 
     safe_print(f"[STREAM PROMPT]: Industry={call_industry}, Welcome='{welcome_text}'")
 
-    call_lang = (call_doc.get("language") if call_doc else None) or (lead_doc.get("language") if lead_doc else None) or "Hinglish"
+    template_lang = template_def.get("language") if isinstance(template_def, dict) else None
+    default_lang = "Hindi" if _is_hindi_call else "English"
+    call_lang = (
+        (call_doc.get("language") if call_doc else None)
+        or (lead_doc.get("language") if lead_doc else None)
+        or template_lang
+        
+        or default_lang
+    )
     # Whisper's `language` hint forces transcription into that language - a
     # wrong code actively hurts accuracy rather than helping (e.g. locking a
     # Tamil or pure-English caller into Hindi). Only pass a code for languages
@@ -561,11 +829,21 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     # languages with no mapping at all (an unexpected value, not the common
     # default path).
     WHISPER_LANGUAGE_CODES = {
-        "english": "en", "hindi": "hi", "hinglish": "hi", "tamil": "ta",
-        "telugu": "te", "kannada": "kn", "malayalam": "ml", "bengali": "bn",
-        "marathi": "mr", "gujarati": "gu", "punjabi": "pa", "urdu": "ur",
+        "en": "en", "english": "en", "indian english": "en", "en-in": "en",
+        "hi": "hi", "hindi": "hi", "pure hindi": "hi", "hinglish": "hi", "hindi / hinglish": "hi", "hi-in": "hi",
+        "tamil": "ta", "ta": "ta",
+        "telugu": "te", "te": "te",
+        "kannada": "kn", "kn": "kn",
+        "malayalam": "ml", "ml": "ml",
+        "bengali": "bn", "bn": "bn",
+        "marathi": "mr", "mr": "mr",
+        "gujarati": "gu", "gu": "gu",
+        "punjabi": "pa", "pa": "pa",
+        "urdu": "ur", "ur": "ur",
     }
     transcription_lang = WHISPER_LANGUAGE_CODES.get(str(call_lang).strip().lower())
+    if not _is_hindi_call and transcription_lang == "hi":
+        transcription_lang = "en"
 
     # Rule 14's worked example, chosen by whichever language welcome_text is
     # ACTUALLY written in - not by transcription_lang/call_lang. Confirmed
@@ -579,17 +857,117 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     # industry template's own fixed language. (_is_hindi_call itself is
     # computed earlier, above conversation_rules, since rules 2/4/7/12 now
     # need it too.)
+    _ex_offering_en = offering if offering else "service"
+    _ex_offering_hi = offering if offering else "प्रोग्राम"
     _RULE14_EXAMPLE_EN = (
-        "\nWORKED EXAMPLE for rule 14 - [CustomerName] and [YourCompany] below are placeholders for whichever real name and company you were actually given elsewhere in this prompt - substitute them, never say the brackets or the literal words 'CustomerName'/'YourCompany' aloud. This exact pattern has been confirmed live to go wrong, so follow the UNDERLYING BEHAVIOR precisely, but vary your actual wording naturally each time rather than reusing the same sentence on every call (confirmed live: the model started literally saying the word 'Sorry' on every single re-ask because it was copying this example's exact phrasing verbatim instead of treating it as one illustration of the pattern) - e.g. rotate between 'Just to confirm, am I speaking with [CustomerName]?', 'Quick check - is this [CustomerName]?', 'Before we continue, am I speaking with [CustomerName]?', or similar, choosing naturally rather than defaulting to the same opener every time. Your opening line was 'Hello [CustomerName], I am calling from [YourCompany] regarding your recent inquiry for our Loan options. Am I speaking with [CustomerName]?' and the customer's entire reply was just 'Hello'. WRONG (confirmed happened): immediately asking 'What type of loan are you looking for?' - this skips confirming identity entirely, even though your own opening line explicitly asked for it. RIGHT: ask again in your own natural words whether you're speaking with [CustomerName], and wait for an actual yes/no before asking about the loan type at all. This is not optional or a minor stylistic choice - treat a bare 'Hello' replying to an identity question as equivalent to not having answered it yet, full stop."
+        f"\nWORKED EXAMPLE for rule 14 - [CustomerName] and [YourCompany] below are placeholders for whichever real name and company you were actually given elsewhere in this prompt - substitute them, never say the brackets or the literal words 'CustomerName'/'YourCompany' aloud. This exact pattern has been confirmed live to go wrong, so follow the UNDERLYING BEHAVIOR precisely, but vary your actual wording naturally each time rather than reusing the same sentence on every call (confirmed live: the model started literally saying the word 'Sorry' on every single re-ask because it was copying this example's exact phrasing verbatim instead of treating it as one illustration of the pattern) - e.g. rotate between 'Just to confirm, am I speaking with [CustomerName]?', 'Quick check - is this [CustomerName]?', 'Before we continue, am I speaking with [CustomerName]?', or similar, choosing naturally rather than defaulting to the same opener every time. Your opening line was 'Hello [CustomerName], I am calling from [YourCompany] regarding your recent inquiry for our {_ex_offering_en} options. Am I speaking with [CustomerName]?' and the customer's entire reply was just 'Hello'. WRONG (confirmed happened): immediately asking 'What type of {_ex_offering_en} are you looking for?' - this skips confirming identity entirely, even though your own opening line explicitly asked for it. RIGHT: ask again in your own natural words whether you're speaking with [CustomerName], and wait for an actual yes/no before asking about the {_ex_offering_en} at all. This is not optional or a minor stylistic choice - treat a bare 'Hello' replying to an identity question as equivalent to not having answered it yet, full stop."
     )
     _RULE14_EXAMPLE_HI = (
-        "\nWORKED EXAMPLE for rule 14 - [CustomerName] and [YourCompany] below are placeholders for whichever real name and company you were actually given elsewhere in this prompt - substitute them, never read the brackets aloud: Your opening line was 'नमस्ते [CustomerName], मैं [YourCompany] की तरफ से बोल रहा हूँ। क्या मैं [CustomerName] से बात कर रहा हूँ?' and the customer's entire reply was just 'Hello' or 'हाँ'. WRONG: immediately asking 'आप किस तरह का लोन चाहते हैं?' - skips identity confirmation entirely. ALSO WRONG (confirmed live) - starting the confirmation with the English word 'Sorry' before switching to Hindi, e.g. 'Sorry, बस यह बताने के लिए कि क्या मैं...?': that is the exact bare-English-opener mistake rule 10 forbids. RIGHT: ask again in your own natural Hindi words whether you're speaking with [CustomerName] - entirely in Hindi, no English opener, e.g. 'माफ कीजिए, क्या मैं [CustomerName] से ही बात कर रहा हूँ?' or 'सिर्फ कन्फर्म करने के लिए, क्या यह [CustomerName] हैं?' or similar - vary your exact wording naturally across calls rather than always opening with the same opener on every single one, and wait for an actual, clear yes before asking about the loan type. ALSO WRONG (confirmed live, a different failure) - if the given name is something unusual like 'Boss', saying 'क्या मैं आपके साथ बात कर रहा हूँ?' (am I speaking with you?) instead of 'क्या मैं Boss से बात कर रहा हूँ?' - dropping the name because it looks informal still confirms nothing; use the exact name you were given no matter how it reads."
+        f"\nWORKED EXAMPLE for rule 14 - [CustomerName] and [YourCompany] below are placeholders for whichever real name and company you were actually given elsewhere in this prompt - substitute them, never read the brackets aloud: Your opening line was 'नमस्ते [CustomerName], मैं [YourCompany] की तरफ से बोल रहा हूँ। क्या मैं [CustomerName] से बात कर रहा हूँ?' and the customer's entire reply was just 'Hello' or 'हाँ'. WRONG: immediately asking 'आप किस तरह का {_ex_offering_hi} चाहते हैं?' - skips identity confirmation entirely. ALSO WRONG (confirmed live) - starting the confirmation with the English word 'Sorry' before switching to Hindi, e.g. 'Sorry, बस यह बताने के लिए कि क्या मैं...?': that is the exact bare-English-opener mistake rule 10 forbids. RIGHT: ask again in your own natural Hindi words whether you're speaking with [CustomerName] - entirely in Hindi, no English opener, e.g. 'माफ कीजिए, क्या मैं [CustomerName] से ही बात कर रहा हूँ?' or 'सिर्फ कन्फर्म करने के लिए, क्या यह [CustomerName] हैं?' or similar - vary your exact wording naturally across calls rather than always opening with the same opener on every single one, and wait for an actual, clear yes before asking about the {_ex_offering_hi} at all. ALSO WRONG (confirmed live, a different failure) - if the given name is something unusual like 'Boss', saying 'क्या मैं आपके साथ बात कर रहा हूँ?' (am I speaking with you?) instead of 'क्या मैं Boss से बात कर रहा हूँ?' - dropping the name because it looks informal still confirms nothing; use the exact name you were given no matter how it reads."
     )
     conversation_rules += _RULE14_EXAMPLE_HI if _is_hindi_call else _RULE14_EXAMPLE_EN
 
+    # Rule 15: Store Address Accuracy & Zero Hallucination
+    if shop_address:
+        supporting_notes = []
+        if landmark:
+            supporting_notes.append(f"Landmark: {landmark}")
+        if city and city.lower() not in shop_address.lower():
+            supporting_notes.append(f"City: {city}")
+        supp_str = f" (supporting details: {', '.join(supporting_notes)})" if supporting_notes else ""
+        store_address_rule = (
+            "\n15. STORE / SHOP ADDRESS ACCURACY (ZERO HALLUCINATION):"
+            "\n- When the customer asks for the shop address, store location, directions, or where to visit (e.g. 'Where is your shop?', 'Where are you located?', 'Dukaan kahan hai?', 'Aapka address kya hai?'):"
+            f"\n  * You MUST state the Official Store Address exactly as configured: '{shop_address}'{supp_str}."
+            "\n  * NEVER invent, shorten, replace, or assume an address (NEVER say any unverified location or guess an address)."
+            "\n  * Use {{shop_address}} as the single source of truth for the complete address, with landmark/city only as supporting details."
+        )
+    else:
+        rep_phone = contact_number or "our store helpline"
+        store_address_rule = (
+            "\n15. STORE / SHOP ADDRESS ACCURACY (ZERO HALLUCINATION):"
+            "\n- When the customer asks for the shop address, store location, directions, or where to visit (e.g. 'Where is your shop?', 'Where are you located?', 'Dukaan kahan hai?', 'Aapka address kya hai?'):"
+            "\n  * No specific store address has been configured for this campaign. NEVER invent, assume, or guess an address (do NOT say any unverified location)."
+            f"\n  * Politely direct the customer to contact our store representative: 'Please contact our store representative at {rep_phone} for our exact store address and directions.' (or in Hindi: 'कृपया हमारे स्टोर प्रतिनिधि से {rep_phone} पर संपर्क करें, वे आपको सही पता और दिशा-निर्देश बता देंगे।')"
+        )
+    conversation_rules += store_address_rule
+
+    addr_info = f"- Official Store / Shop Address: {shop_address}\n" if shop_address else "- Official Store / Shop Address: [Not configured - direct caller to contact store representative]\n"
+    landmark_info = f"- Landmark: {landmark}\n" if landmark else ""
+    city_info = f"- City: {city}\n" if city else ""
+    timings_info = f"- Store Timings: {shop_timings}\n" if shop_timings else ""
+    contact_info = f"- Store Contact Phone: {contact_number}\n" if contact_number else ""
+
+    customer_context = (
+        f"\nTARGET CALL RECIPIENT INFORMATION:\n"
+        f"- Target Customer / Recipient Name: {customer_name}\n"
+        f"- Company / Brand Name: {company_name}\n"
+        f"- Primary Offering / Topic: {offering}\n"
+        f"- Branch / Region: {location}\n"
+        f"{addr_info}"
+        f"{landmark_info}"
+        f"{city_info}"
+        f"{timings_info}"
+        f"{contact_info}"
+        f"You are speaking with {customer_name}. Address them by name ONLY in the initial greeting or when strictly verifying identity. ONCE IDENTITY IS ESTABLISHED, DO NOT REPEAT THEIR NAME (neither full name nor first name) on subsequent turns. In normal conversation, people do NOT append the other person's name to every sentence. Never say 'I see, {customer_name.split()[0]}', 'Got it, {customer_name.split()[0]}', or 'You\\'re welcome, {customer_name.split()[0]}'. Simply say 'I see,', 'Got it,', 'You\\'re welcome!'. Never say 'customer_name', 'underscore', or square brackets aloud.\n\n"
+    ) if customer_name else (
+        f"\nTARGET CALL RECIPIENT INFORMATION:\n"
+        f"- Target Customer / Recipient: Valued Customer (name not provided - do NOT fabricate or guess any random name).\n"
+        f"- Company / Brand Name: {company_name}\n"
+        f"- Primary Offering / Topic: {offering}\n"
+        f"- Branch / Region: {location}\n"
+        f"{addr_info}"
+        f"{landmark_info}"
+        f"{city_info}"
+        f"{timings_info}"
+        f"{contact_info}\n"
+    )
+
     # Must stay after the conversation_rules += above - this is what
     # actually finalizes the prompt sent to the model.
-    system_prompt = indian_accent_directive + natural_speech_directive + system_prompt + conversation_rules + collections_directive
+    system_prompt = (
+        indian_accent_directive
+        + natural_speech_directive
+        + customer_context
+        + system_prompt
+        + conversation_rules
+        + collections_directive
+    )
+
+    # Clean up all placeholder tokens across the entire finalized prompt
+    cname_val = customer_name if customer_name else "the customer"
+    replacements = {
+        "[CustomerName]": cname_val,
+        "[YourCompany]": company_name,
+        "{{customer_name}}": cname_val,
+        "{customer_name}": cname_val,
+        "_customer_name_": cname_val,
+        "[customer_name]": cname_val,
+        "{{company_name}}": company_name,
+        "{company_name}": company_name,
+        "[company_name]": company_name,
+        "{{offering}}": offering,
+        "{offering}": offering,
+        "{{location}}": location,
+        "{location}": location,
+        "{{shop_address}}": shop_address if shop_address else (f"our store representative at {contact_number}" if contact_number else "our store representative"),
+        "{shop_address}": shop_address if shop_address else (f"our store representative at {contact_number}" if contact_number else "our store representative"),
+        "{{landmark}}": landmark,
+        "{landmark}": landmark,
+        "{{city}}": city,
+        "{city}": city,
+        "{{shop_timings}}": shop_timings,
+        "{shop_timings}": shop_timings,
+        "{{contact_number}}": contact_number,
+        "{contact_number}": contact_number,
+    }
+    for vk, vv in dyn_vars.items():
+        replacements[f"{{{{{vk}}}}}"] = str(vv)
+        replacements[f"{{{vk}}}"] = str(vv)
+
+    for k, v in replacements.items():
+        system_prompt = system_prompt.replace(k, str(v))
+        welcome_text = welcome_text.replace(k, str(v))
 
     # Sarvam voice: default ON for every company (current and future) as of
     # 2026-11-03, not just the original TCS pilot - companies.use_sarvam_voice
@@ -602,11 +980,9 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     sarvam_voice = None
     bakbak_voice = None
 
-    # Bakbak is an explicit opt-in (companies.voice_engine == "bakbak"), not a
-    # new default - it's a cost/quality evaluation against Sarvam, same
-    # validated-languages-only philosophy. Checked first so it can override
-    # the Sarvam default for a company that's explicitly testing it.
-    if company and company.get("voice_engine") == "bakbak" and BAKBAK_API_KEY:
+    # Bakbak TTS voice is the standard Indian conversational voice (fast & natural).
+    preferred_voice = (company.get("voice_engine") if company else None) or "bakbak"
+    if preferred_voice == "bakbak" and BAKBAK_API_KEY:
         bakbak_voice = bakbak_voice_for(transcription_lang)
         if bakbak_voice:
             voice_engine = "bakbak"
@@ -620,20 +996,21 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         else:
             safe_print(f"[SARVAM]: use_sarvam_voice is on but language '{call_lang}' isn't validated yet - using OpenAI voice.")
 
-    # Decoupled pipeline (Sarvam STT -> Gemini -> Bakbak TTS, no OpenAI
-    # Realtime at all) is a separate, explicit opt-in on top of everything
-    # above - it always uses Bakbak for TTS regardless of voice_engine, so
-    # resolve a Bakbak voice for it here even if voice_engine wasn't "bakbak".
+    # Decoupled pipeline (Sarvam STT -> LLM -> Bakbak TTS, unified voice, zero tone shift)
+    # Default to decoupled for all companies when BAKBAK_API_KEY, SARVAM_API_KEY, and OPENAI_API_KEY are configured
     conversation_engine = "openai_realtime"
-    if company and company.get("conversation_engine") == "decoupled" and BAKBAK_API_KEY:
+    preferred_engine = (company.get("conversation_engine") if company else None) or "decoupled"
+    if preferred_engine == "decoupled" and (BAKBAK_API_KEY or SARVAM_API_KEY):
         if not bakbak_voice:
             bakbak_voice = bakbak_voice_for(transcription_lang)
-        if bakbak_voice and OPENAI_API_KEY and SARVAM_API_KEY:
+        if not sarvam_voice:
+            sarvam_voice = sarvam_voice_for(transcription_lang)
+        if (bakbak_voice or sarvam_voice or SARVAM_API_KEY) and OPENAI_API_KEY and SARVAM_API_KEY:
             conversation_engine = "decoupled"
         else:
             safe_print(f"[DECOUPLED]: conversation_engine is decoupled but a dependency is missing "
-                        f"(bakbak_voice={bool(bakbak_voice)}, openai_key={bool(OPENAI_API_KEY)}, "
-                        f"sarvam_key={bool(SARVAM_API_KEY)}) for language '{call_lang}' - falling back to OpenAI Realtime.")
+                        f"(sarvam_key={bool(SARVAM_API_KEY)}, openai_key={bool(OPENAI_API_KEY)}) "
+                        f"for language '{call_lang}' - falling back to OpenAI Realtime.")
 
     return {
         "system_prompt": system_prompt,
@@ -647,6 +1024,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "bakbak_voice_id": bakbak_voice["voice_id"] if bakbak_voice else None,
         "bakbak_language": bakbak_voice["language"] if bakbak_voice else None,
         "bakbak_model": bakbak_voice["model"] if bakbak_voice else None,
+        "customer_name": customer_name,
+        "is_inbound": is_inbound,
     }
 
 
@@ -771,7 +1150,19 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
         # closes that race instead of only narrowing it.
         if ctx.get("conversation_engine") == "decoupled":
             OPENAI_PREWARM_CACHE[call_id] = dict(ctx)
-            safe_print(f"[PREWARM]: Skipped OpenAI Realtime connect for call_id={call_id} (conversation_engine=decoupled)")
+            try:
+                from routes.plivo_decoupled import prewarm_decoupled_greeting
+                prewarm_decoupled_greeting(
+                    call_id=call_id,
+                    company_id=company_id,
+                    welcome_text=ctx.get("welcome_text"),
+                    bakbak_voice_id=ctx.get("bakbak_voice_id"),
+                    bakbak_language=ctx.get("bakbak_language"),
+                    bakbak_model=ctx.get("bakbak_model")
+                )
+                safe_print(f"[PREWARM]: Initiated Bakbak TTS greeting prewarm for call_id={call_id} (conversation_engine=decoupled)")
+            except Exception as pw_err:
+                safe_print(f"[PREWARM NOTICE]: Could not initiate Bakbak prewarm for call_id={call_id}: {pw_err}")
             return
 
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip() or OPENAI_API_KEY
@@ -837,6 +1228,7 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             "bakbak_language": ctx["bakbak_language"],
             "bakbak_model": ctx["bakbak_model"],
             "sarvam_session": sarvam_session,
+            "is_inbound": ctx.get("is_inbound", False),
         }
         safe_print(f"[PREWARM]: OpenAI Realtime session ready ahead of stream connect for call_id={call_id}")
 
@@ -1062,6 +1454,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         bakbak_voice_id = prewarmed["bakbak_voice_id"]
         bakbak_language = prewarmed["bakbak_language"]
         bakbak_model = prewarmed["bakbak_model"]
+        is_inbound = prewarmed.get("is_inbound", False)
         safe_print(f"[PREWARM]: Reusing warm OpenAI session for call_id={call_id} - skipping cold connect")
     else:
         if prewarmed:
@@ -1080,6 +1473,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         bakbak_voice_id = ctx["bakbak_voice_id"]
         bakbak_language = ctx["bakbak_language"]
         bakbak_model = ctx["bakbak_model"]
+        is_inbound = ctx.get("is_inbound", False)
 
     if voice_engine == "sarvam":
         safe_print(f"[SARVAM]: Voice pilot active for call_id={call_id} (speaker={sarvam_speaker}, language={sarvam_language_code})")
@@ -1102,6 +1496,12 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     # barge-in - the agent's line always finishes before anything reacts to
     # customer audio. See the speech_started handler below.
     agent_speaking = False
+    sarvam_playing_until = 0.0
+
+    def is_agent_audibly_speaking() -> bool:
+        if sarvam_mode_active:
+            return time.time() < sarvam_playing_until
+        return agent_speaking
 
     # Sarvam voice pilot plumbing - unused entirely when voice_engine == "openai"
     sarvam_session = None
@@ -1115,7 +1515,8 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
     # after the greeting finishes, and every turn after that goes through
     # Sarvam as before. voice_engine == "sarvam" still means "this call uses
     # Sarvam at all" (session setup, worker startup); sarvam_mode_active
-    # means "we've switched over to it for this specific moment in the call."
+    # means "we've switched over t
+    # o it for this specific moment in the call."
     sarvam_mode_active = False
 
     async def sarvam_tts_worker():
@@ -1123,10 +1524,17 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         try:
             while True:
                 chunk = await sarvam_queue.get()
+                chunk = clean_tts_text(chunk, customer_name, is_subsequent=sarvam_mode_active)
                 if not chunk:
                     continue
                 try:
                     async for audio_b64 in sarvam_session.speak(chunk):
+                        try:
+                            raw_mulaw = base64.b64decode(audio_b64)
+                            chunk_dur = len(raw_mulaw) / 8000.0
+                            sarvam_playing_until = max(sarvam_playing_until, time.time()) + chunk_dur
+                        except Exception:
+                            pass
                         if not greeting_audio_logged:
                             greeting_audio_logged = True
                             greet_lat_ms = int((time.time() - stream_connect_time) * 1000)
@@ -1252,8 +1660,23 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         # real word.
         pickup_click_shield_until = time.time() + 0.15
 
-        # Trigger immediate opening greeting verbatim
-        greet_prompt = f"Speak the following opening greeting verbatim right now: \"{welcome_text}\""
+        # Trigger immediate opening greeting verbatim with strict roleplay boundaries
+        # Confirmed live across Indian languages: a bare 'Speak the following verbatim' prompt
+        # leads GPT-4o Realtime to interpret questions in the greeting (e.g. 'क्या अभी 2 मिनट बात करना convenient है?')
+        # as user queries to answer or roleplay against, rather than speaking them verbatim.
+        # Explicit outbound/inbound pickup context instructs the model to deliver the line word-for-word.
+        if is_inbound:
+            greet_prompt = (
+                f"The customer just called your company helpline and the call just connected. "
+                f"Deliver the following opening greeting word-for-word with NO extra words, NO filler, and NO answering your own questions:\n\n"
+                f"\"{welcome_text}\""
+            )
+        else:
+            greet_prompt = (
+                f"You are placing an outbound call and the recipient just answered the phone. "
+                f"Deliver the following opening line word-for-word with NO extra words, NO filler, and NO answering your own questions:\n\n"
+                f"\"{welcome_text}\""
+            )
         trigger_greeting = {
             "type": "response.create",
             "response": {
@@ -1427,6 +1850,8 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         sentences_flushed_this_response = 0
                         agent_speaking = False
                         text = (event.get("text") or full_response_text).strip()
+                        if text:
+                            text = clean_tts_text(text, customer_name, is_subsequent=True)
                         full_response_text = ""
                         if text:
                             safe_print(f"[AI SPEECH][SARVAM]: {text}")
@@ -1457,7 +1882,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             continue
                         customer_speaking = True
                         turn_rms_samples = []
-                        if agent_speaking:
+                        if is_agent_audibly_speaking():
                             # The agent's current line is still being generated/
                             # spoken - treat this as backchannel noise ("Hello",
                             # a cough, a stray word), not a real barge-in.
@@ -1502,39 +1927,34 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                     elif etype == "input_audio_buffer.speech_stopped":
                         last_speech_stopped_time = time.time()
                         customer_speaking = False
+
+                        # If the agent is still audibly speaking on the phone, cancel any automatic
+                        # response triggered by OpenAI server VAD from mid-sentence customer speech (e.g. pickup "Hello").
+                        if is_agent_audibly_speaking():
+                            safe_print(f"[BARGE-IN SUPPRESSED]: Customer speech stopped while AI is still audibly speaking. Cancelling premature response.")
+                            try:
+                                await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                            except Exception:
+                                pass
+                            continue
+
                         avg_rms = (sum(turn_rms_samples) / len(turn_rms_samples)) if turn_rms_samples else None
                         energy_note = f" [AUDIO ENERGY]: avg_rms={avg_rms:.0f}" if avg_rms is not None else ""
                         safe_print(f"[VAD]: Customer stopped speaking. Processing response...{energy_note}")
 
-                        # Whisper fabricates fluent, unrelated text ("I love you all",
-                        # "thanks for watching") when fed near-silent/low-energy audio
-                        # instead of returning nothing - a well-documented failure mode
-                        # that no amount of prompt tuning fixes, since the model has no
-                        # way to know the transcript it's acting on was invented. Catch
-                        # it at the source: if THIS turn's actual audio was too quiet to
-                        # plausibly be real speech, cancel whatever response the server's
-                        # auto-VAD just triggered and ask the customer to repeat instead
-                        # of letting the agent act on a transcript we already distrust.
+                        # Whisper fabricates fluent, unrelated text when fed near-silent/low-energy audio
+                        # instead of returning nothing. If THIS turn's actual audio was too quiet to
+                        # plausibly be real speech (e.g. ambient mic line noise avg_rms=2), cancel whatever
+                        # response the server's auto-VAD just triggered, and simply wait for actual customer speech
+                        # rather than interrupting the customer with an unprompted "please repeat" / "how can I help you".
                         if avg_rms is not None and avg_rms < SILENCE_RMS_THRESHOLD:
                             safe_print(f"[SILENCE GATE]: avg_rms={avg_rms:.0f} < {SILENCE_RMS_THRESHOLD} threshold - treating as silence/noise, not speech. Cancelling auto-response.")
                             try:
                                 await openai_ws.send(json.dumps({"type": "response.cancel"}))
                             except Exception:
                                 pass
-                            clarify_prompt = (
-                                "The audio just received was silent or near-silent background "
-                                "noise, not an intelligible answer from the customer. Do NOT "
-                                "guess, assume, or act on any transcript from it. In whichever "
-                                "language you've been using, briefly and politely ask the "
-                                "customer to repeat what they said, and ask nothing else this turn."
-                            )
-                            try:
-                                await openai_ws.send(json.dumps({
-                                    "type": "response.create",
-                                    "response": {"instructions": clarify_prompt}
-                                }))
-                            except Exception as e:
-                                safe_print(f"[SILENCE GATE ERROR]: Failed to send corrective response: {e}")
+                            turn_rms_samples = []
+                            continue
 
                     elif etype in ("response.output_audio_transcript.done", "response.audio_transcript.done", "response.done") and not sarvam_mode_active:
                         agent_speaking = False

@@ -84,9 +84,10 @@ async def generate_playground_token(payload: dict = Body(...), current_user: dic
     participant_name = current_user.get("name") or "Tester"
 
     # Extract dynamic test context
-    system_prompt = payload.get("prompt") or company.get("custom_prompt") or "You are a helpful AI voice assistant."
-    welcome_message = payload.get("welcome_message") or company.get("custom_welcome") or "Hi! How can I help you today?"
-    industry = payload.get("industry") or company.get("industry") or "general_sales"
+    prompt_doc = await db.prompts.find_one({"company_id": current_user["company_id"]})
+    system_prompt = payload.get("prompt") or (prompt_doc.get("published_prompt") if prompt_doc else None) or company.get("custom_prompt") or "You are a helpful AI voice assistant."
+    welcome_message = payload.get("welcome_message") or (prompt_doc.get("published_welcome_message") if prompt_doc else None) or company.get("custom_welcome") or "Hi! How can I help you today?"
+    industry = payload.get("industry") or (prompt_doc.get("industry") if prompt_doc else None) or company.get("industry") or "general_sales"
 
     # Store playground session context in MongoDB so LiveKit agent worker can load it upon joining
     await db.livekit_sessions.update_one(

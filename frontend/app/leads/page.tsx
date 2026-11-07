@@ -8,6 +8,26 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { INDUSTRY_CONFIGS, IndustryKey } from '@/lib/industry'
 
+function formatIndustryLabel(industry?: string): string {
+  if (!industry) return ''
+  const config = INDUSTRY_CONFIGS[industry as IndustryKey]
+  if (config?.shortLabel) {
+    return config.shortLabel
+  }
+  const cleaned = industry
+    .replace(/^custom_/i, '')
+    .replace(/_/g, ' ')
+    .trim()
+  return cleaned
+    .split(' ')
+    .map(w => {
+      const upper = w.toUpperCase()
+      if (['AI', 'ML', 'QA', 'API', 'IT', 'UI', 'UX', 'HP', 'PC', 'TCS', 'BHK'].includes(upper)) return upper
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    })
+    .join(' ')
+}
+
 function LeadsContent() {
   const { user } = useAuth()
   const activeIndustry = (user?.industry as IndustryKey) || 'bfsi'
@@ -37,7 +57,7 @@ function LeadsContent() {
   const [recoveryAnalytics, setRecoveryAnalytics] = useState<any>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
-  
+
   // Initialize campaignId from search params directly
   const [campaignId, setCampaignId] = useState<string | null>(searchParams.get('campaign_id'))
 
@@ -52,7 +72,7 @@ function LeadsContent() {
       const qs = new URLSearchParams()
       qs.append('range', range)
       if (campaignId) qs.append('campaign_id', campaignId)
-      
+
       const data = await fetchApi(`/api/v1/leads?${qs.toString()}`)
       setLeads(data || [])
     } catch (e) {
@@ -170,7 +190,7 @@ function LeadsContent() {
     if (selectedLeads.length === 0) return alert('Please select at least one lead to delete.')
     if (!confirm(`Are you sure you want to delete ${selectedLeads.length} selected lead(s)? This cannot be undone.`)) return
     try {
-      await fetchApi('/api/v1/leads/delete-bulk', { 
+      await fetchApi('/api/v1/leads/delete-bulk', {
         method: 'POST',
         body: JSON.stringify({ lead_ids: selectedLeads })
       })
@@ -199,7 +219,7 @@ function LeadsContent() {
       })
 
       if (!response.ok) throw new Error('Upload failed')
-      
+
       const result = await response.json()
       alert(`Successfully uploaded ${result.inserted_count} leads!`)
       loadLeads()
@@ -261,11 +281,14 @@ function LeadsContent() {
         body: JSON.stringify({
           phone_number: lead.phone,
           customer_name: lead.name,
-          lead_id: lead.lead_id || 'manual-lead',
+          lead_id: lead.lead_id || lead._id || 'manual-lead',
           campaign_language: safeLanguage,
-          industry: lead.industry || 'general_sales',
-          offering: lead.offering || lead.property || '',
-          location: lead.location || ''
+          industry: activeIndustry !== 'all' ? activeIndustry : (lead.industry || user?.industry || 'general_sales'),
+          offering: (lead.industry && activeIndustry !== 'all' && activeIndustry !== lead.industry) ? '' : (lead.offering || lead.property || ''),
+          location: lead.location || '',
+          amount_due: lead.amount_due || lead.custom_fields?.amount_due || lead.custom_fields?.['Loan Amount'] || lead.custom_fields?.loan_amount || '',
+          due_date: lead.due_date || lead.custom_fields?.due_date || lead.custom_fields?.['due date'] || '',
+          custom_fields: lead.custom_fields || {}
         })
       })
       alert('Call dispatched successfully!')
@@ -304,14 +327,14 @@ function LeadsContent() {
           <button onClick={() => setShowModal(true)} className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50">
             <Plus size={15} />Add Lead
           </button>
-          <input type="file" accept=".csv,.xlsx" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+          <input type="file" accept=".csv,.xlsx,.xls,.tsv,.txt" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
           <button onClick={handleUploadClick} disabled={uploading} className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50">
             {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
             {uploading ? 'Uploading...' : 'Upload Leads'}
           </button>
           {showCollectionsUI && (
             <>
-              <input type="file" accept=".csv,.xlsx" className="hidden" ref={repaymentFileInputRef} onChange={handleRepaymentFileChange} />
+              <input type="file" accept=".csv,.xlsx,.xls,.tsv,.txt" className="hidden" ref={repaymentFileInputRef} onChange={handleRepaymentFileChange} />
               <button onClick={handleRepaymentUploadClick} disabled={repaymentUploading} title="Upload a CSV/Excel of repayments actually received, to reconcile against Promise-to-Pay commitments" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-50">
                 {repaymentUploading ? <Loader2 size={15} className="animate-spin" /> : <CircleDollarSign size={15} />}
                 {repaymentUploading ? 'Uploading...' : 'Upload Repayments'}
@@ -387,9 +410,14 @@ function LeadsContent() {
               <option value="healthcare">Healthcare ({leads.filter(l => l.industry === 'healthcare').length})</option>
               <option value="edtech">EdTech ({leads.filter(l => l.industry === 'edtech').length})</option>
               <option value="collections">Collections ({leads.filter(l => l.industry === 'collections').length})</option>
+              {Array.from(new Set(leads.map(l => l.industry).filter(ind => ind && !['real_estate', 'bfsi', 'healthcare', 'edtech', 'collections', activeIndustry].includes(ind)))).map(customInd => (
+                <option key={customInd} value={customInd}>
+                  {formatIndustryLabel(customInd)} ({leads.filter(l => l.industry === customInd).length})
+                </option>
+              ))}
             </select>
             {campaignId && (
-              <button 
+              <button
                 onClick={() => {
                   setCampaignId(null)
                   router.push('/leads')
@@ -409,7 +437,7 @@ function LeadsContent() {
             ))}
           </div>
         </div>
-        
+
         {/* Mobile filter view */}
         <div className="mt-3 flex items-center gap-1 rounded-lg bg-muted/60 p-1 sm:hidden overflow-x-auto">
           {['Today', '7 Days', '30 Days', 'All Time'].map((item) => (
@@ -418,14 +446,14 @@ function LeadsContent() {
             </button>
           ))}
         </div>
-        
+
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[800px] text-left">
             <thead>
               <tr className="border-b border-border text-sm font-bold uppercase tracking-[0.14em] text-foreground">
                 <th className="pb-3 pl-4 font-semibold w-10">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={visibleLeads.length > 0 && selectedLeads.length === visibleLeads.length}
                     onChange={(e) => setSelectedLeads(e.target.checked ? visibleLeads.map((l: any) => l.lead_id) : [])}
                     className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
@@ -433,9 +461,9 @@ function LeadsContent() {
                 </th>
                 <th className="pb-3 pr-4 text-left font-semibold">Lead</th>
                 <th className="pb-3 pr-4 text-left font-semibold">Phone</th>
-                <th className="pb-3 text-left font-semibold">Offering / Details</th>
-                <th className="pb-3 text-left font-semibold">Outcome</th>
-                <th className="pb-3 text-left font-semibold">Status</th>
+                <th className="pb-3 pr-6 text-left font-semibold min-w-[170px] max-w-[220px]">Offering / Details</th>
+                <th className="pb-3 pr-6 text-left font-semibold min-w-[200px] max-w-[320px]">Outcome</th>
+                <th className="pb-3 pr-4 text-left font-semibold">Status</th>
                 <th className="pb-3 pl-6 text-left font-semibold">AI Score</th>
                 <th className="pb-3 text-right font-semibold">Actions</th>
               </tr>
@@ -461,25 +489,57 @@ function LeadsContent() {
                     </td>
                     <td className="py-4 pr-4 align-top font-semibold text-sm">{lead.name}</td>
                     <td className="py-4 pr-4 align-top text-xs font-medium text-muted-foreground">{lead.phone}</td>
-                    <td className="py-4 align-top text-xs">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-foreground">{lead.offering || lead.property || '-'}</span>
+                    <td className="py-4 pr-6 align-top text-xs max-w-[220px]">
+                      <div className="flex flex-col min-w-0">
+                        <span
+                          className="font-semibold text-foreground truncate block"
+                          title={lead.offering || lead.property || '-'}
+                        >
+                          {lead.offering || lead.property || '-'}
+                        </span>
                         {lead.industry && (
-                          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                            {INDUSTRY_CONFIGS[lead.industry as IndustryKey]?.shortLabel || lead.industry}
+                          <span
+                            className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider truncate block"
+                            title={formatIndustryLabel(lead.industry)}
+                          >
+                            {formatIndustryLabel(lead.industry)}
                           </span>
+                        )}
+                        {Boolean(lead.amount_due || lead.due_date || lead.custom_fields?.amount_due || lead.custom_fields?.['Loan Amount'] || lead.custom_fields?.due_date) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                            {Boolean(lead.amount_due || lead.custom_fields?.amount_due || lead.custom_fields?.['Loan Amount']) && (
+                              <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-200/50 dark:border-rose-800/40">
+                                Overdue: ₹{Number(lead.amount_due || lead.custom_fields?.amount_due || lead.custom_fields?.['Loan Amount'] || 0).toLocaleString('en-IN') || lead.amount_due}
+                              </span>
+                            )}
+                            {Boolean(lead.due_date || lead.custom_fields?.due_date || lead.custom_fields?.['due date']) && (
+                              <span className="text-muted-foreground text-[10px] font-medium bg-muted/60 px-1.5 py-0.5 rounded">
+                                Due {lead.due_date || lead.custom_fields?.due_date || lead.custom_fields?.['due date']}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
-                    <td className="py-4 pr-4 align-top text-xs text-muted-foreground max-w-[260px]">
-                      <span className="line-clamp-2" title={lead.outcome_summary || ''}>
+                    <td className="py-4 pr-6 align-top text-xs text-muted-foreground min-w-[200px] max-w-[320px]">
+                      <span
+                        className="line-clamp-2 leading-relaxed break-words block"
+                        title={lead.outcome_summary || lead.status || ''}
+                      >
                         {lead.outcome_summary || lead.status || '-'}
                       </span>
                     </td>
                     <td className="py-4 align-top">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700`}>
-                        {lead.status}
-                      </span>
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700`}>
+                          {lead.status}
+                        </span>
+                        {lead.promise_to_pay?.promised && (
+                          <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600 border border-emerald-500/20 whitespace-nowrap">
+                            PTP ₹{lead.promise_to_pay.amount || lead.amount_due || '15,000'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-4 pl-6 align-top">
                       <span
@@ -517,15 +577,15 @@ function LeadsContent() {
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Lead Name</label>
-                <input required value={newLead.name} onChange={(e) => setNewLead({...newLead, name: e.target.value})} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" placeholder="e.g. John Doe" />
+                <input required value={newLead.name} onChange={(e) => setNewLead({ ...newLead, name: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" placeholder="e.g. John Doe" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Phone Number</label>
-                <input required value={newLead.phone} onChange={(e) => setNewLead({...newLead, phone: e.target.value})} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" placeholder="e.g. +1 555-0123" />
+                <input required value={newLead.phone} onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" placeholder="e.g. +1 555-0123" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Offering / Product / Service (Optional)</label>
-                <input value={newLead.property} onChange={(e) => setNewLead({...newLead, property: e.target.value})} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" placeholder="e.g. Full-Stack Web Dev / Villa / Dental Checkup" />
+                <input value={newLead.property} onChange={(e) => setNewLead({ ...newLead, property: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" placeholder="e.g. Full-Stack Web Dev / Villa / Dental Checkup" />
               </div>
               <button disabled={creating} className="w-full mt-4 flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">
                 {creating ? <Loader2 size={16} className="animate-spin" /> : 'Add Lead'}
@@ -548,12 +608,12 @@ function LeadsContent() {
             <form onSubmit={handleQuickCall} className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Customer Name</label>
-                <input 
-                  required 
-                  value={quickCallName} 
-                  onChange={(e) => setQuickCallName(e.target.value)} 
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" 
-                  placeholder="e.g. Rahul Sharma" 
+                <input
+                  required
+                  value={quickCallName}
+                  onChange={(e) => setQuickCallName(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  placeholder="e.g. Rahul Sharma"
                 />
               </div>
               <div>
@@ -589,7 +649,7 @@ function LeadsContent() {
       {selectedLead && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-2xl rounded-2xl border border-border/50 bg-background/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Header Section */}
             <div className="relative border-b border-border/50 bg-muted/30 px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -604,8 +664,8 @@ function LeadsContent() {
                   </div>
                 </div>
               </div>
-              <button 
-                onClick={() => setSelectedLead(null)} 
+              <button
+                onClick={() => setSelectedLead(null)}
                 className="absolute right-4 top-4 rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 <X size={20} />
@@ -613,7 +673,7 @@ function LeadsContent() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-              
+
               {/* Quick Info Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
@@ -622,14 +682,14 @@ function LeadsContent() {
                   </div>
                   <div className="text-sm font-medium line-clamp-2">{selectedLead.offering || selectedLead.property || '-'}</div>
                 </div>
-                
+
                 <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                     <MapPin size={14} className="text-primary" /> Location
                   </div>
                   <div className="text-sm font-medium line-clamp-2">{selectedLead.location || '-'}</div>
                 </div>
-                
+
                 <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                     <Sparkles size={14} className="text-amber-500" /> AI Score
@@ -643,12 +703,11 @@ function LeadsContent() {
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                     <Clock size={14} className="text-emerald-500" /> Status
                   </div>
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ${
-                    selectedLead.status === 'Converted' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ${selectedLead.status === 'Converted' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
                     selectedLead.status === 'Qualified' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                    selectedLead.status === 'Interested' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                  }`}>
+                      selectedLead.status === 'Interested' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                    }`}>
                     {selectedLead.status}
                   </span>
                 </div>
@@ -671,38 +730,40 @@ function LeadsContent() {
                 </div>
               )}
 
-              {/* Promise to Pay - collections calls only; this field exists on every
-                  call's analysis now, but only means something for a collections call */}
-              {selectedCall?.industry === 'collections' && selectedCall?.analysis?.promise_to_pay && (
-                <div className={`rounded-xl border p-4 shadow-sm ${selectedCall.analysis.promise_to_pay.promised ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/50 bg-card'}`}>
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    <CircleDollarSign size={14} className={selectedCall.analysis.promise_to_pay.promised ? 'text-emerald-500' : 'text-muted-foreground'} /> Promise to Pay
-                  </div>
-                  {selectedCall.analysis.promise_to_pay.promised ? (
-                    <>
-                      <div className="text-sm font-bold text-foreground">
-                        Committed to pay {selectedCall.analysis.promise_to_pay.amount || 'an unspecified amount'} by {selectedCall.analysis.promise_to_pay.date || 'an unspecified date'}
-                      </div>
-                      {selectedLead?.collections_status && (
-                        <div className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
-                          selectedLead.collections_status === 'kept' ? 'bg-emerald-500/10 text-emerald-600' :
-                          selectedLead.collections_status === 'kept_late' ? 'bg-amber-500/10 text-amber-600' :
-                          selectedLead.collections_status === 'partial' ? 'bg-amber-500/10 text-amber-600' :
-                          selectedLead.collections_status === 'broken' ? 'bg-rose-500/10 text-rose-500' :
-                          'bg-muted text-muted-foreground'
-                        }`}>
-                          {selectedLead.collections_status.replace('_', ' ')}
-                          {selectedLead.collections_total_paid > 0 && ` · ₹${selectedLead.collections_total_paid.toLocaleString('en-IN')} received`}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="text-sm font-medium text-muted-foreground">
-                      No confirmed commitment yet - the customer did not give a clear amount and date during this call.
+              {/* Promise to Pay - collections calls */}
+              {((selectedLead?.industry === 'collections' || selectedCall?.industry === 'collections') && (selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay)) && (() => {
+                const ptp = selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay || {}
+                const isPromised = Boolean(ptp.promised)
+                return (
+                  <div className={`rounded-xl border p-4 shadow-sm ${isPromised ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/50 bg-card'}`}>
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      <CircleDollarSign size={14} className={isPromised ? 'text-emerald-500' : 'text-muted-foreground'} /> Promise to Pay
                     </div>
-                  )}
-                </div>
-              )}
+                    {isPromised ? (
+                      <>
+                        <div className="text-sm font-bold text-foreground">
+                          Committed to pay ₹{ptp.amount || selectedLead?.amount_due || '15,000'} by {ptp.date || 'the agreed date'}
+                        </div>
+                        {selectedLead?.collections_status && (
+                          <div className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${selectedLead.collections_status === 'kept' ? 'bg-emerald-500/10 text-emerald-600' :
+                            selectedLead.collections_status === 'kept_late' ? 'bg-amber-500/10 text-amber-600' :
+                              selectedLead.collections_status === 'partial' ? 'bg-amber-500/10 text-amber-600' :
+                                selectedLead.collections_status === 'broken' ? 'bg-rose-500/10 text-rose-500' :
+                                  'bg-blue-500/10 text-blue-600 border border-blue-500/20'
+                            }`}>
+                            {selectedLead.collections_status.replace('_', ' ')}
+                            {selectedLead.collections_total_paid > 0 && ` · ₹${selectedLead.collections_total_paid.toLocaleString('en-IN')} received`}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-sm font-medium text-muted-foreground">
+                        No confirmed commitment yet - the customer did not give a clear amount and date during this call.
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Dynamic Extracted Fields from AI Analysis */}
               {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay'].includes(k)).length > 0 && (
@@ -715,14 +776,14 @@ function LeadsContent() {
                           <Sparkles size={14} className="text-primary" /> {key.replace(/_/g, ' ')}
                         </div>
                         <div className="text-sm font-medium line-clamp-2 overflow-y-auto max-h-[80px]">
-                          {typeof selectedCall.analysis[key] === 'boolean' 
-                            ? (selectedCall.analysis[key] ? 'Yes' : 'No') 
+                          {typeof selectedCall.analysis[key] === 'boolean'
+                            ? (selectedCall.analysis[key] ? 'Yes' : 'No')
                             : typeof selectedCall.analysis[key] === 'object' && selectedCall.analysis[key] !== null
                               ? (Array.isArray(selectedCall.analysis[key]) ? selectedCall.analysis[key].join(', ') : JSON.stringify(selectedCall.analysis[key]))
-                            : String(selectedCall.analysis[key] || '-')}
+                              : String(selectedCall.analysis[key] || '-')}
                         </div>
                       </div>
-                  ))}
+                    ))}
                 </div>
               )}
 
@@ -735,7 +796,7 @@ function LeadsContent() {
                   </div>
                   {loadingCall && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
                 </div>
-                
+
                 <div className="p-4 bg-[#f8fafc] dark:bg-[#0f172a] min-h-[250px] max-h-[350px] overflow-y-auto space-y-4">
                   {loadingCall ? (
                     <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
@@ -750,20 +811,19 @@ function LeadsContent() {
                         const lower = line.toLowerCase();
                         const isUser = lower.startsWith('user:') || lower.startsWith('customer:') || lower.startsWith('caller:');
                         const isAssistant = lower.startsWith('assistant:') || lower.startsWith('ai:') || lower.startsWith('agent:');
-                        
+
                         if (!isUser && !isAssistant) {
                           return <div key={i} className="text-xs text-center text-muted-foreground/70 my-2">{line}</div>;
                         }
-                        
+
                         const content = line.replace(/^(user:|customer:|caller:|assistant:|ai:|agent:)\s*/i, '');
-                        
+
                         return (
                           <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed shadow-sm ${
-                              isUser 
-                                ? 'bg-primary text-primary-foreground rounded-tr-sm' 
-                                : 'bg-white dark:bg-slate-800 text-foreground border border-border/50 rounded-tl-sm'
-                            }`}>
+                            <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed shadow-sm ${isUser
+                              ? 'bg-primary text-primary-foreground rounded-tr-sm'
+                              : 'bg-white dark:bg-slate-800 text-foreground border border-border/50 rounded-tl-sm'
+                              }`}>
                               {content}
                             </div>
                           </div>

@@ -42,6 +42,8 @@ async def stream_openai_reply(messages: list, api_key: str, model: str, client: 
         "model": model,
         "messages": messages,
         "stream": True,
+        "max_tokens": 90,
+        "temperature": 0.3,
     }
     try:
         if client is not None:

@@ -18,6 +18,8 @@ class WhatsAppService:
         # If standard 10-digit Indian number without country code, prepend 91
         if len(digits) == 10:
             digits = "91" + digits
+        elif len(digits) == 11 and digits.startswith("0"):
+            digits = "91" + digits[1:]
         return digits
 
     async def get_whatsapp_credentials(self, db, company_id: str = None) -> dict:
@@ -183,7 +185,7 @@ class WhatsAppService:
                 return
 
             # Resolve customer phone
-            customer_phone = call.get("customer_id") or call.get("phone_number")
+            customer_phone = call.get("customer_id") or call.get("phone_number") or call.get("customer_phone")
             if not customer_phone:
                 lead = await db.leads.find_one({"lead_id": lead_id})
                 if lead:

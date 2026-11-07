@@ -42,12 +42,12 @@ export default function DashboardPage() {
   const { user, isSuperAdmin } = useAuth()
   const [range, setRange] = useState('30 Days')
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
-  
+
   // Adaptive Industry Selection:
   // For company logins, always locked 100% to their company profile industry.
   // Only platform Super Admins see the demo switcher.
   const [selectedIndustry, setSelectedIndustry] = useState<IndustryKey>('healthcare')
-  
+
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [campaignsList, setCampaignsList] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,7 +75,7 @@ export default function DashboardPage() {
             setSelectedIndustry(res.company.industry as IndustryKey)
             return
           }
-        } catch {}
+        } catch { }
       } else {
         try {
           const saved = localStorage.getItem('talkly_selected_industry') as IndustryKey
@@ -83,7 +83,7 @@ export default function DashboardPage() {
             setSelectedIndustry(saved)
             return
           }
-        } catch {}
+        } catch { }
       }
     }
     initIndustry()
@@ -95,7 +95,7 @@ export default function DashboardPage() {
     setSelectedCampaignId('') // Reset campaign filter when switching industry
     try {
       localStorage.setItem('talkly_selected_industry', ind)
-    } catch {}
+    } catch { }
   }
 
   // Load Dashboard metrics & campaigns
@@ -160,11 +160,11 @@ export default function DashboardPage() {
 
   // Dynamically adapt conversion funnel stages to selected industry
   const funnel = [
-    [config.funnelStages[0], tLeads, tLeads > 0 ? '100%' : '0%'], 
-    [config.funnelStages[1], dashboardData?.contacted_leads || 0, calcPct(dashboardData?.contacted_leads)], 
-    [config.funnelStages[2], connectedCalls, calcPct(connectedCalls)], 
-    [config.funnelStages[3], interestedLeads, calcPct(interestedLeads)], 
-    [config.funnelStages[4], qualifiedLeads, calcPct(qualifiedLeads)], 
+    [config.funnelStages[0], tLeads, tLeads > 0 ? '100%' : '0%'],
+    [config.funnelStages[1], dashboardData?.contacted_leads || 0, calcPct(dashboardData?.contacted_leads)],
+    [config.funnelStages[2], connectedCalls, calcPct(connectedCalls)],
+    [config.funnelStages[3], interestedLeads, calcPct(interestedLeads)],
+    [config.funnelStages[4], qualifiedLeads, calcPct(qualifiedLeads)],
     [config.funnelStages[5], convertedLeads, calcPct(convertedLeads)],
   ]
 
@@ -212,8 +212,8 @@ export default function DashboardPage() {
               <IndustryIcon size={12} />
               {config.label}
             </span>
-            <Link 
-              href="/settings" 
+            <Link
+              href="/settings"
               className="text-xs font-semibold text-muted-foreground hover:text-primary transition-colors underline-offset-2 hover:underline"
               title="Change your company vertical in Settings"
             >
@@ -231,8 +231,8 @@ export default function DashboardPage() {
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Campaign Selector */}
-          <select 
-            value={selectedCampaignId} 
+          <select
+            value={selectedCampaignId}
             onChange={(e) => setSelectedCampaignId(e.target.value)}
             className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
           >
@@ -243,7 +243,7 @@ export default function DashboardPage() {
                 <option key={c.campaign_id} value={c.campaign_id}>
                   {c.name} {c.offering ? `(${c.offering})` : ''} {isSuperAdmin && c.industry ? `• ${INDUSTRY_CONFIGS[c.industry as IndustryKey]?.shortLabel || c.industry}` : ''}
                 </option>
-            ))}
+              ))}
           </select>
 
           {/* Export CSV Button */}
@@ -284,11 +284,10 @@ export default function DashboardPage() {
                   <button
                     key={key}
                     onClick={() => handleIndustryChange(key)}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-                      isActive
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${isActive
                         ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20 scale-[1.02]'
                         : 'border border-border bg-card text-foreground/70 hover:bg-muted hover:text-foreground'
-                    }`}
+                      }`}
                   >
                     <Icon size={14} />
                     <span>{item.shortLabel}</span>
@@ -303,13 +302,13 @@ export default function DashboardPage() {
       {/* Adaptive 6-Card KPI Metrics Grid */}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {metrics.map((item) => (
-          <MetricCard 
-            key={item[0]} 
-            label={item[0] as string} 
-            value={item[1] as string} 
-            change={item[2] as string} 
-            Icon={item[3] as any} 
-            tone={item[4] as any} 
+          <MetricCard
+            key={item[0]}
+            label={item[0] as string}
+            value={item[1] as string}
+            change={item[2] as string}
+            Icon={item[3] as any}
+            tone={item[4] as any}
           />
         ))}
       </section>
@@ -325,12 +324,11 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
               {['Today', '7 Days', '30 Days', '90 Days'].map((item) => (
-                <button 
-                  key={item} 
-                  onClick={() => setRange(item)} 
-                  className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
-                    range === item ? 'bg-primary text-primary-foreground shadow-md' : 'text-foreground/70 hover:bg-card hover:text-foreground'
-                  }`}
+                <button
+                  key={item}
+                  onClick={() => setRange(item)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${range === item ? 'bg-primary text-primary-foreground shadow-md' : 'text-foreground/70 hover:bg-card hover:text-foreground'
+                    }`}
                 >
                   {item}
                 </button>
@@ -364,11 +362,10 @@ export default function DashboardPage() {
                   <span className="font-black text-foreground">{value} <span className="ml-1 text-muted-foreground font-bold">({percentage})</span></span>
                 </div>
                 <div className="mt-1.5 h-2 rounded-full bg-muted overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      index < 2 ? 'bg-primary' : index < 4 ? 'bg-primary/75' : 'bg-primary/50'
-                    }`} 
-                    style={{ width: `${Math.min(Math.max(percentage === '100%' ? 100 : parseFloat(percentage as string), 0), 100)}%` }} 
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${index < 2 ? 'bg-primary' : index < 4 ? 'bg-primary/75' : 'bg-primary/50'
+                      }`}
+                    style={{ width: `${Math.min(Math.max(percentage === '100%' ? 100 : parseFloat(percentage as string), 0), 100)}%` }}
                   />
                 </div>
               </div>
@@ -378,7 +375,9 @@ export default function DashboardPage() {
           <div className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground flex items-center justify-between">
             <span>Top conversion driver:</span>
             <span className="font-semibold text-foreground">
-              {convertedLeads > 0 ? (config.intentDistribution[0]?.label || 'High Intent') : 'No conversions recorded yet'}
+              {convertedLeads > 0
+                ? (config.intentDistribution[0]?.label || 'High Intent')
+                : `${config.intentDistribution[0]?.label || 'High Intent'} (Target)`}
             </span>
           </div>
         </article>
@@ -390,56 +389,49 @@ export default function DashboardPage() {
         <article className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-foreground">Top Inquired Categories</h3>
-            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black ${
-              hasRealIntents ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-            }`}>
-              {hasRealIntents ? `AI Analyzed (${realIntents.reduce((a, b) => a + (b.count || 0), 0)} calls)` : 'Awaiting Intent Signals'}
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black border ${hasRealIntents
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                : 'bg-primary/10 text-primary border-primary/20'
+              }`}>
+              {hasRealIntents ? `Live Signals (${realIntents.reduce((a, b) => a + (b.count || 0), 0)} calls)` : 'Configured Taxonomy'}
             </span>
           </div>
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            {hasRealIntents 
+            {hasRealIntents
               ? `Real buyer intent signals extracted from ${config.shortLabel} conversations`
-              : callsMade > 0 
-              ? `${callsMade} call connected • No specific category inquired by caller`
               : `Target inquiry taxonomy configured for ${config.shortLabel}`}
           </p>
 
-          {hasRealIntents ? (
-            <div className="mt-4 space-y-3">
-              {realIntents.map((item) => (
+          <div className="mt-4 space-y-3">
+            {(hasRealIntents ? realIntents : config.intentDistribution).map((item, idx) => {
+              const defaultColors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500']
+              const colorClass = item.color || defaultColors[idx % defaultColors.length]
+              return (
                 <div key={item.label}>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-foreground truncate max-w-[190px]">{item.label}</span>
-                    <span className="font-black text-foreground">{item.pct}% ({item.count})</span>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${colorClass}`} />
+                      <span className="font-bold text-foreground truncate">{item.label}</span>
+                    </div>
+                    <span className="font-black text-foreground ml-2 shrink-0">
+                      {item.pct}%{item.count ? ` (${item.count})` : ''}
+                    </span>
                   </div>
-                  <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${item.pct}%` }} />
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                      style={{ width: `${Math.min(Math.max(item.pct, 2), 100)}%` }}
+                    />
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 flex flex-col items-center justify-center rounded-lg border border-dashed border-border/80 p-5 text-center">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Activity size={16} />
-              </div>
-              <p className="mt-2 text-xs font-semibold text-foreground">
-                {callsMade > 0 
-                  ? `${callsMade} call recorded • 0 category requests detected` 
-                  : `0 ${config.shortLabel} calls analyzed`}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed max-w-[260px]">
-                {callsMade > 0 
-                  ? `The customer did not state a specific ${config.offeringName.toLowerCase()}. When callers mention specific services or needs, live distribution bars will populate here.` 
-                  : `Live intent breakdown will populate automatically once calls are processed.`}
-              </p>
-              <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {config.intentDistribution.map((item) => (
-                  <span key={item.label} className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    {item.label}
-                  </span>
-                ))}
-              </div>
+              )
+            })}
+          </div>
+
+          {!hasRealIntents && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+              <Activity size={13} className="shrink-0 text-primary stroke-[2.5]" />
+              <span>Live breakdown updates automatically as {config.shortLabel} calls are analyzed.</span>
             </div>
           )}
         </article>
@@ -448,7 +440,7 @@ export default function DashboardPage() {
         <article className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-foreground">AI Extraction Parameters</h3>
-            <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400">Active Schema</span>
+            <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Active Schema</span>
           </div>
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
             Structured fields extracted into CRM webhook payload
@@ -456,7 +448,7 @@ export default function DashboardPage() {
 
           <div className="mt-4 space-y-2.5">
             {config.keyExtractionFields.map((field, idx) => (
-              <div key={idx} className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs">
+              <div key={idx} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs hover:bg-muted/60 transition-colors">
                 <CheckCircle2 size={14} className="text-emerald-500 shrink-0 stroke-[2.5]" />
                 <span className="font-bold text-foreground truncate">{field}</span>
               </div>
@@ -470,18 +462,17 @@ export default function DashboardPage() {
             <h3 className="text-sm font-black text-foreground">
               {hasRealObjections ? 'Top Objections Handled' : 'Configured Objection Playbook'}
             </h3>
-            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black ${
-              hasRealObjections ? 'bg-amber-500/10 text-amber-600' : 'bg-primary/10 text-primary'
-            }`}>
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black border ${hasRealObjections ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' : 'bg-primary/10 text-primary border-primary/20'
+              }`}>
               {hasRealObjections ? 'Speech AI' : 'Playbook Active'}
             </span>
           </div>
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            {hasRealObjections 
+            {hasRealObjections
               ? `Friction points detected on live ${config.shortLabel} calls`
-              : callsMade > 0 
-              ? `0 objections raised on ${callsMade} call recorded`
-              : `Rules your voice agent will use when prospects raise concerns on calls`}
+              : callsMade > 0
+                ? `0 objections raised on ${callsMade} call recorded`
+                : `Rules your voice agent will use when prospects raise concerns on calls`}
           </p>
 
           <div className="mt-3 space-y-3">

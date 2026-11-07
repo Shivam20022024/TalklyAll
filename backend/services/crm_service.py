@@ -44,7 +44,7 @@ class CRMService:
             "lead": {
                 "name": call_doc.get("customer_name") or (lead_doc.get("name") if lead_doc else "Unknown"),
                 "phone": call_doc.get("customer_phone") or call_doc.get("customer_id") or (lead_doc.get("phone") if lead_doc else ""),
-                "offering": lead_doc.get("offering") if lead_doc else lead_doc.get("property") if lead_doc else "",
+                "offering": (lead_doc.get("offering") or lead_doc.get("property") or call_doc.get("offering") or "") if lead_doc else (call_doc.get("offering") or ""),
                 "status": lead_doc.get("status") if lead_doc else "Contacted",
                 "custom_fields": lead_doc.get("custom_fields", {}) if lead_doc else {}
             },
@@ -205,6 +205,12 @@ class CRMService:
         ptp = analysis_result.get("promise_to_pay")
         if isinstance(ptp, dict) and ptp:
             update_data["promise_to_pay"] = ptp
+            amt = ptp.get("amount")
+            if amt:
+                update_data["amount_due"] = str(amt).strip()
+                update_data["custom_fields.amount_due"] = str(amt).strip()
+            if ptp.get("promised"):
+                update_data["collections_status"] = "pending"
         if "identity_verified" in analysis_result:
             update_data["identity_verified"] = bool(analysis_result.get("identity_verified"))
 

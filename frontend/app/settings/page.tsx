@@ -46,6 +46,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testingWebhook, setTestingWebhook] = useState(false)
+  const [savingWebhook, setSavingWebhook] = useState(false)
+  const [webhookSaveSuccess, setWebhookSaveSuccess] = useState(false)
   const [webhookTestResult, setWebhookTestResult] = useState<any>(null)
 
   // Company Profile State
@@ -60,8 +62,9 @@ export default function SettingsPage() {
   const [sharedNumber, setSharedNumber] = useState('+918065535758')
   const [sharedLabel, setSharedLabel] = useState('+91 80 6553 5758 (Talkly Plivo shared number)')
   const [connectedLine, setConnectedLine] = useState<any>(null)
-  const [selectedProvider, setSelectedProvider] = useState<TelephonyProviderKey>('twilio')
+  const [selectedProvider, setSelectedProvider] = useState<TelephonyProviderKey>('plivo')
   const [inboundRouting, setInboundRouting] = useState({ mode: 'ai_agent', fallback_number: '' })
+  const [inboundWebhookUrl, setInboundWebhookUrl] = useState('')
 
   // WhatsApp Automation State (Meta WhatsApp Cloud API)
   const [whatsappEnabled, setWhatsappEnabled] = useState(true)
@@ -133,6 +136,9 @@ export default function SettingsPage() {
           setSharedNumber(telRes.shared_number || '+918031830100')
           setSharedLabel(telRes.shared_number_label || '+91 80 3183 0100 (Talkly shared number)')
           setConnectedLine(telRes.connected_line || null)
+          if (telRes.inbound_webhook_url) {
+            setInboundWebhookUrl(telRes.inbound_webhook_url)
+          }
           if (telRes.connected_line?.provider && PROVIDERS.some(p => p.id === telRes.connected_line.provider)) {
             setSelectedProvider(telRes.connected_line.provider as TelephonyProviderKey)
           }
@@ -164,7 +170,7 @@ export default function SettingsPage() {
       })
       try {
         localStorage.setItem('talkly_selected_industry', industry)
-      } catch {}
+      } catch { }
       await refreshUser()
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
@@ -254,6 +260,24 @@ export default function SettingsPage() {
     }
   }
 
+  const handleSaveWebhook = async () => {
+    setSavingWebhook(true)
+    setWebhookSaveSuccess(false)
+    try {
+      await fetchApi('/api/v1/auth/company-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ webhook_url: webhookUrl })
+      })
+      await refreshUser()
+      setWebhookSaveSuccess(true)
+      setTimeout(() => setWebhookSaveSuccess(false), 3000)
+    } catch (e: any) {
+      alert(e.message || 'Failed to save webhook settings')
+    } finally {
+      setSavingWebhook(false)
+    }
+  }
+
   const handleTestWebhook = async () => {
     if (!webhookUrl) return alert('Please enter a webhook URL first.')
     setTestingWebhook(true)
@@ -264,6 +288,18 @@ export default function SettingsPage() {
         body: JSON.stringify({ webhook_url: webhookUrl })
       })
       setWebhookTestResult(res.result)
+      if (res.result?.success) {
+        // Auto-persist successfully verified webhook URL
+        try {
+          await fetchApi('/api/v1/auth/company-settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ webhook_url: webhookUrl })
+          })
+          await refreshUser()
+          setWebhookSaveSuccess(true)
+          setTimeout(() => setWebhookSaveSuccess(false), 3000)
+        } catch { }
+      }
     } catch (e: any) {
       setWebhookTestResult({ success: false, response_text: e.message || 'Network error' })
     } finally {
@@ -502,11 +538,10 @@ export default function SettingsPage() {
                       key={p.id}
                       type="button"
                       onClick={() => setSelectedProvider(p.id)}
-                      className={`flex flex-col items-start gap-1 p-3.5 rounded-xl border text-left transition-all ${
-                        isSelected
-                          ? 'border-primary ring-1 ring-primary bg-primary/5 shadow-sm'
-                          : 'border-border bg-card hover:bg-muted/50'
-                      }`}
+                      className={`flex flex-col items-start gap-1 p-3.5 rounded-xl border text-left transition-all ${isSelected
+                        ? 'border-primary ring-1 ring-primary bg-primary/5 shadow-sm'
+                        : 'border-border bg-card hover:bg-muted/50'
+                        }`}
                     >
                       <div className="flex w-full items-center justify-between">
                         <span className="font-bold text-sm text-foreground">{p.name}</span>
@@ -556,35 +591,78 @@ export default function SettingsPage() {
               </div>
 
               {isCurrentProviderConnected ? (
-                <div className="rounded-lg border border-border/80 bg-background/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
-                      <PhoneCall size={18} />
-                    </span>
-                    <div>
-                      <div className="font-mono text-sm font-bold text-foreground">{connectedLine.phone_number}</div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span>Account: {connectedLine.account_sid_masked || 'Active'}</span>
-                        <span>•</span>
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                          <Check size={12} /> Live for Outbound & Inbound
-                        </span>
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-border/80 bg-background/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+                        <PhoneCall size={18} />
+                      </span>
+                      <div>
+                        <div className="font-mono text-sm font-bold text-foreground">{connectedLine.phone_number}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <span>Account: {connectedLine.account_sid_masked || 'Active'}</span>
+                          <span>•</span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                            <Check size={12} /> Live for Outbound & Inbound
+                          </span>
+                        </div>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleDisconnectLine}
+                      disabled={disconnectingLine}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      Disconnect Line
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleDisconnectLine}
-                    disabled={disconnectingLine}
-                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors"
-                  >
-                    Disconnect Line
-                  </button>
+                  {inboundWebhookUrl && selectedProvider === 'plivo' && (
+                    <div className="rounded-lg border border-border/60 bg-muted/20 p-3.5 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-foreground">Plivo Inbound Webhook (Answer URL)</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(inboundWebhookUrl)
+                            alert('Copied Inbound Webhook URL to clipboard!')
+                          }}
+                          className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
+                        >
+                          Copy Answer URL
+                        </button>
+                      </div>
+                      <code className="block rounded bg-background p-2 font-mono text-[11px] text-muted-foreground border border-border/50 break-all select-all">
+                        {inboundWebhookUrl}
+                      </code>
+                      <p className="text-[11px] text-muted-foreground">
+                        In your Plivo Console (Voice &gt; Applications), attach your phone number to an application with this URL set as the <strong>Primary Answer URL</strong> (HTTP POST) so customers who call back connect directly to your Talkly AI Agent.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : PROVIDERS.find(p => p.id === selectedProvider)?.unsupported ? (
+                <div className="py-6 px-4 text-center border border-dashed border-amber-500/30 rounded-lg text-xs space-y-2 bg-amber-500/5">
+                  <p className="font-semibold text-foreground">
+                    {PROVIDERS.find(p => p.id === selectedProvider)?.name} integration is on the roadmap
+                  </p>
+                  <p className="text-muted-foreground max-w-md mx-auto text-[11px]">
+                    Talkly currently uses high-volume Plivo SIP trunking for sub-400ms bidirectional streaming and guaranteed Truecaller CLI across India. To connect your company's official registered Caller ID today, please select <strong>Plivo</strong> above.
+                  </p>
+                </div>
+              ) : selectedProvider === 'bolna' ? (
+                <div className="py-6 px-4 text-center border border-dashed border-purple-500/30 rounded-lg text-xs space-y-2 bg-purple-500/5">
+                  <p className="font-semibold text-foreground">Bolna Direct Native SIP</p>
+                  <p className="text-muted-foreground max-w-md mx-auto text-[11px]">
+                    Bolna Direct is integrated with Talkly's shared carrier infrastructure. To connect a custom company phone line with dedicated Caller ID, select <strong>Plivo</strong>.
+                  </p>
                 </div>
               ) : (
-                <div className="py-6 text-center border border-dashed border-border rounded-lg text-xs text-muted-foreground">
-                  No active lines connected for {PROVIDERS.find(p => p.id === selectedProvider)?.name}. Calls currently use the Talkly shared number.
+                <div className="py-6 text-center border border-dashed border-border rounded-lg text-xs text-muted-foreground space-y-1">
+                  <p>No active lines connected for {PROVIDERS.find(p => p.id === selectedProvider)?.name}.</p>
+                  <p className="text-[11px]">Click "Add Plivo line" above to enter your Auth ID, Auth Token, and dedicated phone number.</p>
                 </div>
               )}
             </div>
@@ -602,6 +680,12 @@ export default function SettingsPage() {
               Enter your webhook URL (Zapier, Make.com, HubSpot, Google Sheets, or custom backend). Every completed AI call will post lead data, call score, sentiment, and transcript in real-time.
             </p>
 
+            {webhookSaveSuccess && (
+              <div className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 size={15} /> Webhook destination URL saved successfully!
+              </div>
+            )}
+
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Webhook Destination URL</label>
@@ -611,16 +695,26 @@ export default function SettingsPage() {
                     value={webhookUrl}
                     onChange={(e) => setWebhookUrl(e.target.value)}
                     placeholder="https://hooks.zapier.com/hooks/catch/..."
-                    className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm font-mono outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm font-mono outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-xs"
                   />
+                  <button
+                    type="button"
+                    onClick={handleSaveWebhook}
+                    disabled={savingWebhook}
+                    className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold shadow-md hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+                    style={{ backgroundColor: '#18181b', color: '#ffffff' }}
+                  >
+                    {savingWebhook ? <Loader2 size={14} className="animate-spin text-white" /> : <Save size={14} className="text-white" />}
+                    <span>{savingWebhook ? 'Saving...' : 'Save Webhook'}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleTestWebhook}
                     disabled={testingWebhook || !webhookUrl}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50 transition-all cursor-pointer shadow-xs"
                   >
                     {testingWebhook ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                    {testingWebhook ? 'Sending...' : 'Test Ping'}
+                    <span>{testingWebhook ? 'Sending...' : 'Test Ping'}</span>
                   </button>
                 </div>
               </div>

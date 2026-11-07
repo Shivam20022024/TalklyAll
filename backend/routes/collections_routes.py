@@ -189,7 +189,26 @@ async def get_recovery_analytics(current_user: dict = Depends(require_company_ac
         overdue_accounts += 1
         ptp = lead.get("promise_to_pay") or {}
         custom_fields = lead.get("custom_fields") or {}
-        total_amount_due += _parse_amount(custom_fields.get("amount_due"))
+        amt_due = (
+            custom_fields.get("amount_due")
+            or custom_fields.get("Loan Amount")
+            or custom_fields.get("loan_amount")
+            or custom_fields.get("amount")
+            or custom_fields.get("overdue_amount")
+            or custom_fields.get("due_amount")
+            or custom_fields.get("emi_amount")
+            or lead.get("amount_due")
+            or lead.get("loan_amount")
+            or lead.get("overdue_amount")
+            or ptp.get("amount")
+            or ptp.get("amount_due")
+        )
+        if not amt_due and lead.get("outcome_summary"):
+            import re
+            m = re.search(r'(?:rs\.?|inr|₹)\s*([\d,]+)', str(lead.get("outcome_summary")), re.IGNORECASE)
+            if m:
+                amt_due = m.group(1)
+        total_amount_due += _parse_amount(amt_due)
 
         if ptp.get("promised"):
             ptp_secured += 1

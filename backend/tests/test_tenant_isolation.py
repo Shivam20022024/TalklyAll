@@ -174,3 +174,144 @@ async def test_deactivated_user_rejected(client, world, db):
     await db.users.update_one({"user_id": world["a"]["user_id"]}, {"$set": {"is_active": False}})
     r = await client.get("/api/v1/campaigns", headers=A(world))
     assert r.status_code == 403
+
+
+# 15: Telephony settings isolation and inbound webhook URL
+async def test_telephony_settings_isolated_and_webhook_returned(client, world):
+    r_a = await client.get("/api/v1/telephony/settings", headers=A(world))
+    assert r_a.status_code == 200
+    data_a = r_a.json()
+    assert "inbound_webhook_url" in data_a
+    assert "/api/v1/plivo/answer" in data_a["inbound_webhook_url"]
+
+    r_b = await client.get("/api/v1/telephony/settings", headers=B(world))
+    assert r_b.status_code == 200
+    data_b = r_b.json()
+    assert "inbound_webhook_url" in data_b
+
+
+# 16: Auto Build Custom Agent & Tenant Isolation
+async def test_auto_build_agent_and_custom_template_isolation(client, world):
+    # Tenant A auto-builds a custom solar agent
+    payload = {
+        "agent_name": "Saanvi",
+        "company_name": "Acme Solar Corp",
+        "industry": "Renewable Solar Energy",
+        "agent_designation": "Solar Consultation Specialist",
+        "language": "Hindi / Hinglish",
+        "voice_tone": "Warm, professional, consultative",
+        "primary_objective": "Qualify roof ownership and book free solar inspection.",
+        "must_ask_questions": ["Do you own the roof?", "What is your electricity bill?"],
+        "offerings_and_usps": "40% government subsidy and 25-year panel warranty.",
+        "closing_call_to_action": "Schedule visit this weekend.",
+        "save_immediately": True
+    }
+    r = await client.post("/api/v1/prompt/auto-build", json=payload, headers=A(world))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "success"
+    template = data["template"]
+    template_id = template["template_id"]
+    assert "prompt" in template
+    assert "welcome_message" in template
+
+    # Tenant A sees their custom template in list
+    r_list_a = await client.get("/api/v1/prompt/custom-templates", headers=A(world))
+    assert r_list_a.status_code == 200
+    tmpl_ids_a = [t["id"] for t in r_list_a.json()["templates"]]
+    assert template_id in tmpl_ids_a
+
+    # Tenant B must NOT see Tenant A's custom template
+    r_list_b = await client.get("/api/v1/prompt/custom-templates", headers=B(world))
+    assert r_list_b.status_code == 200
+    tmpl_ids_b = [t["id"] for t in r_list_b.json()["templates"]]
+    assert template_id not in tmpl_ids_b
+
+    # Tenant A deletes the custom template
+    r_del = await client.delete(f"/api/v1/prompt/custom-templates/{template_id}", headers=A(world))
+    assert r_del.status_code == 200
+
+    # Verify deleted for Tenant A
+    r_list_a2 = await client.get("/api/v1/prompt/custom-templates", headers=A(world))
+    assert template_id not in [t["id"] for t in r_list_a2.json()["templates"]]
+
+
+@pytest.mark.asyncio
+async def test_custom_template_voice_context_resolution(world):
+    import mongodb
+    from routes.plivo_routes import resolve_call_voice_context
+    db = mongodb.get_db()
+
+    cid_a = world["a"]["company_id"]
+    cid_b = world["b"]["company_id"]
+
+    # 1. Tenant A creates custom agent template
+    custom_template_id = "custom_rooftop_solar_test"
+    custom_welcome = "नमस्ते {customer_name}, मैं Saanvi हूँ, Tata Solar से।"
+    custom_prompt = "Role: Solar Energy Consultant. Goal: Qualify rooftop solar interest."
+    
+    await db.prompts.update_one(
+        {"company_id": cid_a},
+        {
+            "$set": {
+                "industry": custom_template_id,
+                "offering": "5kW Rooftop Solar",
+                f"industry_prompts.{custom_template_id}.prompt": custom_prompt,
+                f"industry_prompts.{custom_template_id}.welcome_message": custom_welcome,
+                f"industry_prompts.{custom_template_id}.published_prompt": custom_prompt,
+                f"industry_prompts.{custom_template_id}.published_welcome_message": custom_welcome,
+                f"industry_prompts.{custom_template_id}.offering": "5kW Rooftop Solar",
+                f"industry_prompts.{custom_template_id}.status": "Published"
+            },
+            "$push": {
+                "custom_templates": {
+                    "id": custom_template_id,
+                    "name": "Solar Advisor",
+                    "welcome_message": custom_welcome,
+                    "prompt": custom_prompt,
+                    "offering": "5kW Rooftop Solar",
+                    "offering_placeholder": "5kW Rooftop Solar"
+                }
+            }
+        },
+        upsert=True
+    )
+
+    # 2. Insert test call for Tenant A
+    call_id_a = f"test-solar-call-{uuid.uuid4().hex[:6]}"
+    await db.calls.insert_one({
+        "call_id": call_id_a,
+        "company_id": cid_a,
+        "customer_name": "Mohit",
+        "customer_id": "+919876543210",
+        "industry": custom_template_id,
+        "status": "Initiating"
+    })
+
+    # 3. Resolve voice context for Tenant A's call
+    ctx_a = await resolve_call_voice_context(db, call_id_a, cid_a)
+    
+    # Verify Tenant A gets the Solar welcome message and custom prompt
+    assert "नमस्ते Mohit" in ctx_a["welcome_text"]
+    assert "Tata Solar" in ctx_a["welcome_text"]
+    assert "AI calling services" not in ctx_a["welcome_text"]
+    assert "Solar Energy Consultant" in ctx_a["system_prompt"]
+
+    # 4. Tenant B tries to resolve a call with Tenant A's private template
+    call_id_b = f"test-foreign-call-{uuid.uuid4().hex[:6]}"
+    await db.calls.insert_one({
+        "call_id": call_id_b,
+        "company_id": cid_b,
+        "customer_name": "Rohan",
+        "customer_id": "+919123456789",
+        "industry": custom_template_id, # Tenant B does not own this template
+        "status": "Initiating"
+    })
+    ctx_b = await resolve_call_voice_context(db, call_id_b, cid_b)
+    
+    # Tenant B must NOT leak Tenant A's custom solar prompt
+    assert "Tata Solar" not in ctx_b["welcome_text"]
+    assert "Solar Energy Consultant" not in ctx_b["system_prompt"]
+    # Tenant B safely falls back to standard general sales
+    assert "AI calling services" in ctx_b["welcome_text"]
+
