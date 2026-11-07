@@ -368,7 +368,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     customer_name = ""
     if call_doc and call_doc.get("customer_name"):
         cname = str(call_doc.get("customer_name")).strip()
-        if cname.lower() not in ("valued customer", "unknown", "there", ""):
+        if cname.lower() not in ("valued customer", "unknown", "there", "inbound caller", "caller", ""):
             customer_name = cname
 
     call_lead_id = call_doc.get("lead_id") if call_doc else None
@@ -385,7 +385,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             except Exception:
                 pass
 
-    if not lead_doc and target_phone and target_name and target_name.lower() not in ("valued customer", "unknown", "") and company_id:
+    if not lead_doc and target_phone and target_name and target_name.lower() not in ("valued customer", "unknown", "inbound caller", "caller", "") and company_id:
         lead_doc = await db.leads.find_one(
             {"phone": target_phone, "name": {"$regex": f"^{re.escape(target_name)}$", "$options": "i"}, "company_id": company_id},
             sort=[("created_at", -1), ("_id", -1)]
