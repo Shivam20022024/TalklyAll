@@ -64,41 +64,28 @@ GOODBYE_KEYWORDS = [
 # DECOUPLED_FIRST_WORD_DIRECTIVE below) instead of a whole sentence,
 # cutting the dead air before the agent's first word - confirmed live as a
 # 2-3s gap before this change.
-_SENTENCE_END_RE = re.compile(r"^(.*?[,.!?।])\s*")
+_SENTENCE_END_RE = re.compile(r"^(.*?[.!?।])\s*")
 
-# Decoupled-only addition, not part of the shared conversation_rules used by
-# both pipelines - the OpenAI Realtime pipeline has no equivalent
-# non-streaming-TTS bottleneck, so this instruction has nothing to fix
-# there. Paired with the comma-inclusive _SENTENCE_END_RE above: this gives
-# Bakbak a short, complete clause to synthesize first instead of a full
-# sentence, so the caller hears something within roughly the time Bakbak
-# takes to synthesize 2-4 words, not an entire reply.
 DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
-    "\n\nCRITICAL LOW-LATENCY DELIVERY & LANGUAGE (read this - it affects how fast the caller hears you): "
-    "Begin every reply with an immediate, ultra-short 1-2 word English acknowledgment clause "
-    "ending in a comma - e.g. 'Got it,', 'Sure,', 'I see,', 'Understood,', 'Great,' - "
-    "before continuing with the rest of your actual response after the comma. "
-    "This 1-2 word opener allows voice streaming to begin within 200ms without dead air. "
+    "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES: "
+    "Respond concisely, naturally, and warmly in under 15 words per turn. "
+    "Ask strictly ONE clear question at a time so the customer can answer easily. "
     "STRICT LANGUAGE ENFORCEMENT: You MUST converse 100% in English. Do NOT switch to Hindi "
     "or Hinglish unless the customer explicitly tells you to speak in Hindi. "
     "ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
-    "Once the conversation is underway, NEVER say their name (neither first name nor full name) in your subsequent replies. "
-    "NEVER say 'I see, Mohit,' or 'Got it, Mohit,' or 'You're welcome, Mohit!'. Strictly say 'I see,', 'Got it,', 'Sure,', 'You're welcome!'. "
-    "Do not open with a long clause before the first comma, and do not skip the leading comma-terminated opener."
+    "Once the conversation is underway, NEVER say their name in your subsequent replies. "
+    "Strictly say 'I see,', 'Got it,', 'Sure,', 'You're welcome!' without repeating their name."
 )
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_HI = (
-    "\n\nCRITICAL LOW-LATENCY DELIVERY & LANGUAGE (read this - it affects how fast the caller hears you): "
-    "Begin every reply with an immediate, ultra-short 1-2 word Hindi acknowledgment clause "
-    "ending in a comma - e.g. 'ठीक है,', 'समझ गया,', 'जी,', 'अच्छा,' - "
-    "before continuing with the rest of your actual response after the comma. "
-    "This 1-2 word opener allows voice streaming to begin within 200ms without dead air. "
+    "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES: "
+    "Respond concisely, naturally, and warmly in under 15 words per turn. "
+    "Ask strictly ONE clear question at a time so the customer can answer easily. "
     "STRICT LANGUAGE ENFORCEMENT: You MUST converse in natural Hindi/Hinglish. "
     "Do NOT switch to English on short fillers unless the customer explicitly tells you to speak in English. "
     "ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
     "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies. "
-    "NEVER say 'ठीक है, Mohit,' or 'समझ गया, Mohit,'. Strictly say 'ठीक है,', 'समझ गया,'. "
-    "Do not open with a long clause before the first comma, and do not skip the leading comma-terminated opener."
+    "Strictly say 'ठीक है,', 'समझ गया,', 'जी,' without repeating their name."
 )
 
 logger = logging.getLogger("talkly-plivo-decoupled")
@@ -127,6 +114,17 @@ OPENAI_CHAT_MODEL = os.environ.get("DECOUPLED_CHAT_MODEL", "gpt-4o-mini")
 # or when Plivo's /answer webhook fires, so the greeting audio is already 100%
 # synthesized and waiting in memory when /stream connects (0ms startup latency).
 DECOUPLED_GREETING_CACHE = {}
+
+
+async def prewarm_bakbak_connection(client: httpx.AsyncClient):
+    """Pre-warms the TCP and TLS socket to Bakbak TTS (hub.getraya.app) during
+    greeting playback so the first customer turn pays 0ms TLS setup."""
+    try:
+        if client is not None:
+            await client.head("https://hub.getraya.app", timeout=4.0)
+            safe_print("[DECOUPLED PREWARM]: Bakbak TTS HTTP connection pre-warmed successfully (hot TLS socket ready).")
+    except Exception as e:
+        safe_print(f"[DECOUPLED PREWARM NOTICE]: Bakbak connection pre-warm non-critical: {e}")
 
 
 async def prewarm_openai_connection(client: httpx.AsyncClient, api_key: str, model: str):
@@ -376,6 +374,8 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
         limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=60.0)
     )
     asyncio.create_task(prewarm_openai_connection(openai_http_client, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL))
+    if hasattr(tts_session, "_client") and tts_session._client:
+        asyncio.create_task(prewarm_bakbak_connection(tts_session._client))
 
     agent_speaking_until = 0.0
     welcome_duration = 0.0
@@ -556,7 +556,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         full_reply += delta
                         if not first_sentence_flushed:
                             m = _SENTENCE_END_RE.match(full_reply)
-                            if m and len(m.group(1).strip().split()) >= 1:
+                            if m and len(m.group(1).strip().split()) >= 3:
                                 first_sentence_flushed = True
                                 first_sentence_ready_at = time.time()
                                 remainder_start = m.end()

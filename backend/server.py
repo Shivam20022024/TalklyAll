@@ -1098,9 +1098,10 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         if cross_mismatched:
             offering_val = ""
 
+    ind_entry = (prompt_doc.get("industry_prompts") or {}).get(call_industry, {}) if prompt_doc else {}
+
     # 5. Prompt document offering
     if not offering_val and prompt_doc:
-        ind_entry = (prompt_doc.get("industry_prompts") or {}).get(call_industry, {})
         if ind_entry and ind_entry.get("offering"):
             offering_val = str(ind_entry.get("offering")).strip()
         elif prompt_doc.get("industry") == call_industry and prompt_doc.get("offering"):

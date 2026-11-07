@@ -60,7 +60,10 @@ class BakbakTTSSession:
         self._client: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self) -> "BakbakTTSSession":
-        self._client = httpx.AsyncClient(timeout=20.0)
+        self._client = httpx.AsyncClient(
+            timeout=20.0,
+            limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=120.0)
+        )
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
