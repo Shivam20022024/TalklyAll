@@ -411,6 +411,16 @@ export default function PromptPage() {
 
   // Auto Build & Custom Template States (Bolna-inspired Self-Made Agent Creator)
   const [customTemplates, setCustomTemplates] = useState<any[]>([])
+
+  const allTemplates: Record<string, any> = {
+    ...CLIENT_TEMPLATES,
+    ...customTemplates.reduce((acc, ct) => {
+      if (ct?.id) acc[ct.id] = ct
+      return acc
+    }, {} as Record<string, any>)
+  }
+  const currentTemplate = allTemplates[selectedIndustry] || CLIENT_TEMPLATES['real_estate']
+
   const [showStartChoiceModal, setShowStartChoiceModal] = useState(false)
   const [showAutoBuildWizard, setShowAutoBuildWizard] = useState(false)
   const [builderStep, setBuilderStep] = useState<number>(1)
@@ -431,27 +441,48 @@ export default function PromptPage() {
   const [wizardObjections, setWizardObjections] = useState('')
   const [wizardClosingCta, setWizardClosingCta] = useState('')
 
-  // Initial load
+  // Initial load guard ref - only initialize once on mount
+  const isInitializedRef = useRef(false)
+
   useEffect(() => {
+    if (isInitializedRef.current) return
+    if (!user) return
+    isInitializedRef.current = true
+
     if (user?.company_name && !wizardCompanyName) {
       setWizardCompanyName(user.company_name)
     }
+
+    let targetTemplate: string | null = null
+
+    // 1. Check URL query param first (?template=...)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const t = params.get('template')
-      if (t && (CLIENT_TEMPLATES[t] || t.startsWith('custom_'))) {
-        setSelectedIndustry(t)
-        loadIndustryPrompt(t)
-        return
-      }
+      if (t) targetTemplate = t
     }
-    const initInd = user?.industry && CLIENT_TEMPLATES[user.industry] ? user.industry : 'real_estate'
-    setSelectedIndustry(initInd)
-    loadIndustryPrompt(initInd)
-  }, [user?.industry, user?.company_name])
+
+    // 2. Check localStorage saved template
+    if (!targetTemplate && typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('talkly_selected_prompt_template')
+        if (saved) targetTemplate = saved
+      } catch {}
+    }
+
+    // 3. Check user.industry (whether standard or custom_)
+    if (!targetTemplate && user?.industry) {
+      targetTemplate = user.industry
+    }
+
+    const finalInd = targetTemplate || 'real_estate'
+    setSelectedIndustry(finalInd)
+    loadIndustryPrompt(finalInd)
+  }, [user])
 
   const loadIndustryPrompt = async (industryKey: string) => {
     setLoadingIndustry(true)
+    setSelectedIndustry(industryKey)
     try {
       const data = await fetchApi(`/api/v1/prompt?industry=${industryKey}`)
       if (data) {
@@ -493,8 +524,16 @@ export default function PromptPage() {
   }
 
   const handleSelectIndustry = (key: string) => {
-    if (key === selectedIndustry) return
+    if (!key) return
     setSelectedIndustry(key)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('talkly_selected_prompt_template', key)
+        const url = new URL(window.location.href)
+        url.searchParams.set('template', key)
+        window.history.replaceState({}, '', url.toString())
+      } catch {}
+    }
     loadIndustryPrompt(key)
   }
 
@@ -558,6 +597,14 @@ export default function PromptPage() {
 
         // Switch to this new template
         setSelectedIndustry(t.template_id)
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('talkly_selected_prompt_template', t.template_id)
+            const url = new URL(window.location.href)
+            url.searchParams.set('template', t.template_id)
+            window.history.replaceState({}, '', url.toString())
+          } catch {}
+        }
         setPromptText(t.prompt)
         setWelcomeMessage(t.welcome_message)
         setInboundPromptText(t.inbound_prompt || '')
@@ -584,8 +631,7 @@ export default function PromptPage() {
       await fetchApi(`/api/v1/prompt/custom-templates/${templateId}`, { method: 'DELETE' })
       setCustomTemplates(prev => prev.filter(t => t.id !== templateId))
       if (selectedIndustry === templateId) {
-        setSelectedIndustry('real_estate')
-        loadIndustryPrompt('real_estate')
+        handleSelectIndustry('real_estate')
       }
     } catch (e: any) {
       alert(e.message || 'Failed to delete template')
@@ -593,7 +639,7 @@ export default function PromptPage() {
   }
 
   const handleResetToTemplate = () => {
-    const tmpl = CLIENT_TEMPLATES[selectedIndustry]
+    const tmpl = allTemplates[selectedIndustry] || CLIENT_TEMPLATES[selectedIndustry]
     if (!tmpl) return
     if (confirm(`Reset the "${tmpl.name}" prompt back to its default high-converting template? This will replace your current edits with the preset.`)) {
       setPromptText(tmpl.prompt)
@@ -629,7 +675,7 @@ export default function PromptPage() {
         })
       })
       setPromptStatus('Draft')
-      alert(`Draft saved successfully for ${CLIENT_TEMPLATES[selectedIndustry]?.name || selectedIndustry}!`)
+      alert(`Draft saved successfully for ${currentTemplate?.name || selectedIndustry}!`)
     } catch (e: any) {
       alert(`Failed to save prompt: ${e.message}`)
     } finally {
@@ -638,7 +684,7 @@ export default function PromptPage() {
   }
 
   const handlePublish = async () => {
-    const tmplName = CLIENT_TEMPLATES[selectedIndustry]?.name || selectedIndustry
+    const tmplName = currentTemplate?.name || selectedIndustry
     if (!confirm(`Publish this ${tmplName} prompt as your live AI agent? Both outbound and inbound calls for your company will immediately use this vertical.`)) return
 
     setPublishing(true)
@@ -659,6 +705,13 @@ export default function PromptPage() {
       setPromptStatus('Published')
       setActiveLiveIndustry(selectedIndustry)
       await refreshUser()
+      // Ensure current selection is preserved after user refresh
+      setSelectedIndustry(selectedIndustry)
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('talkly_selected_prompt_template', selectedIndustry)
+        } catch {}
+      }
       alert(`Successfully published! Your live AI agent is now active with the ${tmplName} prompt.`)
     } catch (e: any) {
       alert(e.message || 'Failed to publish.')
@@ -699,15 +752,7 @@ export default function PromptPage() {
     }
   }
 
-  // Compute live rendered preview string
-  const allTemplates: Record<string, any> = {
-    ...CLIENT_TEMPLATES,
-    ...customTemplates.reduce((acc, ct) => {
-      if (ct?.id) acc[ct.id] = ct
-      return acc
-    }, {} as Record<string, any>)
-  }
-  const currentTemplate = allTemplates[selectedIndustry] || CLIENT_TEMPLATES['real_estate']
+  // Live preview helpers
   const sampleCompanyName = user?.company_name || 'Talkly'
   const sampleCustomerName = 'Rahul Sharma'
   const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'ecommerce' ? 'Wireless Earbuds' : selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
