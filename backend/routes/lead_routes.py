@@ -374,7 +374,27 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
         if order_id:
             break
 
-    # 8. Collect custom_fields with all variations for dynamic prompt {{...}} variables
+    # 8. Doctor / Specialist Name
+    doctor_name = ""
+    for dnk in ("doctor", "dr", "physician", "specialist"):
+        for nk, (orig_k, v) in norm_map.items():
+            if dnk in nk and v:
+                doctor_name = str(v).strip()
+                break
+        if doctor_name:
+            break
+
+    # 9. Appointment Time / Slot
+    appointment_time = ""
+    for atk in ("appointment_time", "slot", "appointment", "visit_time", "timing", "time"):
+        for nk, (orig_k, v) in norm_map.items():
+            if atk in nk and not any(x in nk for x in ("amount", "date", "phone")) and v:
+                appointment_time = str(v).strip()
+                break
+        if appointment_time:
+            break
+
+    # 10. Collect custom_fields with all variations for dynamic prompt {{...}} variables
     custom_fields = {}
     for k, v in row.items():
         if k is not None and not (isinstance(v, float) and pd.isna(v)) and str(v).strip():
@@ -410,6 +430,11 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
     if order_id:
         custom_fields["order_id"] = order_id
         custom_fields["order_number"] = order_id
+    if doctor_name:
+        custom_fields["doctor_name"] = doctor_name
+    if appointment_time:
+        custom_fields["appointment_time"] = appointment_time
+        custom_fields["preferred_time"] = appointment_time
 
     doc = {
         "lead_id": str(uuid.uuid4()),
@@ -421,6 +446,8 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
         "property": offering or "",
         "location": location,
         "delivery_address": location,
+        "doctor_name": doctor_name,
+        "appointment_time": appointment_time,
         "industry": campaign_industry or "ecommerce",
         "custom_fields": custom_fields,
         "status": "New",

@@ -1551,6 +1551,58 @@ export default function PromptPage() {
                 {/* STEP 1: IDENTITY */}
                 {builderStep === 1 && (
                   <div className="space-y-4">
+                    {/* Quick-Fill Blueprint Presets */}
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-black text-primary uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles size={12} className="text-primary" /> 1-Click Blueprints (Quick Fill):
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-semibold">Click to auto-fill all 3 steps</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWizardAgentName('Priya')
+                            setWizardCompanyName('Apollo Clinic')
+                            setWizardIndustry('Healthcare & Clinic')
+                            setWizardAgentDesignation('Appointment Coordinator')
+                            setWizardLanguage('Hindi / Hinglish')
+                            setWizardVoiceTone('Empathetic, calm, respectful')
+                            setWizardSopText('Doctor Appointment Reminder Call: Call patient to confirm their scheduled doctor appointment tomorrow at 11 AM with Dr. Mehta. If patient says "हाँ, पर थोड़ा लेट हो सकता हूँ" (Yes, but might be a little late), politely acknowledge and reassure that clinic will hold the slot for 15 minutes. If they confirm on time, advise reaching 15 mins early with previous prescription/reports. If reschedule, ask for alternate day. If cancel, politely cancel without pressure.')
+                            setWizardPrimaryObjective('कल के डॉक्टर अपॉइंटमेंट की पुष्टि करना, संभावित देरी (लेट होना) को नोट करना, और आवश्यक होने पर रीशेड्यूल करना।')
+                            setWizardMustAskQuestions('1. क्या आप कल सुबह 11 बजे डॉ. मेहता के अपॉइंटमेंट के लिए आ रहे हैं?\n2. क्या आपको क्लीनिक की लोकेशन या पते की जानकारी चाहिए?')
+                            setWizardOfferingsUsps('डॉ. मेहता (सीनियर फिजिशियन), आधुनिक क्लीनिक सुविधाएं, ऑन-टाइम कंसल्टेशन।')
+                            setWizardObjections('यदि मरीज कहे कि थोड़ा लेट हो जाएगा -> विनम्रता से आश्वस्त करें कि 15 मिनट स्लॉट होल्ड रहेगा।\nयदि रीशेड्यूल करना चाहे -> परसों या वीकेंड का समय पूछें।\nयदि कैंसल करना चाहे -> विनम्रता से कैंसल करें और डॉक्टर का स्लॉट फ्री करें।')
+                            setWizardClosingCta('समय की पुष्टि करें, 15 मिनट पहले रिपोर्ट्स के साथ आने की सलाह दें, धन्यवाद कहें और कॉल समाप्त करें।')
+                          }}
+                          className="rounded-lg border border-primary/50 bg-primary/20 px-3 py-1.5 text-xs font-extrabold text-primary hover:bg-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          🩺 Doctor Appointment Reminder (Raya Style)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWizardAgentName('Kavya')
+                            setWizardCompanyName('Snapdeal Fashion')
+                            setWizardIndustry('E-commerce & D2C')
+                            setWizardAgentDesignation('Order Verification Executive')
+                            setWizardLanguage('Hindi / Hinglish')
+                            setWizardVoiceTone('Warm, consultative, professional')
+                            setWizardSopText('E-commerce Cash-on-Delivery (COD) Order Confirmation: Confirm customer order for ₹2,199, verify delivery address and landmark, remind about 3-4 day delivery with cash/UPI readiness, and cancel immediately if customer ordered by mistake.')
+                            setWizardPrimaryObjective('COD ऑर्डर की पुष्टि करना, डिलीवरी एड्रेस वेरिफाई करना, और RTO रोकना।')
+                            setWizardMustAskQuestions('1. क्या मैं आपका ₹2,199 का COD ऑर्डर कन्फर्म कर दूँ?\n2. क्या आपका डिलीवरी एड्रेस और पिनकोड सही है?')
+                            setWizardOfferingsUsps('फास्ट 3-4 दिन डिलीवरी, फ्री शिपिंग, आसान कैश व UPI पेमेंट।')
+                            setWizardObjections('यदि कैंसल करना चाहे -> तुरंत बिना बहस के कैंसल करें ताकि पार्सल डिस्पैच न हो।\nयदि डिलीवरी समय पूछे -> बताएं 3-4 दिनों में कूरियर पहुंचेगा।')
+                            setWizardClosingCta('ऑर्डर डिस्पैच की पुष्टि करें, कैश/UPI तैयार रखने का आग्रह करें, धन्यवाद कहें और कॉल समाप्त करें।')
+                          }}
+                          className="rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer"
+                        >
+                          📦 COD Confirmation
+                        </button>
+                      </div>
+                    </div>
+
                     {/* SOP / Brief paste card */}
                     <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4">
                       <div className="flex items-center gap-2 mb-1.5">

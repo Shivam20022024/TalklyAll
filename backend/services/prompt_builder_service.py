@@ -116,11 +116,12 @@ class PromptBuilderService:
         else:
             must_ask_text = str(must_ask).strip() or "Confirm identity, understand current requirement, qualify timeline and budget."
 
-        # Detect language intent: if user typed English objectives/questions without Devanagari, treat as English
-        has_devanagari = bool(re.search(r"[\u0900-\u097F]", f"{sop_or_brief} {primary_objective} {must_ask_text}"))
+        # Respect user's explicit language choice
         is_explicit_english = "english" in language.lower()
-        if is_explicit_english or (not has_devanagari and language == "Hindi / Hinglish" and any(len(x.strip()) > 10 for x in [sop_or_brief, primary_objective, must_ask_text])):
+        if is_explicit_english:
             language = "Indian English"
+        elif "hindi" in language.lower():
+            language = language
 
         offerings_and_usps = brief.get("offerings_and_usps", "").strip() or "High quality services, quick turnaround, and dedicated support."
         objections_playbook = brief.get("objections_playbook", "").strip() or "If busy, offer a callback time. If price-conscious, explain flexible options and return on investment."

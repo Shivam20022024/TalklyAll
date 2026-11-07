@@ -499,7 +499,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         dyn_vars.update(prompt_doc["variables"])
 
     var_fields = [
-        "budget", "doctor_name", "preferred_time", "batch_time", "current_role",
+        "budget", "doctor_name", "preferred_time", "appointment_time", "batch_time", "current_role",
         "loan_amount", "tenure", "company_size", "amount_due", "due_date",
         "order_amount", "order_id", "delivery_address",
         "shop_address", "landmark", "city", "shop_timings", "contact_number"
@@ -673,6 +673,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             dyn_vars["order_id"] = str(lead_doc.get("order_id")).strip()
         elif lead_doc and lead_doc.get("lead_id"):
             dyn_vars["order_id"] = f"ORD-{str(lead_doc.get('lead_id'))[:6].upper()}"
+    if not dyn_vars.get("appointment_time") and dyn_vars.get("preferred_time"):
+        dyn_vars["appointment_time"] = dyn_vars["preferred_time"]
 
     for vk, vv in dyn_vars.items():
         welcome_text = welcome_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
@@ -681,7 +683,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     # Natural language fallbacks for any remaining unassigned industry variable tags
     natural_fallbacks = {
         "{{budget}}": "budget",
-        "{{doctor_name}}": "doctor",
+        "{{doctor_name}}": "डॉ. मेहता",
+        "{{appointment_time}}": "कल सुबह 11 बजे",
         "{{preferred_time}}": "convenient time",
         "{{batch_time}}": "flexible batch",
         "{{current_role}}": "current background",
