@@ -473,6 +473,15 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             except Exception as e:
                 safe_print(f"[DECOUPLED AUTO HANGUP ERROR]: {e}")
 
+        async def _save_transcript_bg():
+            try:
+                await db.calls.update_one(
+                    {"call_id": call_id},
+                    {"$set": {"transcript": "\n".join(transcript_parts)}}
+                )
+            except Exception as e:
+                safe_print(f"[DECOUPLED DB ERROR]: {e}")
+
         async def handle_final_transcript(customer_text: str) -> None:
             nonlocal agent_speaking_until
             try:
@@ -498,7 +507,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     turn_start = time.time()
                     safe_print(f"[CUSTOMER SPEECH][DECOUPLED]: {customer_text}")
                     transcript_parts.append(f"Customer: {customer_text}")
-                    asyncio.create_task(db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}}))
+                    asyncio.create_task(_save_transcript_bg())
                     messages.append({"role": "user", "content": customer_text})
 
                     # Flush the first completed clause to Bakbak concurrently as soon as
@@ -536,7 +545,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     safe_print(f"[AI SPEECH][DECOUPLED]: {clean_full_reply}")
                     messages.append({"role": "assistant", "content": clean_full_reply})
                     transcript_parts.append(f"AI: {clean_full_reply}")
-                    asyncio.create_task(db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}}))
+                    asyncio.create_task(_save_transcript_bg())
 
                     if first_audio_task:
                         dur1 = await first_audio_task
