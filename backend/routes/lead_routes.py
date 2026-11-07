@@ -354,7 +354,7 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
         if offering:
             break
 
-    # 6. Location / Address / Branch
+    # 6. Location / Address / Branch / Delivery
     location = ""
     for lk in ("location", "city", "address", "delivery", "shipping", "area", "branch", "region", "state", "town", "pincode", "zip"):
         for nk, (orig_k, v) in norm_map.items():
@@ -364,7 +364,17 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
         if location:
             break
 
-    # 7. Collect custom_fields with all variations for dynamic prompt {{...}} variables
+    # 7. Order ID / Tracking Number
+    order_id = ""
+    for oik in ("order_id", "orderid", "order_no", "orderno", "order_number", "order", "tracking_id", "tracking", "invoice_no", "invoice"):
+        for nk, (orig_k, v) in norm_map.items():
+            if oik in nk and "amount" not in nk and "date" not in nk and v:
+                order_id = str(v).strip()
+                break
+        if order_id:
+            break
+
+    # 8. Collect custom_fields with all variations for dynamic prompt {{...}} variables
     custom_fields = {}
     for k, v in row.items():
         if k is not None and not (isinstance(v, float) and pd.isna(v)) and str(v).strip():
@@ -397,6 +407,9 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
         custom_fields["city"] = location
         custom_fields["delivery_address"] = location
         custom_fields["address"] = location
+    if order_id:
+        custom_fields["order_id"] = order_id
+        custom_fields["order_number"] = order_id
 
     doc = {
         "lead_id": str(uuid.uuid4()),
@@ -404,10 +417,11 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
         "campaign_id": campaign_id,
         "name": name,
         "phone": phone,
-        "offering": offering or (campaign_industry if campaign_industry == "collections" else ""),
+        "offering": offering or (campaign_industry if campaign_industry in ("collections", "ecommerce") else ""),
         "property": offering or "",
         "location": location,
-        "industry": campaign_industry or "collections",
+        "delivery_address": location,
+        "industry": campaign_industry or "ecommerce",
         "custom_fields": custom_fields,
         "status": "New",
         "aiScore": 0,
@@ -416,8 +430,11 @@ def smart_extract_lead(row: dict, campaign_industry: str, company_id: str, campa
     }
     if amount:
         doc["amount_due"] = amount
+        doc["order_amount"] = amount
     if date_val:
         doc["due_date"] = date_val
+    if order_id:
+        doc["order_id"] = order_id
 
     return doc
 

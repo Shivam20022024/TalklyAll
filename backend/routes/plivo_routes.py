@@ -501,6 +501,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     var_fields = [
         "budget", "doctor_name", "preferred_time", "batch_time", "current_role",
         "loan_amount", "tenure", "company_size", "amount_due", "due_date",
+        "order_amount", "order_id", "delivery_address",
         "shop_address", "landmark", "city", "shop_timings", "contact_number"
     ]
     if lead_doc:
@@ -518,15 +519,17 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             if cv is not None:
                 dyn_vars[ck] = str(cv).strip()
 
-    # Universal aliases for loan/overdue amount
+    # Universal aliases for loan/overdue/order amount
     amt_val = (
-        dyn_vars.get("amount_due")
+        dyn_vars.get("order_amount")
+        or dyn_vars.get("amount_due")
         or dyn_vars.get("loan_amount")
         or dyn_vars.get("Loan Amount")
         or dyn_vars.get("loan amount")
         or dyn_vars.get("amount")
-        or dyn_vars.get("order_amount")
+        or (lead_doc.get("order_amount") if lead_doc else None)
         or (lead_doc.get("amount_due") if lead_doc else None)
+        or (call_doc.get("order_amount") if call_doc else None)
         or (call_doc.get("amount_due") if call_doc else None)
         or ""
     )
@@ -535,6 +538,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         dyn_vars["amount_due"] = clean_amt
         dyn_vars["loan_amount"] = clean_amt
         dyn_vars["Loan Amount"] = clean_amt
+        dyn_vars["order_amount"] = clean_amt
 
     # Universal aliases for due date with human-friendly spoken date formatting
     due_val = (
@@ -640,7 +644,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             system_prompt = system_prompt.replace(tag, customer_name)
     else:
         for tag in name_tags:
-            welcome_text = welcome_text.replace(f"{tag},", "").replace(tag, "").replace("  ", " ").strip()
+            welcome_text = welcome_text.replace(f"{tag}!", "!").replace(f"{tag},", "").replace(tag, "").replace("  ", " ").strip()
             system_prompt = system_prompt.replace(tag, "the customer")
 
     company_tags = ["{{company_name}}", "{company_name}", "{{company}}", "{company}"]
@@ -658,6 +662,18 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         welcome_text = welcome_text.replace(tag, location)
         system_prompt = system_prompt.replace(tag, location)
 
+    # Resolution for ecommerce delivery_address and order_id
+    if not dyn_vars.get("delivery_address"):
+        if lead_doc and (lead_doc.get("delivery_address") or lead_doc.get("location")):
+            dyn_vars["delivery_address"] = str(lead_doc.get("delivery_address") or lead_doc.get("location")).strip()
+        elif location and location != "our office":
+            dyn_vars["delivery_address"] = location
+    if not dyn_vars.get("order_id"):
+        if lead_doc and lead_doc.get("order_id"):
+            dyn_vars["order_id"] = str(lead_doc.get("order_id")).strip()
+        elif lead_doc and lead_doc.get("lead_id"):
+            dyn_vars["order_id"] = f"ORD-{str(lead_doc.get('lead_id'))[:6].upper()}"
+
     for vk, vv in dyn_vars.items():
         welcome_text = welcome_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
         system_prompt = system_prompt.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
@@ -674,6 +690,9 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "{{company_size}}": "team size",
         "{{amount_due}}": "overdue amount",
         "{{due_date}}": "due date",
+        "{{order_amount}}": "2,199",
+        "{{order_id}}": "recent order",
+        "{{delivery_address}}": "your delivery address",
         "{{shop_address}}": shop_address or "our store representative",
         "{{landmark}}": landmark or "",
         "{{city}}": city or "",

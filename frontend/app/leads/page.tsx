@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, Suspense } from 'react'
-import { Download, MoreHorizontal, Phone, Search, Upload, Loader2, Plus, X, User, MapPin, Home, Briefcase, Sparkles, MessageSquare, Clock, ArrowRight, Trash2, CircleDollarSign } from 'lucide-react'
+import { Download, MoreHorizontal, Phone, Search, Upload, Loader2, Plus, X, User, MapPin, Home, Briefcase, Sparkles, MessageSquare, Clock, ArrowRight, Trash2, CircleDollarSign, ShoppingBag } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi, getAuthToken, API_BASE_URL } from '@/lib/api'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -765,11 +765,44 @@ function LeadsContent() {
                 )
               })()}
 
+              {/* COD Order Confirmation - ecommerce calls */}
+              {((selectedLead?.industry === 'ecommerce' || selectedCall?.industry === 'ecommerce') || (selectedCall?.analysis?.order_confirmation)) && (() => {
+                const oc = selectedCall?.analysis?.order_confirmation || {}
+                const isConfirmed = oc.status === 'Confirmed' || selectedLead?.status === 'Confirmed'
+                const isCancelled = oc.status === 'Cancelled' || selectedLead?.status === 'Cancelled'
+                return (
+                  <div className={`rounded-xl border p-4 shadow-sm ${isConfirmed ? 'border-emerald-500/30 bg-emerald-500/5' : isCancelled ? 'border-rose-500/30 bg-rose-500/5' : 'border-border/50 bg-card'}`}>
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      <ShoppingBag size={14} className={isConfirmed ? 'text-emerald-500' : isCancelled ? 'text-rose-500' : 'text-muted-foreground'} /> COD Order Status
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-bold text-foreground">
+                        {isConfirmed ? 'COD Order Confirmed for Dispatch' : isCancelled ? 'Order Cancelled by Customer (RTO Prevented)' : 'Pending Order Confirmation'}
+                      </div>
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${isConfirmed ? 'bg-emerald-500/10 text-emerald-600' :
+                          isCancelled ? 'bg-rose-500/10 text-rose-600' :
+                            'bg-amber-500/10 text-amber-600'
+                        }`}>
+                        {isConfirmed ? 'Confirmed' : isCancelled ? 'Cancelled' : 'Pending'}
+                      </span>
+                    </div>
+                    {(selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount) && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        COD Amount: <span className="font-semibold text-foreground">₹{selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount}</span>
+                        {(selectedLead?.delivery_address || selectedLead?.location) && (
+                          <> · Delivery Address: <span className="font-semibold text-foreground">{selectedLead?.delivery_address || selectedLead?.location}</span></>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               {/* Dynamic Extracted Fields from AI Analysis */}
-              {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay'].includes(k)).length > 0 && (
+              {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay', 'order_confirmation'].includes(k)).length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {Object.keys(selectedCall.analysis)
-                    .filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay'].includes(k))
+                    .filter(k => !['summary', 'action_items', 'lead_score', 'lead_temperature', 'conversion_probability', 'customer_name', 'customer_id', 'sentiment', 'status', 'promise_to_pay', 'order_confirmation'].includes(k))
                     .map(key => (
                       <div key={key} className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">

@@ -105,11 +105,12 @@ CRITICAL SCORING RULES:
 3. For any `follow_up_recommendations` entry of type "WhatsApp", always write its `draft` text in English - regardless of what language the call itself was conducted in (Hindi, Hinglish, or any other language). This is a fixed platform rule, not dependent on `detected_language`/`preferred_language`.
 4. For collections/loan-repayment calls (BFSI industry where the call is about an overdue payment, not a new loan inquiry): only set `promise_to_pay.promised` to true if the customer gave an explicit, specific commitment to pay (a clear amount and/or a clear date/timeframe). A vague acknowledgement ("haan dekhta hoon", "I'll try") is NOT a promise to pay - leave `promised` false and leave `amount`/`date` empty rather than guessing. This mirrors the platform's existing rule against inventing answers from unclear customer input.
 5. For collections calls only: set `identity_verified` to true only if the transcript shows the agent explicitly confirmed it was speaking with the account holder (e.g. asked to confirm the customer's name/identity) before discussing the account or payment details. Default to false for every other industry and whenever this isn't clearly shown.
+6. For E-commerce / COD confirmation calls: populate `order_confirmation`. Set `status` to "Confirmed" if the customer agreed to the order, confirmed dispatch, or said yes. Set `status` to "Cancelled" if the customer asked to cancel, said they made a mistake, or declined. If confirmed, set `lead_temperature` to "Hot" and `lead_score` >= 85. If cancelled, set `lead_temperature` to "Cold" and `lead_score` <= 20. Set `address_verified` to true if shipping address was confirmed or updated. Set `cash_ready` to true if the buyer acknowledged keeping cash/UPI ready.
 
 The JSON schema must be:
 {
   "summary": "Professional summary of the call",
-  "outcome": "The concrete RESULT of the call in 4-8 words, stated as a fact, not a description - e.g. 'Appointment booked for Monday 5 PM', 'Not interested', 'Callback requested for Tuesday', 'Site visit booked for Sunday 11 AM', 'Payment promised - Rs 7500 by 8 Nov'. Never start with 'The call was...' or similar narration - state only the outcome itself.",
+  "outcome": "The concrete RESULT of the call in 4-8 words, stated as a fact, not a description - e.g. 'Appointment booked for Monday 5 PM', 'Not interested', 'Callback requested for Tuesday', 'Site visit booked for Sunday 11 AM', 'Payment promised - Rs 7500 by 8 Nov', 'COD order confirmed for delivery', 'COD order cancelled by customer'. Never start with 'The call was...' or similar narration - state only the outcome itself.",
   "sentiment": "positive|neutral|negative",
   "sentiment_confidence": 0.0-1.0,
   "sentiment_reason": "Brief explanation",
@@ -117,14 +118,14 @@ The JSON schema must be:
   "detected_language": "Initial language detected (e.g., Hindi, English, Tamil, Hinglish)",
   "preferred_language": "Language preferred by customer later in the call (if any switch occurred)",
   "transcript_language": "Primary language of this transcript text",
-  "intents": ["Inquiry", "Appointment Booking", "Pricing Request", "Follow-up Requested"],
+  "intents": ["Inquiry", "Appointment Booking", "Pricing Request", "Follow-up Requested", "COD Confirmation", "Order Cancellation"],
   "lead_temperature": "Hot|Warm|Cold",
   "lead_score": 85,
   "intent_label": "High Intent Lead",
   "conversion_probability": 75,
   "customer_name": "Customer Name",
   "requirements": {
-    "offering": "Property / Course / Specialty / Loan / Solution desired",
+    "offering": "Property / Course / Specialty / Loan / Solution / Product desired",
     "budget": "Budget or price range mentioned",
     "location": "City or Location mentioned",
     "timeline": "Timeline or preferred time",
@@ -145,6 +146,11 @@ The JSON schema must be:
     "promised": false,
     "amount": "Amount explicitly promised, if any (else empty string)",
     "date": "Date/timeframe explicitly promised, if any (else empty string)"
+  },
+  "order_confirmation": {
+    "status": "Confirmed|Cancelled|Pending",
+    "address_verified": false,
+    "cash_ready": false
   },
   "identity_verified": false,
   "follow_up_recommendations": [

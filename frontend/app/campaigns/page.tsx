@@ -15,6 +15,8 @@ import {
   Stethoscope,
   GraduationCap,
   Briefcase,
+  Banknote,
+  ShoppingBag,
   Layers,
   Filter
 } from 'lucide-react'
@@ -28,7 +30,9 @@ const INDUSTRY_ICONS: Record<string, any> = {
   healthcare: Stethoscope,
   edtech: GraduationCap,
   bfsi: CreditCard,
-  general_sales: Briefcase
+  general_sales: Briefcase,
+  collections: Banknote,
+  ecommerce: ShoppingBag
 }
 
 export default function CampaignsPage() {
@@ -181,6 +185,8 @@ export default function CampaignsPage() {
 
   const getOfferingPlaceholder = (ind: string) => {
     switch (ind) {
+      case 'ecommerce': return 'e.g. Wireless Noise-Cancelling Earbuds, Running Shoes'
+      case 'collections': return 'e.g. Personal Loan EMI, Credit Card Overdue Dues'
       case 'bfsi': return 'e.g. Pre-Approved Personal Loan (10.5%), Home Loan Balance Transfer'
       case 'healthcare': return 'e.g. Dental Implants & Cleaning, Knee Replacement Consultation'
       case 'edtech': return 'e.g. Executive MBA Program, Data Science Full-Stack Course'
@@ -227,8 +233,8 @@ export default function CampaignsPage() {
             <button
               onClick={() => setVerticalFilter('active')}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${verticalFilter === 'active'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
             >
               <ActiveIcon size={13} />
@@ -248,8 +254,8 @@ export default function CampaignsPage() {
                   key={ind}
                   onClick={() => setVerticalFilter(ind)}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${verticalFilter === ind
-                      ? 'bg-foreground text-background shadow-sm'
-                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                    ? 'bg-foreground text-background shadow-sm'
+                    : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
                     }`}
                 >
                   <Icon size={13} />
@@ -262,8 +268,8 @@ export default function CampaignsPage() {
             <button
               onClick={() => setVerticalFilter('all')}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${verticalFilter === 'all'
-                  ? 'bg-foreground text-background shadow-sm'
-                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                ? 'bg-foreground text-background shadow-sm'
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
             >
               <Layers size={13} />
@@ -365,10 +371,10 @@ export default function CampaignsPage() {
                               </span>
                               {/* Industry Badge */}
                               <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${campInd === 'bfsi' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                                  campInd === 'healthcare' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                    campInd === 'edtech' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                                      campInd === 'real_estate' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' :
-                                        'bg-primary/10 text-primary'
+                                campInd === 'healthcare' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                  campInd === 'edtech' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                                    campInd === 'real_estate' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' :
+                                      'bg-primary/10 text-primary'
                                 }`}>
                                 <CampIcon size={10} />
                                 {INDUSTRY_CONFIGS[campInd]?.shortLabel || campInd}
@@ -450,6 +456,7 @@ export default function CampaignsPage() {
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 >
                   <option value="bfsi">BFSI & Lending Advisory</option>
+                  <option value="ecommerce">E-commerce & COD Confirmation</option>
                   <option value="healthcare">Healthcare & Clinics</option>
                   <option value="edtech">EdTech & Academies</option>
                   <option value="real_estate">Real Estate & Developers</option>
@@ -466,7 +473,7 @@ export default function CampaignsPage() {
                   value={newCampaign.name}
                   onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-                  placeholder={newCampaign.industry === 'bfsi' ? 'e.g. Q4 Personal Loan Campaign' : 'e.g. Summer Outreach Campaign'}
+                  placeholder={newCampaign.industry === 'ecommerce' ? 'e.g. COD Confirmation - Wireless Earbuds' : newCampaign.industry === 'bfsi' ? 'e.g. Q4 Personal Loan Campaign' : 'e.g. Summer Outreach Campaign'}
                 />
               </div>
 

@@ -15,6 +15,7 @@ import {
   Briefcase,
   Mic,
   Banknote,
+  ShoppingBag,
   RotateCcw,
   Copy,
   Eye,
@@ -313,6 +314,66 @@ Key Objectives:
     specific_variables: [
       { key: "amount_due", label: "Default Overdue Amount", placeholder: "e.g. ₹15,000" },
       { key: "due_date", label: "Default Overdue Date", placeholder: "e.g. 5th of this month" }
+    ]
+  },
+  ecommerce: {
+    id: "ecommerce",
+    name: "E-commerce (COD Confirmation)",
+    icon: "ShoppingBag",
+    description: "Automated COD order verification, shipping address confirmation, delivery reassurance, and instant cancellation to eliminate RTO costs.",
+    default_offering_label: "Product / Item Name",
+    offering_placeholder: "e.g. Wireless Noise-Cancelling Earbuds / Running Shoes",
+    welcome_message: "नमस्ते {{customer_name}}! आपने ₹{{order_amount}} का {{offering}} COD ऑर्डर किया है। क्या मैं इसे कन्फर्म कर दूँ?",
+    prompt: `आप {{company_name}} के लिए एक विनम्र और कुशल ई-कॉमर्स ऑर्डर कन्फर्मेशन असिस्टेंट हैं।
+आपका मुख्य उद्देश्य ग्राहक द्वारा किए गए कैश ऑन डिलीवरी (COD) ऑर्डर की पुष्टि करना, डिलीवरी एड्रेस वेरिफाई करना, और रिटर्न टू ओरिजिन (RTO) को रोकना है।
+
+ऑर्डर विवरण:
+- ग्राहक का नाम: {{customer_name}}
+- ऑर्डर किया गया आइटम: {{offering}}
+- ऑर्डर राशि (COD Amount): ₹{{order_amount}}
+- ऑर्डर आईडी: {{order_id}}
+- डिलीवरी पता: {{delivery_address}}
+
+महत्वपूर्ण नियम 1 (दोहराव से बचें): आप ऊपर दिया गया वेलकम मैसेज पहले ही एक बार बोल चुके हैं। अगर ग्राहक सिर्फ "हाँ", "बोलिए", "Hello", "Ji" या "Okay" कहे, तो अपना परिचय या कंपनी का नाम दोबारा मत दोहराइए - सीधे अगले उद्देश्य पर आगे बढ़िए।
+महत्वपूर्ण नियम 2 (एक बार में केवल एक सवाल): एक टर्न में सिर्फ एक छोटा, स्पष्ट सवाल पूछें। कभी भी दो सवाल एक साथ मत पूछें और रुककर ग्राहक के जवाब का इंतज़ार करें।
+महत्वपूर्ण नियम 3 (संक्षिप्त और स्वाभाविक बोलचाल): प्रति टर्न 1 से 2 छोटे और आसान वाक्य बोलें। प्राकृतिक हिंदी/हिंग्लिश में बात करें।
+महत्वपूर्ण नियम 4 (ग्राहक का नाम बार-बार न दोहराएं): बातचीत के दौरान बार-बार ग्राहक का नाम लेने से बचें।
+
+मुख्य बातचीत का प्रवाह (Conversation Flow):
+1. ऑर्डर कन्फर्मेशन:
+   - यदि ग्राहक "हाँ", "कन्फर्म कर दो", "भेज दीजिए" कहे, तो ऑर्डर को कन्फर्म मानें।
+   - यदि ग्राहक पूछे "यह क्या है?" या "किस चीज़ का ऑर्डर है?", तो विनम्रता से बताएं कि उन्होंने ₹{{order_amount}} का {{offering}} ऑर्डर किया है।
+2. डिलीवरी एड्रेस वेरिफिकेशन:
+   - ऑर्डर कन्फर्म होने के बाद, डिलीवरी एड्रेस की पुष्टि करें: "क्या आपका डिलीवरी एड्रेस {{delivery_address}} सही है, या इसमें कोई बदलाव या लैंडमार्क जोड़ना है?"
+   - अगर ग्राहक एड्रेस सही बताए, तो आगे बढ़ें। अगर कोई नया लैंडमार्क या पता बताए, तो उसे नोट करें और कहें "मैंने नया पता नोट कर लिया है।"
+3. डिलीवरी समय और कैश/UPI की तैयारी:
+   - ग्राहक को सूचित करें: "आपका ऑर्डर अगले 3 से 4 दिनों में डिलीवर हो जाएगा। कृपया डिलीवरी के समय ₹{{order_amount}} कैश या UPI से पेमेंट तैयार रखें।"
+4. विनम्र विदाई और कॉल समाप्त:
+   - ग्राहक को धन्यवाद दें: "शॉपिंग करने के लिए धन्यवाद! आपका ऑर्डर जल्द ही डिस्पैच हो जाएगा। आपका दिन शुभ हो!"
+   - इसके बाद end_call फंक्शन को कॉल करके कॉल समाप्त करें।
+5. रद्दीकरण / कैंसिलेशन हैंडलिंग (Cancellation Handling):
+   - यदि ग्राहक कहे कि "मुझे नहीं चाहिए", "कैंसल कर दीजिए", "गलती से ऑर्डर हो गया", या "मैंने ऑर्डर नहीं किया":
+   - बिना किसी बहस या दबाव के विनम्रता से स्वीकार करें: "कोई बात नहीं, मैंने आपका यह ऑर्डर तुरंत कैंसल कर दिया है। आपको इसके लिए कोई शुल्क नहीं देना होगा। धन्यवाद।"
+   - और तुरंत end_call फंक्शन कॉल करें ताकि पार्सल शिप न हो और शिपिंग खर्च बच सके।`,
+    inbound_welcome_message: "नमस्ते {{customer_name}}, {{company_name}} कस्टमर सपोर्ट में कॉल करने के लिए धन्यवाद। मैं आपके ऑर्डर ट्रैकिंग या रिटर्न में कैसे मदद कर सकती हूँ?",
+    inbound_prompt: `आप {{company_name}} के लिए एक पेशेवर ई-कॉमर्स इनबाउंड कस्टमर सपोर्ट कंसल्टेंट हैं। एक ग्राहक ने हेल्पलाइन पर कॉल किया है।
+
+महत्वपूर्ण नियम 1 (दोहराव से बचें): आप पहले ही ऊपर एक बार वेलकम मैसेज दे चुके हैं। अगर ग्राहक सिर्फ "Hello", "Haan", "Ji" जैसा छोटा जवाब दे, तो दोबारा अपना परिचय मत दोहराइए - सीधे अगले उद्देश्य पर जाइए।
+महत्वपूर्ण नियम 2 (एक बार में एक सवाल): एक बार में सिर्फ एक सवाल पूछिए, फिर रुककर ग्राहक के जवाब का इंतज़ार कीजिए।
+
+मुख्य उद्देश्य:
+1. ध्यान से सुनें: कॉलर की जरूरत समझें - ऑर्डर ट्रैकिंग (Status), रिटर्न या एक्सचेंज (Return/Exchange pickup), डिलीवरी पता बदलना, या कैंसिलेशन।
+2. पहचान की पुष्टि करें: पूछें क्या आप {{customer_name}} से बात कर रहे हैं और उनके ऑर्डर आईडी {{order_id}} की पुष्टि करें।
+3. ऑर्डर ट्रैकिंग: यदि वे डिलीवरी स्टेटस पूछें, तो बताएं कि उनका {{offering}} ऑर्डर डिस्पैच हो चुका है और 2 से 3 दिनों में पहुंच जाएगा।
+4. रिटर्न पिकअप: यदि वे रिटर्न या एक्सचेंज चाहते हैं, तो पिकअप की पुष्टि करें और बताएं कि कूरियर पार्टनर 48 घंटे में पिकअप के लिए आएगा।
+5. कैंसिलेशन: यदि ग्राहक ऑर्डर कैंसल करना चाहता है, तो तुरंत पुष्टि करें कि ऑर्डर कैंसल कर दिया गया है।
+6. टोन: शांत, विनम्र, मददगार और संक्षिप्त (1-2 वाक्य प्रति टर्न)।
+7. विदाई: धन्यवाद देकर end_call फंक्शन को कॉल करें।`,
+    variables: ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{order_amount}}", "{{order_id}}", "{{delivery_address}}"],
+    specific_variables: [
+      { key: "order_amount", label: "Default COD Amount", placeholder: "e.g. ₹2,199" },
+      { key: "order_id", label: "Default Order ID", placeholder: "e.g. ORD-98241" },
+      { key: "delivery_address", label: "Default Shipping Address", placeholder: "e.g. Flat 402, Sector 62, Noida" }
     ]
   }
 }
@@ -649,7 +710,7 @@ export default function PromptPage() {
   const currentTemplate = allTemplates[selectedIndustry] || CLIENT_TEMPLATES['real_estate']
   const sampleCompanyName = user?.company_name || 'Talkly'
   const sampleCustomerName = 'Rahul Sharma'
-  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
+  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'ecommerce' ? 'Wireless Earbuds' : selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
   const sampleLocation = location.trim() || 'Connaught Place, New Delhi'
 
   const computeSimulatedGreeting = (raw: string) => {
@@ -669,6 +730,12 @@ export default function PromptPage() {
     const cleanAmt = rawAmt.replace(/^₹\s*/, '')
     out = out.replace(/₹\s*\{\{amount_due\}\}/g, `₹${cleanAmt}`)
     out = out.replace(/\{\{amount_due\}\}/g, rawAmt)
+    const rawOrderAmt = industryVariables.order_amount || '₹2,199'
+    const cleanOrderAmt = rawOrderAmt.replace(/^₹\s*/, '')
+    out = out.replace(/₹\s*\{\{order_amount\}\}/g, `₹${cleanOrderAmt}`)
+    out = out.replace(/\{\{order_amount\}\}/g, rawOrderAmt)
+    out = out.replace(/\{\{order_id\}\}/g, industryVariables.order_id || 'ORD-98241')
+    out = out.replace(/\{\{delivery_address\}\}/g, industryVariables.delivery_address || 'Flat 402, Sector 62, Noida')
     out = out.replace(/\{\{due_date\}\}/g, industryVariables.due_date || '10 November 2026')
     out = out.replace(/\{\{company_size\}\}/g, industryVariables.company_size || '25 employees')
     out = out.replace(/\{\{shop_address\}\}/g, industryVariables.shop_address || 'our store')
@@ -804,6 +871,7 @@ export default function PromptPage() {
                       {key === 'bfsi' && <CreditCard size={16} className="text-amber-500" />}
                       {key === 'general_sales' && <Briefcase size={16} className="text-purple-500" />}
                       {key === 'collections' && <Banknote size={16} className="text-rose-500" />}
+                      {key === 'ecommerce' && <ShoppingBag size={16} className="text-orange-500" />}
                     </div>
                     <div className="flex flex-wrap gap-1 justify-end min-w-0">
                       {isLiveActive && (

@@ -7,7 +7,7 @@ import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { contact } from '@/lib/landing-content'
 import { submitDemoRequest, type DemoFormValues } from '@/lib/submitDemo'
 
-const topics = ['Product demo', 'Getting started', 'Pricing', 'Collections']
+const topics = ['Product demo', 'Getting started', 'Pricing', 'Collections', 'E-commerce COD']
 
 const nextSteps = [
   { icon: ClipboardList, text: 'Share your use case and the languages you call in.' },

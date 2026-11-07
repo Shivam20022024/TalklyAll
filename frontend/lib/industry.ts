@@ -1,8 +1,8 @@
-import { 
-  Building2, 
-  Stethoscope, 
-  GraduationCap, 
-  CreditCard, 
+import {
+  Building2,
+  Stethoscope,
+  GraduationCap,
+  CreditCard,
   Briefcase,
   Users,
   Phone,
@@ -14,10 +14,11 @@ import {
   Award,
   ShieldCheck,
   CheckCircle2,
-  Banknote
+  Banknote,
+  ShoppingBag
 } from 'lucide-react'
 
-export type IndustryKey = 'real_estate' | 'healthcare' | 'edtech' | 'bfsi' | 'general_sales' | 'collections'
+export type IndustryKey = 'real_estate' | 'healthcare' | 'edtech' | 'bfsi' | 'general_sales' | 'collections' | 'ecommerce'
 
 export interface IndustryConfig {
   id: IndustryKey
@@ -275,5 +276,44 @@ export const INDUSTRY_CONFIGS: Record<IndustryKey, IndustryConfig> = {
       { objection: 'Already Paid / Payment Pending', frequency: '19%', aiHandling: 'Notes the claim for verification instead of repeating the payment demand on the same call' },
     ],
     keyExtractionFields: ['Overdue Amount', 'Due Date', 'Promise to Pay Date', 'Promise to Pay Amount']
+  },
+
+  ecommerce: {
+    id: 'ecommerce',
+    label: 'E-commerce & D2C Brands',
+    shortLabel: 'E-commerce',
+    tagline: 'Automated COD Confirmation, Address Verification & RTO Prevention',
+    iconName: 'ShoppingBag',
+    offeringName: 'Product / Item Name',
+    leadTerm: 'COD Orders',
+    conversionGoal: 'Orders Confirmed & Dispatched',
+    metrics: {
+      total_leads: { label: 'Total COD Orders', icon: ShoppingBag, tone: 'blue', desc: 'Placed orders received' },
+      calls_made: { label: 'Verification Calls', icon: Phone, tone: 'violet', desc: 'Automated COD verification calls' },
+      connected_calls: { label: 'Connected Buyers', icon: Activity, tone: 'green', desc: 'Buyers answering call' },
+      qualified_leads: { label: 'Address Verified', icon: Target, tone: 'orange', desc: 'Address & pincode validated' },
+      interested_leads: { label: 'Confirmed for Dispatch', icon: Sparkles, tone: 'blue', desc: 'Confirmed COD delivery' },
+      conversion_rate: { label: 'Confirmation Rate', icon: TrendingUp, tone: 'green', desc: 'Confirmed vs total orders' },
+    },
+    funnelStages: [
+      'Total COD Orders Placed',
+      'Verification Calls Dialed',
+      'Connected Buyers',
+      'Address & Pincode Verified',
+      'RTO & Fake Orders Filtered',
+      'Confirmed for Dispatch'
+    ],
+    intentDistribution: [
+      { label: 'Fashion & Apparel', pct: 42, color: 'bg-blue-500' },
+      { label: 'Beauty & Personal Care', pct: 28, color: 'bg-emerald-500' },
+      { label: 'Consumer Electronics', pct: 18, color: 'bg-amber-500' },
+      { label: 'Home & Kitchen', pct: 12, color: 'bg-purple-500' },
+    ],
+    topObjections: [
+      { objection: 'Ordered by mistake / Cancel please', frequency: '36%', aiHandling: 'Immediately cancels order in CRM to save courier freight and avoid shipping to uninterested buyers' },
+      { objection: 'Delivery timeline concern', frequency: '28%', aiHandling: 'Reassures 3-4 day express dispatch with live WhatsApp courier tracking' },
+      { objection: 'Incomplete address / landmark missing', frequency: '22%', aiHandling: 'Collects landmark and updates shipping label before warehouse dispatch' },
+    ],
+    keyExtractionFields: ['Order Status (Confirmed/Cancelled)', 'COD Amount', 'Delivery Address & Landmark', 'Payment Readiness (Cash/UPI)']
   }
 }
