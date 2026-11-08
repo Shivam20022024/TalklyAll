@@ -48,9 +48,10 @@ from telephony.plivo_provider import PlivoProvider
 # a closure nested inside the OpenAI pipeline's function, not a standalone
 # callable, and that working pipeline isn't being touched.
 GOODBYE_KEYWORDS = [
-    "अलविदा", "दिन शुभ हो", "बाय", "bye", "goodbye",
-    "have a great day", "have a wonderful day", "have a good day",
-    "take care", "बात करने के लिए धन्यवाद"
+    "अलविदा", "दिन शुभ हो", "बाय", "bye", "goodbye", "good bye",
+    "have a great day", "have a wonderful day", "have a good day", "have a nice day",
+    "take care", "talk to you soon", "बात करने के लिए धन्यवाद", "कॉल करने के लिए धन्यवाद",
+    "शुभ दिन"
 ]
 
 # Matches the first sentence OR comma-terminated clause (English/Hindi
