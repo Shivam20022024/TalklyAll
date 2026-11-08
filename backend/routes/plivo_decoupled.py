@@ -520,10 +520,12 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
 
                 # If goodbye was already spoken / hangup is in progress, do NOT start a new OpenAI turn!
                 if hangup_triggered:
-                    safe_print(f"[DECOUPLED AUTO HANGUP]: Caller spoke '{customer_text}' after goodbye was already delivered. Suppressing reply and cutting call.")
+                    safe_print(f"[DECOUPLED AUTO HANGUP]: Caller spoke '{customer_text}' after goodbye was already delivered.")
                     transcript_parts.append(f"Customer: {customer_text}")
                     asyncio.create_task(_save_transcript_bg())
-                    hangup_early_event.set()
+                    # Only cut call early if AI has already finished audibly speaking its closing line
+                    if time.time() >= agent_speaking_until:
+                        hangup_early_event.set()
                     return
 
                 if customer_text.lower() in HALLUCINATION_PHRASES or is_degenerate_transcript(customer_text):
@@ -616,7 +618,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     reply_lower = clean_full_reply.lower()
                     if (len(transcript_parts) - 1) >= 3 and any(kw in reply_lower for kw in GOODBYE_KEYWORDS):
                         rem_audio_sec = max(0.0, agent_speaking_until - time.time())
-                        delay = max(1.2, min(rem_audio_sec + 1.2, 5.0))
+                        delay = max(1.5, min(rem_audio_sec + 1.2, 20.0))
                         safe_print(f"[DECOUPLED AUTO HANGUP]: Goodbye detected in AI speech. Audio finishes in {rem_audio_sec:.1f}s; hanging up in {delay:.1f}s...")
                         t = asyncio.create_task(trigger_decoupled_hangup(delay))
                         turn_tasks.add(t)

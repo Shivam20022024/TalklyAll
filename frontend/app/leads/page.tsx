@@ -765,8 +765,9 @@ function LeadsContent() {
                 )
               })()}
 
-              {/* COD Order Confirmation - ecommerce calls */}
-              {((selectedLead?.industry === 'ecommerce' || selectedCall?.industry === 'ecommerce') || (selectedCall?.analysis?.order_confirmation)) && (() => {
+              {/* COD Order Confirmation - ecommerce calls only */}
+              {((selectedLead?.industry === 'ecommerce' || selectedCall?.industry === 'ecommerce' || Boolean(selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount)) ||
+                (selectedCall?.analysis?.order_confirmation?.status && ['Confirmed', 'Cancelled'].includes(selectedCall.analysis.order_confirmation.status) && selectedCall?.analysis?.intents?.some((i: string) => i.toLowerCase().includes('order') || i.toLowerCase().includes('cod')))) && (() => {
                 const oc = selectedCall?.analysis?.order_confirmation || {}
                 const isConfirmed = oc.status === 'Confirmed' || selectedLead?.status === 'Confirmed'
                 const isCancelled = oc.status === 'Cancelled' || selectedLead?.status === 'Cancelled'
