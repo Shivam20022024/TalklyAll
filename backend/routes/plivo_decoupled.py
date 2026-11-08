@@ -66,28 +66,31 @@ GOODBYE_KEYWORDS = [
 # 2-3s gap before this change.
 _SENTENCE_END_RE = re.compile(r"^(.*?[.!?।])\s*")
 _CLAUSE_END_RE = re.compile(r"^(.*?[,])\s*")
+_COMMON_ABBRS = {"dr.", "mr.", "mrs.", "ms.", "rs.", "no.", "vs.", "e.g.", "i.e."}
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
     "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES:\n"
-    "1. RAPID 2-WORD OPENER (MANDATORY): Always start your response with a natural 2-word acknowledgment "
-    "ending with a period (e.g. 'Got it.', 'I see.', 'Great.', 'Sure thing.', 'Understood.'). "
+    "1. RAPID OPENER (MANDATORY): Always start your response with a natural acknowledgment "
+    "ending with a period or exclamation (e.g. 'Got it.', 'I see.', 'Great.', 'Sure thing.', 'Understood.'). "
     "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
     "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
-    "3. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
+    "3. DIRECT FIRST TURN: If the opening greeting already addressed the customer by name ('Hi Anshu...', 'Hello Vikash...') and they said 'Yes', their identity is confirmed. NEVER re-ask 'am I speaking with [name]?'. Immediately ask your first discovery question.\n"
+    "4. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
     "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies "
-    "(do NOT say 'Thanks, Vikash!' or 'Hi Shivam', just say 'Got it.' or 'I see.').\n"
-    "4. STRICT LANGUAGE ENFORCEMENT: You MUST converse 100% in English unless the customer explicitly speaks Hindi."
+    "(do NOT say 'Thanks, Vikash!' or 'Hi Anshu', just say 'Got it.' or 'I see.').\n"
+    "5. STRICT LANGUAGE ENFORCEMENT: You MUST converse 100% in English unless the customer explicitly speaks Hindi."
 )
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_HI = (
     "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES:\n"
-    "1. RAPID 2-WORD OPENER (MANDATORY): Always start your response with a natural 2-word acknowledgment "
+    "1. RAPID OPENER (MANDATORY): Always start your response with a natural acknowledgment "
     "ending with a full stop or exclamation (e.g. 'समझ गया।', 'ठीक है।', 'जी बिल्कुल।', 'जी जरूर।'). "
     "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
     "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
-    "3. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
+    "3. DIRECT FIRST TURN: If the opening greeting already addressed the customer by name and they said 'हाँ' or 'Yes', proceed directly to your first question without re-asking their name.\n"
+    "4. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
     "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies.\n"
-    "4. STRICT LANGUAGE ENFORCEMENT: You MUST converse in natural Hindi/Hinglish unless the customer explicitly speaks English."
+    "5. STRICT LANGUAGE ENFORCEMENT: You MUST converse in natural Hindi/Hinglish unless the customer explicitly speaks English."
 )
 
 logger = logging.getLogger("talkly-plivo-decoupled")
@@ -558,14 +561,21 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         full_reply += delta
                         if not first_sentence_flushed:
                             m = _SENTENCE_END_RE.match(full_reply)
-                            mc = _CLAUSE_END_RE.match(full_reply) if not m else None
-                            # Priority 1: Terminal punctuation (.!?।) on >= 2 words (e.g. "Got it.", "I see.", "समझ गया।")
-                            # Priority 2 (Guardrail): Comma (,) on >= 3 words (e.g. "Just to confirm,")
                             target_match = None
-                            if m and len(m.group(1).strip().split()) >= 2:
-                                target_match = m
-                            elif mc and len(mc.group(1).strip().split()) >= 3:
-                                target_match = mc
+                            if m:
+                                cand = m.group(1).strip()
+                                cand_lower = cand.lower()
+                                if cand_lower not in _COMMON_ABBRS and len(cand) >= 2:
+                                    target_match = m
+                                else:
+                                    # Abbreviation detected (e.g. "Dr."), match past it to next sentence end
+                                    m2 = re.match(r"^(" + re.escape(cand) + r"\s+.*?[.!?।])\s*", full_reply)
+                                    if m2:
+                                        target_match = m2
+                            if not target_match:
+                                mc = _CLAUSE_END_RE.match(full_reply)
+                                if mc and len(mc.group(1).strip().split()) >= 3:
+                                    target_match = mc
 
                             if target_match:
                                 first_sentence_flushed = True

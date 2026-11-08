@@ -804,10 +804,9 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n11. BARE GREETING TO AVAILABILITY: If your opening greeting asked for availability ('Do you have 2 minutes?') and the customer replies with 'Yes', 'Hello', 'Hi', or 'Haan', treat that as consent to proceed. Do NOT re-ask availability; go straight to the next step."
         f"\n12. ATTENTION CHECK MID-CALL: If the customer gives a filler mid-conversation ('Hello', 'Can you hear me?', 'Ji boliye'), do NOT repeat or rephrase your question. Simply give a brief prompt ({_minimal_prompt_hint}) and wait for their answer."
         "\n13. CONTRADICTION CHECK: If the customer contradicts a detail confirmed earlier in the call, briefly confirm which one they prefer before moving forward."
-        "\n14. IDENTITY VERIFICATION: Before asking qualification questions, confirm you are speaking with the target customer by name (e.g. 'Just to confirm, am I speaking with [CustomerName]?') and wait for an affirmative answer ('Yes', 'Speaking', etc.)."
-        "\n   - Always use the customer's actual given name verbatim; never substitute it with vague phrases like 'with you' or 'the right person'."
-        "\n   - Use only ONE natural lead-in. Never chain multiple apologies or fillers."
-        "\n   - Exception: If your opening welcome message already addressed them by their real name (e.g. 'Hello [name]...') and the customer clearly acknowledged with 'Yes' / 'Speaking', identity is established - proceed directly to your next question without re-asking."
+        "\n14. IDENTITY VERIFICATION & DIRECT PROGRESSION:"
+        "\n   - If your opening welcome message already addressed the customer by name (e.g. 'Hi [CustomerName]...' or 'Hello [CustomerName]...') and the customer clearly acknowledged with 'Yes', 'Speaking', 'Haan', or 'Hello', identity is already 100% established. Proceed immediately to your first qualification/discovery question without re-asking if you are speaking with them."
+        "\n   - Only if the opening greeting did NOT use their name or the caller is unknown, confirm identity first: 'Just to confirm, am I speaking with [CustomerName]?'."
     )
 
     # Collections compliance directive - opt-in only (companies.collections_mode),
