@@ -376,6 +376,11 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
+    # Sanitize robotic or gender-mismatched opening phrases for natural conversational flow
+    cleaned = re.sub(r'^(?:समझ गया|samajh gaya)[,।!.\s]+', 'जी, ', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'(?:^|(?<=[\s,।!?]))समझ गया(?=[\s,।!?]|$)', 'समझ गई', cleaned)
+    cleaned = re.sub(r'(?i)\bsamajh gaya\b', 'samajh gayi', cleaned)
+
     # Dynamic Hindi normalization for TTS: if language is Hindi/Hinglish OR if text itself contains
     # Devanagari script / Hindi speech markers, always route through normalize_for_tts as Hindi.
     is_hi_text = bool(re.search(r'[\u0900-\u097F]', cleaned)) or bool(re.search(r'(?i)\b(बजे|baje|रुपये|rupaye|हज़ार|hazaar|लाख|lakh|करोड़|crore|तारीख)\b', cleaned))
@@ -824,10 +829,10 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "\n\nNATURAL HUMAN CONVERSATION STYLE (HINDI / HINGLISH):"
             "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday conversational Hindi/Hinglish phrasing beats long formal sentences."
             "\n- STRICT LANGUAGE CONTINUATION: Since your opening greeting was in Hindi/Hinglish, stay in natural Hindi/Hinglish across every turn. Even if the customer answers 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Yes', do NOT switch to English. Answer in Hindi/Hinglish."
-            "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'समझ गया,' NOT 'समझ गया, [name],'; say 'जी बिल्कुल,' NOT 'जी बिल्कुल, [name],')."
-            "\n- Keep acknowledgements brief and natural in Hindi/Hinglish: 'जी बिल्कुल', 'हाँ जी', 'बहुत अच्छा', 'समझ गया', 'बढ़िया', 'ज़रूर' - not stiff transitions."
+            "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'जी बिल्कुल,' NOT 'जी बिल्कुल, [name],')."
+            "\n- Keep acknowledgements brief, gender-neutral, and natural in Hindi/Hinglish: 'जी बिल्कुल', 'हाँ जी', 'बहुत अच्छा', 'बढ़िया', 'ज़रूर' - never use stiff transitions or robotic 'समझ गया' (especially in female voice or when customer just said 'हाँ बताइए')."
             "\n- Ask ONE short, plain question at a time in Hindi/Hinglish (e.g. 'आप किस तरह का मॉडल या ब्रांड देख रहे हैं?', 'क्या कल सुबह आना सही रहेगा?')."
-            "\n- React briefly to what the customer just said before moving on - a quick 'जी अच्छा', 'समझ गया', 'बढ़िया', 'सही है' shows you are actually listening."
+            "\n- React contextually to what the customer just said before moving on - a quick 'जी अच्छा', 'जी बिल्कुल', 'बढ़िया', 'ज़रूर' shows you are listening, but only acknowledge when they actually gave information. If they just said 'हाँ बताइए', flow directly into your question without saying 'समझ गया'."
             "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
             "\n- Never sound like a call-center script, an email, or a formal announcement. This is a live, warm, human conversation between two people in Hindi/Hinglish.\n\n"
         )

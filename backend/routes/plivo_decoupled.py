@@ -88,9 +88,10 @@ DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_HI = (
     "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES:\n"
-    "1. RAPID OPENER (MANDATORY): Always start your response with a natural acknowledgment "
-    "ending with a full stop or exclamation (e.g. 'समझ गया।', 'ठीक है।', 'जी बिल्कुल।', 'जी जरूर।', 'बहुत बढ़िया।'). "
-    "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
+    "1. NATURAL HUMAN OPENER: Speak naturally like a polite human coordinator. "
+    "Do NOT force repetitive, robotic words like 'समझ गया' at the beginning of your responses. "
+    "When connecting your response, use short, warm, gender-neutral phrases like 'जी बिल्कुल, ', 'जी, ', 'बहुत बढ़िया, ', 'ज़रूर, ' ending with a comma (,) so speech flows seamlessly into your question without awkward dead pauses. "
+    "If the customer just said 'हाँ बताइए', 'बोलिए', or 'Hello', do NOT say 'समझ गया' - simply say 'जी, क्या आप...' and continue naturally.\n"
     "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
     "3. DIRECT FIRST TURN (पहचान दोबारा पूछना सख्त मना है): आपने वेलकम मैसेज में ग्राहक का नाम पहले ही ले लिया है ('नमस्ते यश...', 'Hi yash...'). "
     "जब ग्राहक 'हाँ', 'Haan', 'Yes', 'यह', 'यस', 'जी', 'बोलिए', 'Hello' या कोई भी जवाब दे, तो पहचान पूरी तरह कन्फर्म है। "
@@ -285,6 +286,11 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
 
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # Sanitize robotic or gender-mismatched opening phrases for natural conversational flow
+    cleaned = re.sub(r'^(?:समझ गया|samajh gaya)[,।!.\s]+', 'जी, ', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'(?:^|(?<=[\s,।!?]))समझ गया(?=[\s,।!?]|$)', 'समझ गई', cleaned)
+    cleaned = re.sub(r'(?i)\bsamajh gaya\b', 'samajh gayi', cleaned)
 
     # Dynamic Hindi normalization for TTS: if language is Hindi/Hinglish OR if text itself contains
     # Devanagari script / Hindi speech markers, always route through normalize_for_tts as Hindi.
@@ -635,12 +641,14 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                             if m:
                                 cand = m.group(1).strip()
                                 cand_lower = cand.lower()
-                                if cand_lower not in _COMMON_ABBRS and len(cand) >= 2:
+                                # Don't flush tiny 1-2 word fragments alone (e.g. "Got it.", "जी बिल्कुल।", "ठीक है।")
+                                # Flushing tiny fragments causes disconnected prosody, flat downward cadence, and jitter gaps.
+                                # Require at least 3 words, or match forward to include the next clause/sentence boundary.
+                                if cand_lower not in _COMMON_ABBRS and len(cand.split()) >= 3:
                                     target_match = m
                                 else:
-                                    # Abbreviation detected (e.g. "Dr."), match past it to next sentence end
-                                    m2 = re.match(r"^(" + re.escape(cand) + r"\s+.*?[.!?।])\s*", full_reply)
-                                    if m2:
+                                    m2 = re.match(r"^(" + re.escape(cand) + r"\s+.*?[.!?।,])\s*", full_reply)
+                                    if m2 and len(m2.group(1).strip().split()) >= 3:
                                         target_match = m2
                             if not target_match:
                                 mc = _CLAUSE_END_RE.match(full_reply)

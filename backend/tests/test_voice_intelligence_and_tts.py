@@ -158,6 +158,18 @@ def test_ci01_clean_tts_formatting_sanitization():
     assert "_" not in cleaned
     assert "[" not in cleaned
     assert "दो हज़ार पाँच सौ रुपये" in cleaned
+
+    # Robotic opener 'समझ गया।' must be sanitized to natural 'जी, '
+    robotic_opener = "समझ गया। क्या आप सुबह का समय पसंद करेंगे या शाम का?"
+    natural_clean = clean_tts_text(robotic_opener, language="Hindi")
+    assert natural_clean.startswith("जी, "), f"Opener not sanitized: {natural_clean}"
+    assert "समझ गया" not in natural_clean, f"'समझ गया' still present: {natural_clean}"
+
+    # Female grammatical consistency
+    internal_masc = "हाँ, मैं समझ गया।"
+    fem_clean = clean_tts_text(internal_masc, language="Hindi")
+    assert "समझ गई" in fem_clean, f"Gender mismatch not resolved: {fem_clean}"
+
     print("✓ CI01: Clean TTS Formatting Sanitization PASSED")
 
 
