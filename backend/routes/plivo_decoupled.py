@@ -691,17 +691,25 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                 import traceback
                 safe_print(f"[DECOUPLED ERROR]: handle_final_transcript crashed for call_id={call_id}:\n{traceback.format_exc()}")
 
+        media_count = 0
+
         async def plivo_to_stt():
+            nonlocal media_count
             while True:
                 raw_msg = await websocket.receive_text()
                 data = json.loads(raw_msg)
                 event_type = data.get("event")
                 if event_type == "media":
+                    media_count += 1
+                    if media_count == 1:
+                        safe_print(f"[DECOUPLED]: First media packet received from Plivo for call_id={call_id}")
+                    elif media_count % 250 == 0:
+                        safe_print(f"[DECOUPLED]: {media_count} media packets received from Plivo for call_id={call_id}")
                     payload = (data.get("media") or {}).get("payload") or data.get("payload")
                     if payload and isinstance(payload, str):
                         await stt_session.push_audio(payload)
                 elif event_type == "stop":
-                    safe_print(f"[DECOUPLED]: Plivo stream stop received for call_id={call_id}")
+                    safe_print(f"[DECOUPLED]: Plivo stream stop received for call_id={call_id} (total media packets: {media_count})")
                     break
 
         speech_stopped_at = None
