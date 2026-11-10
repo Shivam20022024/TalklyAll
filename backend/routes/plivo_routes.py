@@ -271,12 +271,25 @@ async def finalize_plivo_call(
         except Exception as e:
             logger.error(f"Analysis failed for Plivo call {call_id}: {e}")
 
-    # If no AI analysis (e.g. short call), ensure db.leads is updated from 'Calling' to 'Contacted' or 'No Answer'
+    # If no AI analysis (e.g. short call, busy, rejected), ensure db.leads is updated from 'Calling'
     if not analysis_result and not already_analyzed:
         dur = duration if duration is not None else int(call_doc.get("duration", 0) or 0)
-        lead_status = "Contacted" if dur > 0 else "No Answer"
-        await db.leads.update_one(
-            {"lead_id": call_id},
+        if dur > 0:
+            lead_status = "Contacted"
+        elif str(hangup_cause or "").upper() in ("USER_BUSY", "CALL_REJECTED", "BUSY"):
+            lead_status = "Busy"
+        else:
+            lead_status = "No Answer"
+
+        sync_lead_id = call_doc.get("lead_id") or call_id
+        lead_filter = {"company_id": cid} if cid else {}
+        match_conditions = [{"lead_id": sync_lead_id}, {"lead_id": call_id}]
+        if call_doc.get("customer_id"):
+            match_conditions.append({"phone": call_doc.get("customer_id")})
+        lead_filter["$or"] = match_conditions
+
+        await db.leads.update_many(
+            lead_filter,
             {"$set": {
                 "status": lead_status,
                 "lastContact": datetime.utcnow().isoformat()
