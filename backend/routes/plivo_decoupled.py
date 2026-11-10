@@ -193,16 +193,18 @@ def prewarm_decoupled_greeting(
             if not w_text:
                 return None
 
+            is_hi_greet = is_hindi_or_hinglish(w_text)
+            w_text = clean_tts_text(w_text, customer_name="", is_subsequent=False, language="Hindi" if is_hi_greet else "English")
+
             t0 = time.time()
             api_key = os.environ.get("BAKBAK_API_KEY", "").strip() or BAKBAK_API_KEY
             if api_key:
                 v_id = v_id or "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2"
-                v_lang = v_lang or ("hi" if is_hindi_or_hinglish(w_text) else "en-in")
+                v_lang = v_lang or ("hi" if is_hi_greet else "en-in")
                 session = BakbakTTSSession(api_key, v_id, v_lang, v_mod)
             elif SARVAM_API_KEY:
-                is_hi = is_hindi_or_hinglish(w_text)
-                speaker = (ctx.get("sarvam_speaker") if ctx else None) or ("ishita_enhi_customer" if is_hi else "simran_en_conversation")
-                lang = "hi-IN" if is_hi else "en-IN"
+                speaker = (ctx.get("sarvam_speaker") if ctx else None) or ("ishita_enhi_customer" if is_hi_greet else "simran_en_conversation")
+                lang = "hi-IN" if is_hi_greet else "en-IN"
                 session = SarvamTTSSession(SARVAM_API_KEY, speaker, lang)
             else:
                 return None
@@ -284,13 +286,15 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
-    # Dynamic Hindi normalization for TTS if language is Hindi/Hinglish
-    if language:
-        try:
-            from services.hindi_normalizer import normalize_for_tts
-            cleaned = normalize_for_tts(cleaned, language=language)
-        except Exception as norm_err:
-            logger.warning(f"[clean_tts_text] Hindi normalizer error: {norm_err}")
+    # Dynamic Hindi normalization for TTS: if language is Hindi/Hinglish OR if text itself contains
+    # Devanagari script / Hindi speech markers, always route through normalize_for_tts as Hindi.
+    is_hi_text = bool(re.search(r'[\u0900-\u097F]', cleaned)) or bool(re.search(r'(?i)\b(बजे|baje|रुपये|rupaye|हज़ार|hazaar|लाख|lakh|करोड़|crore|तारीख)\b', cleaned))
+    eff_lang = "Hindi" if is_hi_text else (language or "Hindi")
+    try:
+        from services.hindi_normalizer import normalize_for_tts
+        cleaned = normalize_for_tts(cleaned, language=eff_lang)
+    except Exception as norm_err:
+        logger.warning(f"[clean_tts_text] Hindi normalizer error: {norm_err}")
 
     if cleaned and cleaned[0].islower():
         cleaned = cleaned[0].upper() + cleaned[1:]

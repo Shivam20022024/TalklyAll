@@ -203,14 +203,32 @@ def normalize_time_hindi(text: str) -> str:
         else:
             return f"{period}{hour_word} बजकर {int_to_hindi(minute)} मिनट".strip()
 
-    # Matches 10:00 AM, 2:00 PM, 6:30PM, 10 AM, 2 PM
+    # 1. Range time: 10 या 11 बजे, 10 से 12 बजे, 10 to 11 baje
+    def _replace_range_time(m):
+        h1 = int(m.group(1))
+        m1 = int(m.group(2)) if m.group(2) else 0
+        sep = m.group(3)
+        h2 = int(m.group(4))
+        m2 = int(m.group(5)) if m.group(5) else 0
+        w1 = f'{int_to_hindi(h1)} बजे' if m1 == 0 else f'{int_to_hindi(h1)} बजकर {int_to_hindi(m1)} मिनट'
+        w2 = f'{int_to_hindi(h2)} बजे' if m2 == 0 else f'{int_to_hindi(h2)} बजकर {int_to_hindi(m2)} मिनट'
+        sep_hi = 'से' if sep in ('से', 'to', '-') else 'या'
+        return f'{w1} {sep_hi} {w2}'
+
+    text = re.sub(
+        r'\b(1[0-2]|0?[1-9])(?::([0-5][0-9]))?\s*(या|से|to|or|-)\s*(1[0-2]|0?[1-9])(?::([0-5][0-9]))?\s*(?:बजे|baje(?!\w))',
+        _replace_range_time,
+        text
+    )
+
+    # 2. Matches 10:00 AM, 2:00 PM, 6:30PM, 10 AM, 2 PM
     text = re.sub(
         r'(?i)\b(1[0-2]|0?[1-9])(?::([0-5][0-9]))?\s*(am|pm)\b',
         _replace_clock_time,
         text
     )
 
-    # Matches 10:00 बजे, 10 बजे, 2 baje -> दस बजे, दो बजे
+    # 3. Matches 10:00 बजे, 10 बजे, 2 baje -> दस बजे, दो बजे
     def _replace_baje_time(m):
         hour = int(m.group(1))
         minute = int(m.group(2)) if m.group(2) else 0
@@ -222,6 +240,35 @@ def normalize_time_hindi(text: str) -> str:
     text = re.sub(
         r'(?i)\b(1[0-2]|0?[1-9])(?::([0-5][0-9]))?\s*(?:बजे|baje(?!\w))',
         _replace_baje_time,
+        text
+    )
+
+    # 4. Standalone colon times like 10:00, 10:30 when preceded or followed by time markers
+    def _replace_colon_time_prefix(m):
+        prefix = m.group(1)
+        hour = int(m.group(2))
+        minute = int(m.group(3))
+        hour_word = int_to_hindi(hour)
+        formatted = f"{hour_word} बजे" if minute == 0 else f"{hour_word} बजकर {int_to_hindi(minute)} मिनट"
+        return f"{prefix} {formatted}"
+
+    text = re.sub(
+        r'(?i)\b(सुबह|दोपहर|शाम|रात|at|around)\s+(1[0-2]|0?[1-9]):([0-5][0-9])\b',
+        _replace_colon_time_prefix,
+        text
+    )
+
+    def _replace_colon_time_suffix(m):
+        hour = int(m.group(1))
+        minute = int(m.group(2))
+        suffix = m.group(3)
+        hour_word = int_to_hindi(hour)
+        formatted = f"{hour_word} बजे" if minute == 0 else f"{hour_word} बजकर {int_to_hindi(minute)} मिनट"
+        return f"{formatted} {suffix}"
+
+    text = re.sub(
+        r'(?i)\b(1[0-2]|0?[1-9]):([0-5][0-9])\s*(पर|तक|का|के|को|par|tak)\b',
+        _replace_colon_time_suffix,
         text
     )
 
@@ -422,8 +469,14 @@ def normalize_for_tts(text: str, language: str = "Hindi") -> str:
     lang_lower = (language or "").lower()
     is_pure_english = "english" in lang_lower and "hindi" not in lang_lower and "hinglish" not in lang_lower
 
-    if is_pure_english:
-        # Preserve English pronunciation untouched
+    # If text itself contains Devanagari script, Hindi time/currency words, or Hinglish keywords,
+    # it is definitively Hindi speech and must NOT be treated as pure English regardless of declared call_lang!
+    has_devanagari = bool(re.search(r'[\u0900-\u097F]', text))
+    has_hindi_markers = bool(re.search(r'(?i)\b(बजे|baje|रुपये|rupaye|हज़ार|hazaar|लाख|lakh|करोड़|crore|तारीख|महीने|साल)\b', text))
+    has_hinglish_kw = bool(HINGLISH_KEYWORDS_REGEX.search(text))
+
+    if is_pure_english and not (has_devanagari or has_hindi_markers or has_hinglish_kw):
+        # Preserve English pronunciation untouched ONLY for genuinely English text
         return text
 
     # Apply Hindi normalization sequentially

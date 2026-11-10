@@ -376,13 +376,15 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
-    # Dynamic Hindi normalization for TTS if language is Hindi/Hinglish
-    if language:
-        try:
-            from services.hindi_normalizer import normalize_for_tts
-            cleaned = normalize_for_tts(cleaned, language=language)
-        except Exception as norm_err:
-            logger.warning(f"[clean_tts_text] Hindi normalizer error: {norm_err}")
+    # Dynamic Hindi normalization for TTS: if language is Hindi/Hinglish OR if text itself contains
+    # Devanagari script / Hindi speech markers, always route through normalize_for_tts as Hindi.
+    is_hi_text = bool(re.search(r'[\u0900-\u097F]', cleaned)) or bool(re.search(r'(?i)\b(बजे|baje|रुपये|rupaye|हज़ार|hazaar|लाख|lakh|करोड़|crore|तारीख)\b', cleaned))
+    eff_lang = "Hindi" if is_hi_text else (language or "Hindi")
+    try:
+        from services.hindi_normalizer import normalize_for_tts
+        cleaned = normalize_for_tts(cleaned, language=eff_lang)
+    except Exception as norm_err:
+        logger.warning(f"[clean_tts_text] Hindi normalizer error: {norm_err}")
 
     if cleaned and cleaned[0].islower():
         cleaned = cleaned[0].upper() + cleaned[1:]
@@ -864,7 +866,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n3. OFF-TOPIC REMARKS: If the customer makes a sensible off-topic remark or small talk, briefly acknowledge it in one short sentence, then gently guide them back to your objective."
         "\n4. CONVERSATIONAL MODES & STAGE PROGRESSION:"
         "\n   - MODE A (INFORMATION ASSISTANCE): When the customer asks ANY question (e.g. subsidy amount, pricing, rooftop space required, warranty years, performance in rain/monsoon, installation timeline, or whether inspection is free), PRIORITIZE answering their inquiry factually and concisely in 1-2 sentences using the Knowledge Base. NEVER immediately push or ask to book an appointment/site survey right after answering! Instead, verify if they understood or if they have further questions (e.g. 'क्या आप इसके बारे में कुछ और जानना चाहते हैं?' or 'क्या यह स्पष्ट है?')."
-        "\n   - MODE B (APPOINTMENT SCHEDULING): Transition to scheduling ONLY when: (1) the customer explicitly asks to schedule/book (e.g. 'book a time', 'कब आ सकते हैं', 'slot book kar dijiye', 'appointment fix kar do'), OR (2) all their questions have been answered and they confirm readiness. When proposing a time, offer two clear options (e.g. 'सुबह 10 बजे या दोपहर 2 बजे?'). Once the customer selects a time, confirm it immediately in ONE warm sentence, say goodbye, and execute end_call."
+        "\n   - MODE B (APPOINTMENT SCHEDULING): Transition to scheduling ONLY when: (1) the customer explicitly asks to schedule/book (e.g. 'book a time', 'कब आ सकते हैं', 'slot book kar dijiye', 'appointment fix kar do'), OR (2) all their questions have been answered and they confirm readiness. When proposing a time, offer two clear options in Hindi words (e.g. 'सुबह दस बजे या दोपहर दो बजे?'). Once the customer selects a time, confirm it immediately in ONE warm sentence, say goodbye, and execute end_call."
         "\n   - ANTI-REPETITION MANDATE: NEVER repeatedly ask the same closing or booking question across consecutive turns. If you previously asked for an appointment and the customer asked a technical question instead, answer the question completely and do NOT repeat the appointment question."
         "\n5. ONE QUESTION PER TURN: Ask strictly ONE question per turn. Never speak two questions back-to-back."
         "\n6. AUTOMATIC HANGUP: Immediately after concluding your goodbye, invoke the end_call function."
@@ -884,7 +886,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n   - In all outbound calls where your opening greeting already addressed the customer by name (e.g. 'Hi [CustomerName]...' or 'नमस्ते [CustomerName]...'), when the customer gives ANY opening acknowledgment (e.g. 'Yes', 'Yeah', 'यह', 'यस', 'Haan', 'हाँ', 'Speaking', 'Hello', 'Ji', 'Boliye', 'Sure', 'OK'), their identity is 100% ESTABLISHED."
         "\n   - You are STRICTLY FORBIDDEN from asking 'am I speaking with [CustomerName]?', 'is this [CustomerName]?', 'just to confirm am I speaking with...', or re-asking their name! Proceed directly to your first discovery / qualification question."
         "\n   - Only on incoming/inbound calls where the caller is completely unknown may you ask who is speaking."
-        "\n15. NUMBER & MEASUREMENT SPOKEN PHRASING: When speaking in Hindi, express all numbers, currency, and measurements naturally in Hindi words (e.g. 'अठहत्तर हज़ार रुपये', 'तीन किलोवाट', 'ढाई सौ से तीन सौ वर्ग फुट', 'पच्चीस साल')."
+        "\n15. NUMBER & MEASUREMENT SPOKEN PHRASING: When speaking in Hindi, express all numbers, times, currency, and measurements naturally in Hindi words (e.g. 'सुबह दस बजे', 'दोपहर दो बजे', 'ग्यारह बजे', 'अठहत्तर हज़ार रुपये', 'तीन किलोवाट', 'ढाई सौ से तीन सौ वर्ग फुट', 'पच्चीस साल'). NEVER use raw numerical digits like '10 बजे' or '2 बजे' in Hindi."
         "\n16. ASR DISAMBIGUATION & AMBIGUOUS NUMERICAL INTENT:"
         "\n   - When asking about electricity bills or financial figures (e.g. 'Is your bill above ₹2,500?'):"
         "\n   - Valid clear statements ('5000 hai', 'Five thousand', 'Mera bill paanch hazaar hai') must be recognized accurately as ₹5,000."

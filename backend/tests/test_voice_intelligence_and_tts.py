@@ -50,6 +50,11 @@ def test_tn02_time_normalization():
         ("8:15 AM", "सुबह आठ बजकर पंद्रह मिनट"),
         ("7:45 PM", "शाम सात बजकर पैंतालीस मिनट"),
         ("10:00 बजे", "दस बजे"),
+        ("10 बजे", "दस बजे"),
+        ("11 बजे", "ग्यारह बजे"),
+        ("सुबह 10 या 11 बजे?", "सुबह दस बजे या ग्यारह बजे?"),
+        ("कल 10 से 12 बजे", "कल दस बजे से बारह बजे"),
+        ("10:30 par", "दस बजकर तीस मिनट"),
         ("सुबह 10:00 AM", "सुबह दस बजे"),  # No duplicate 'सुबह सुबह'
     ]
     for inp, expected in cases:
@@ -106,17 +111,23 @@ def test_tn06_english_mode_preservation():
 
 
 def test_tn07_full_hindi_speech_utterances():
-    # Real utterances from the user's solar conversation
+    # Real utterances from conversations
     utterances = [
         ("आपको PM सूर्या घर योजना के तहत ₹78,000 की सब्सिडी मिलेगी।", "अठहत्तर हज़ार रुपये"),
         ("क्या आपका मासिक बिजली बिल ₹2,500 से ज्यादा है?", "दो हज़ार पाँच सौ रुपये"),
         ("सौर पैनलों पर 25 साल की प्रदर्शन वारंटी और इन्वर्टर्स पर 5 साल की वारंटी होती है।", "पच्चीस साल"),
         ("सौर पैनल इंस्टॉलेशन के लिए, 3kW सिस्टम के लिए लगभग 250-300 वर्ग फुट जगह चाहिए।", "तीन किलोवाट"),
         ("क्या आप सुबह 10 बजे या दोपहर 2 बजे में से कोई समय चुनना चाहेंगे?", "सुबह दस बजे"),
+        ("ठीक है! सुबह के लिए कौन सा समय सही रहेगा, सुबह 10 बजे या 11 बजे?", "सुबह दस बजे या ग्यारह बजे?"),
     ]
     for utt, expected_substr in utterances:
         cleaned = clean_tts_text(utt, language="Hindi")
         assert expected_substr in cleaned, f"Failed on '{utt}': expected '{expected_substr}' in '{cleaned}'"
+
+    # Even if language parameter is "English", Hindi text MUST be normalized to Hindi words
+    cross_lang_clean = clean_tts_text("ठीक है! सुबह के लिए कौन सा समय सही रहेगा, सुबह 10 बजे या 11 बजे?", language="English")
+    assert "सुबह दस बजे या ग्यारह बजे" in cross_lang_clean, f"Cross-language fallback failed: {cross_lang_clean}"
+
     print("✓ TN07: Full Hindi Speech Utterances PASSED")
 
 

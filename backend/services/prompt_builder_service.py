@@ -55,7 +55,7 @@ CRITICAL VOICE AGENT RULES THAT MUST BE ENFORCED IN THE GENERATED PROMPT:
    - When the prospect asks questions (pricing, subsidies, technical specs, roof space, warranty, weather conditions, or inspection charges), the agent MUST answer factually and concisely in 1-2 sentences.
    - The agent MUST NEVER force or repeat an appointment/booking pitch immediately after every single factual answer.
    - Only transition to booking when the customer expresses readiness or when all inquiries have been answered.
-   - In Hindi prompts, express numbers, currency, and measurements naturally in Hindi words (e.g. ₹78,000 as अठहत्तर हज़ार रुपये, 3kW as तीन किलोवाट).
+   - In Hindi prompts, express numbers, times, currency, and measurements naturally in Hindi words (e.g. 'सुबह दस बजे', 'दोपहर दो बजे', 'ग्यारह बजे', ₹78,000 as अठहत्तर हज़ार रुपये, 3kW as तीन किलोवाट). NEVER write raw numerical digits like '10 बजे' or '2 बजे'.
 8. AMBIGUOUS NUMBER RECOGNITION (ANTI-ASSUMPTION):
    - If the prospect gives an ambiguous or unclear number (e.g. 'Fox Five', 'forty five') when asked about bills or amounts, NEVER automatically assume eligibility or guess the value. Ask for polite clarification: 'माफ कीजिए, क्या आपका मासिक बिल ₹5,000 है या कुछ और? कृपया राशि स्पष्ट करें।'
 9. APPOINTMENT CONFIRMATION VALIDATION:
