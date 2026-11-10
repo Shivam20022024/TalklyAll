@@ -150,6 +150,32 @@ def test_ci01_clean_tts_formatting_sanitization():
     print("✓ CI01: Clean TTS Formatting Sanitization PASSED")
 
 
+def test_ci02_appointment_booking_tool_validation():
+    from routes.plivo_routes import _openai_session_update_payload
+    payload = _openai_session_update_payload(system_prompt="Test", transcription_lang="hi")
+    tools = payload["session"]["tools"]
+    tool_names = [t.get("name") for t in tools]
+    assert "end_call" in tool_names, "end_call tool missing!"
+    assert "book_appointment_slot" in tool_names, "book_appointment_slot tool missing!"
+    book_tool = next(t for t in tools if t.get("name") == "book_appointment_slot")
+    assert "slot_time" in book_tool["parameters"]["required"], "slot_time must be required!"
+    print("✓ CI02: Appointment Booking Tool Validation PASSED")
+
+
+def test_ci03_hinglish_amount_and_weather_phrases():
+    # Test natural Hindi & Hinglish expressions
+    samples = [
+        ("Mera bill 5000 hai.", "पाँच हज़ार"),
+        ("Mera bill 2500 hai.", "दो हज़ार पाँच सौ"),
+        ("2 baje slot book kar dijiye.", "दो बजे"),
+        ("Cloudy weather mein 25% generation rehta hai.", "पच्चीस प्रतिशत"),
+    ]
+    for text, expected in samples:
+        norm = normalize_for_tts(text, language="Hindi")
+        assert expected in norm, f"Failed on '{text}': expected '{expected}' in '{norm}'"
+    print("✓ CI03: Hinglish Amount & Weather Normalization PASSED")
+
+
 if __name__ == "__main__":
     print("\nRunning Talkly AI Voice Intelligence & TTS Normalization Test Suite...\n")
     test_tn01_currency_normalization()
@@ -161,6 +187,8 @@ if __name__ == "__main__":
     test_tn07_full_hindi_speech_utterances()
     test_cs01_sentence_boundary_safety()
     test_ci01_clean_tts_formatting_sanitization()
+    test_ci02_appointment_booking_tool_validation()
+    test_ci03_hinglish_amount_and_weather_phrases()
     print("\n==========================================")
-    print("ALL 9 TEST SUITES COMPLETED SUCCESSFULLY! ")
+    print("ALL 11 TEST SUITES COMPLETED SUCCESSFULLY! ")
     print("==========================================\n")

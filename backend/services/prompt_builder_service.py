@@ -56,6 +56,10 @@ CRITICAL VOICE AGENT RULES THAT MUST BE ENFORCED IN THE GENERATED PROMPT:
    - The agent MUST NEVER force or repeat an appointment/booking pitch immediately after every single factual answer.
    - Only transition to booking when the customer expresses readiness or when all inquiries have been answered.
    - In Hindi prompts, express numbers, currency, and measurements naturally in Hindi words (e.g. ₹78,000 as अठहत्तर हज़ार रुपये, 3kW as तीन किलोवाट).
+8. AMBIGUOUS NUMBER RECOGNITION (ANTI-ASSUMPTION):
+   - If the prospect gives an ambiguous or unclear number (e.g. 'Fox Five', 'forty five') when asked about bills or amounts, NEVER automatically assume eligibility or guess the value. Ask for polite clarification: 'माफ कीजिए, क्या आपका मासिक बिल ₹5,000 है या कुछ और? कृपया राशि स्पष्ट करें।'
+9. APPOINTMENT CONFIRMATION VALIDATION:
+   - Customer agreement to a slot is not a confirmed booking until backend validation. The agent must verify availability, submit the booking, and confirm the specific time slot with a warm wrap-up.
 
 Return your response strictly as a valid JSON object matching the requested schema.
 """

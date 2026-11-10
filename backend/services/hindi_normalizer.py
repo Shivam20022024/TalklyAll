@@ -210,7 +210,7 @@ def normalize_time_hindi(text: str) -> str:
         text
     )
 
-    # Matches 10:00 बजे -> दस बजे
+    # Matches 10:00 बजे, 10 बजे, 2 baje -> दस बजे, दो बजे
     def _replace_baje_time(m):
         hour = int(m.group(1))
         minute = int(m.group(2)) if m.group(2) else 0
@@ -220,7 +220,7 @@ def normalize_time_hindi(text: str) -> str:
         return f"{hour_word} बजकर {int_to_hindi(minute)} मिनट"
 
     text = re.sub(
-        r'\b(1[0-2]|0?[1-9]):([0-5][0-9])\s*बजे',
+        r'(?i)\b(1[0-2]|0?[1-9])(?::([0-5][0-9]))?\s*(?:बजे|baje(?!\w))',
         _replace_baje_time,
         text
     )

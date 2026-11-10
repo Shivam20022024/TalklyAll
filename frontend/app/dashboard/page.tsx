@@ -293,8 +293,8 @@ export default function DashboardPage() {
                     key={key}
                     onClick={() => handleIndustryChange(key)}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${isActive
-                        ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20 scale-[1.02]'
-                        : 'border border-border bg-card text-foreground/70 hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20 scale-[1.02]'
+                      : 'border border-border bg-card text-foreground/70 hover:bg-muted hover:text-foreground'
                       }`}
                   >
                     <Icon size={14} />
@@ -398,8 +398,8 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-foreground">Top Inquired Categories</h3>
             <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black border ${hasRealIntents
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                : 'bg-primary/10 text-primary border-primary/20'
+              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+              : 'bg-primary/10 text-primary border-primary/20'
               }`}>
               {hasRealIntents ? `Live Signals (${realIntents.reduce((a, b) => a + (b.count || 0), 0)} calls)` : 'Configured Taxonomy'}
             </span>
