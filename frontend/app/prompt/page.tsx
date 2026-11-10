@@ -1735,7 +1735,7 @@ export default function PromptPage() {
                           }}
                           className="rounded-lg border border-primary/50 bg-primary/20 px-3 py-1.5 text-xs font-extrabold text-primary hover:bg-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
-                          🩺 Doctor Appointment Reminder (Raya Style)
+                          🩺 Doctor Appointment Reminder
                         </button>
                         <button
                           type="button"
