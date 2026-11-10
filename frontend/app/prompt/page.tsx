@@ -239,7 +239,7 @@ Key Objectives:
     description: "Cold outreach, qualify pain points, and book 15-minute executive walkthroughs.",
     default_offering_label: "Product / Service Solution",
     offering_placeholder: "e.g. AI Workflow Automation Platform",
-    welcome_message: "Hi {{customer_name}}, this is {{company_name}} reaching out. I noticed your interest in our {{offering}} solutions. Do you have a brief moment?",
+    welcome_message: "Hi {{customer_name}}, this is {{company_name}} reaching out. I noticed your interest in our {{offering}}. Do you have a brief moment?",
     prompt: `You are an outbound sales development representative (SDR) for {{company_name}}.
 Your goal is to understand {{customer_name}}'s needs and interest regarding {{offering}} specifically, and move them toward a clear next step (e.g. a demo, trial, or purchase decision) for {{offering}}.
 

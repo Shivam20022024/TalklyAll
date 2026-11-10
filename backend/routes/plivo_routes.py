@@ -795,6 +795,11 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     welcome_text = _dedupe_adjacent_word.sub(r"\1", welcome_text)
     system_prompt = _dedupe_adjacent_word.sub(r"\1", system_prompt)
 
+    # Collapse singular/plural near-duplicates ("solution solutions", "solutions solution", "service services", "option options")
+    _dedupe_plural_word = re.compile(r"\b(\w+?)(?:s|es)?\s+\1(?:s|es)?\b", re.IGNORECASE)
+    welcome_text = _dedupe_plural_word.sub(r"\1", welcome_text)
+    system_prompt = _dedupe_plural_word.sub(r"\1", system_prompt)
+
     # Clean double currency symbols like ₹₹7000 or Rs. ₹
     welcome_text = re.sub(r"₹\s*₹", "₹", welcome_text)
     welcome_text = re.sub(r"Rs\.?\s*₹", "₹", welcome_text, flags=re.IGNORECASE)

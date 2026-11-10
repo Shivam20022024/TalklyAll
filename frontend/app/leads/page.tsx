@@ -824,7 +824,9 @@ function LeadsContent() {
                           {typeof selectedCall.analysis[key] === 'boolean'
                             ? (selectedCall.analysis[key] ? 'Yes' : 'No')
                             : typeof selectedCall.analysis[key] === 'object' && selectedCall.analysis[key] !== null
-                              ? (Array.isArray(selectedCall.analysis[key]) ? selectedCall.analysis[key].join(', ') : JSON.stringify(selectedCall.analysis[key]))
+                              ? (Array.isArray(selectedCall.analysis[key])
+                                ? selectedCall.analysis[key].map((item: any) => typeof item === 'object' && item !== null ? (item.action || item.recommendation || item.text || item.title || Object.values(item).filter(v => typeof v === 'string').join(' - ') || JSON.stringify(item)) : String(item)).join('; ')
+                                : Object.entries(selectedCall.analysis[key]).map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${typeof v === 'number' && v < 1 && v > 0 ? `${Math.round(v * 100)}%` : v}`).join(', '))
                               : String(selectedCall.analysis[key] || '-')}
                         </div>
                       </div>

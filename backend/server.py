@@ -1460,6 +1460,9 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
             welcome_text = welcome_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
         welcome_text = re.sub(r"₹\s*₹", "₹", welcome_text)
         welcome_text = re.sub(r"Rs\.?\s*₹", "₹", welcome_text, flags=re.IGNORECASE)
+        _dedupe_plural_word = re.compile(r"\b(\w+?)(?:s|es)?\s+\1(?:s|es)?\b", re.IGNORECASE)
+        welcome_text = _dedupe_plural_word.sub(r"\1", welcome_text)
+        prompt_text = _dedupe_plural_word.sub(r"\1", prompt_text)
         bolna_payload["agent_config"] = {
             "agent_welcome_message": welcome_text
         }
@@ -1728,6 +1731,8 @@ async def process_bulk_calls(contacts: list, campaign_language: str = "English",
             for ck, cv in contact.get("custom_fields", {}).items():
                 if cv is not None:
                     welcome_text = welcome_text.replace(f"{{{{{ck}}}}}", str(cv))
+            _dedupe_plural_word = re.compile(r"\b(\w+?)(?:s|es)?\s+\1(?:s|es)?\b", re.IGNORECASE)
+            welcome_text = _dedupe_plural_word.sub(r"\1", welcome_text)
             bolna_payload["agent_config"] = {
                 "agent_welcome_message": welcome_text
             }

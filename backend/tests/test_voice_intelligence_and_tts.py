@@ -221,6 +221,27 @@ def test_ci04_hinglish_language_continuity_detection():
     print("✓ CI04: Hinglish Call Language Continuity & Auto-Detection PASSED")
 
 
+def test_ci05_singular_plural_repeated_words_deduplication():
+    import re
+    _dedupe_plural_word = re.compile(r"\b(\w+?)(?:s|es)?\s+\1(?:s|es)?\b", re.IGNORECASE)
+    
+    cases = [
+        ("I noticed your interest in our HRM solution solutions. Do you have a brief moment?",
+         "I noticed your interest in our HRM solution. Do you have a brief moment?"),
+        ("Check out our software solutions solution.",
+         "Check out our software solution."),
+        ("We offer customer service services across India.",
+         "We offer customer service across India."),
+        ("Explore various loan options option.",
+         "Explore various loan option."),
+    ]
+    for raw, expected in cases:
+        deduped = _dedupe_plural_word.sub(r"\1", raw)
+        assert deduped == expected, f"Failed on '{raw}': got '{deduped}', expected '{expected}'"
+
+    print("✓ CI05: Singular/Plural Repeated Words Deduplication PASSED")
+
+
 if __name__ == "__main__":
     print("\nRunning Talkly AI Voice Intelligence & TTS Normalization Test Suite...\n")
     test_tn01_currency_normalization()
@@ -235,6 +256,7 @@ if __name__ == "__main__":
     test_ci02_appointment_booking_tool_validation()
     test_ci03_hinglish_amount_and_weather_phrases()
     test_ci04_hinglish_language_continuity_detection()
+    test_ci05_singular_plural_repeated_words_deduplication()
     print("\n==========================================")
-    print("ALL 12 TEST SUITES COMPLETED SUCCESSFULLY! ")
+    print("ALL 13 TEST SUITES COMPLETED SUCCESSFULLY! ")
     print("==========================================\n")

@@ -138,7 +138,7 @@ Key Objectives:
         "icon": "Briefcase",
         "description": "Conduct outbound B2B discovery, qualify prospect pain points, and book executive product demos.",
         "default_offering_label": "Product / Service Solution",
-        "welcome_message": "Hi {{customer_name}}, this is {{company_name}} reaching out. I noticed your interest in our {{offering}} solutions. Do you have a brief moment?",
+        "welcome_message": "Hi {{customer_name}}, this is {{company_name}} reaching out. I noticed your interest in our {{offering}}. Do you have a brief moment?",
         "prompt": """You are an outbound sales development representative (SDR) for {{company_name}}.
 Your goal is to understand {{customer_name}}'s needs and interest regarding {{offering}} specifically, and move them toward a clear next step (e.g. a demo, trial, or purchase decision) for {{offering}}.
 
