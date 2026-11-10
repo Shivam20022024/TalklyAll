@@ -10,7 +10,7 @@ INDUSTRY_TEMPLATES = {
         "icon": "Building2",
         "description": "Qualify prospective home buyers, identify budget/location preferences, and schedule on-site visits.",
         "default_offering_label": "Project / Property Name",
-        "welcome_message": "नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ। आपके {{offering}} प्रोजेक्ट की इन्क्वायरी के बारे में बात करने के लिए कॉल किया है। क्या अभी 2 मिनट बात करना convenient है?",
+        "welcome_message": "नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ। आपके {{offering}} की इन्क्वायरी के बारे में बात करने के लिए कॉल किया है। क्या अभी 2 मिनट बात करना convenient है?",
         "prompt": """आप {{company_name}} का प्रतिनिधित्व करने वाले एक अनुभवी रियल एस्टेट सेल्स कंसल्टेंट हैं।
 आपका लक्ष्य उन संभावित खरीदारों को विनम्रता से क्वालिफाई करना है जिन्होंने {{offering}} में रुचि दिखाई है, और एक साइट विज़िट शेड्यूल करना है।
 
@@ -40,7 +40,7 @@ INDUSTRY_TEMPLATES = {
         "icon": "Stethoscope",
         "description": "Book or confirm doctor appointments, share clinic timings, and collect patient visit requirements.",
         "default_offering_label": "Doctor / Clinic Specialty",
-        "welcome_message": "नमस्ते {{customer_name}}, मैं {{company_name}} से बोल रही हूँ। आपके {{offering}} के लिए अपॉइंटमेंट के सिलसिले में बात करने के लिए कॉल किया है। क्या अभी बात करने का सही समय है?",
+        "welcome_message": "नमस्ते {{customer_name}}, मैं {{company_name}} से बोल रही हूँ। आपके {{offering}} के सिलसिले में बात करने के लिए कॉल किया है। क्या अभी बात करने का सही समय है?",
         "prompt": """आप {{company_name}} के लिए एक सहानुभूतिपूर्ण, प्रोफेशनल क्लिनिक कोऑर्डिनेटर हैं।
 आपका लक्ष्य {{customer_name}} की {{location}} में {{offering}} के लिए मेडिकल कंसल्टेशन अपॉइंटमेंट बुक करने में मदद करना है।
 

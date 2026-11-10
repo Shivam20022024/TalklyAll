@@ -800,6 +800,11 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     welcome_text = _dedupe_plural_word.sub(r"\1", welcome_text)
     system_prompt = _dedupe_plural_word.sub(r"\1", system_prompt)
 
+    # Deduplicate repeated words in Hindi / Devanagari (where ASCII \b fails on Unicode ligatures)
+    _dedupe_hindi_word = re.compile(r'(?:(?<=^)|(?<=\s))(\S+)(\s+\1)+(?=\s|$)', re.IGNORECASE)
+    welcome_text = _dedupe_hindi_word.sub(r"\1", welcome_text)
+    system_prompt = _dedupe_hindi_word.sub(r"\1", system_prompt)
+
     # Clean double currency symbols like ₹₹7000 or Rs. ₹
     welcome_text = re.sub(r"₹\s*₹", "₹", welcome_text)
     welcome_text = re.sub(r"Rs\.?\s*₹", "₹", welcome_text, flags=re.IGNORECASE)

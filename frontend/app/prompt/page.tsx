@@ -66,7 +66,7 @@ const CLIENT_TEMPLATES: Record<string, IndustryTemplate> = {
     description: "Qualify home buyers, check budget & location, schedule site tours.",
     default_offering_label: "Project / Property Name",
     offering_placeholder: "e.g. Green Valley Heights / 3BHK Luxury Apartments",
-    welcome_message: "नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ। आपके {{offering}} प्रोजेक्ट की इन्क्वायरी के बारे में बात करने के लिए कॉल किया है। क्या अभी 2 मिनट बात करना convenient है?",
+    welcome_message: "नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ। आपके {{offering}} की इन्क्वायरी के बारे में बात करने के लिए कॉल किया है। क्या अभी 2 मिनट बात करना convenient है?",
     prompt: `You are an experienced real estate sales consultant representing {{company_name}}.
 Your goal is to politely qualify prospective buyers who expressed interest in {{offering}} and schedule an in-person site visit.
 
@@ -111,7 +111,7 @@ Key Objectives:
     description: "Confirm doctor appointments, clinic timings, and collect visit notes.",
     default_offering_label: "Specialty / Clinic Service",
     offering_placeholder: "e.g. Dental Checkup / Cardiology Consultation",
-    welcome_message: "नमस्ते {{customer_name}} जी, मैं {{company_name}} से बोल रही हूँ। आपके {{offering}} के लिए अपॉइंटमेंट के सिलसिले में बात करने के लिए कॉल किया है। क्या अभी बात करने का सही समय है?",
+    welcome_message: "नमस्ते {{customer_name}} जी, मैं {{company_name}} से बोल रही हूँ। आपके {{offering}} के सिलसिले में बात करने के लिए कॉल किया है। क्या अभी बात करने का सही समय है?",
     prompt: `आप {{company_name}} के लिए एक सहानुभूतिपूर्ण, विनम्र और प्रोफेशनल क्लिनिक कोऑर्डिनेटर हैं।
 आपका लक्ष्य {{customer_name}} की {{location}} में {{doctor_name}} के साथ {{offering}} के लिए मेडिकल कंसल्टेशन अपॉइंटमेंट बुक या कन्फर्म करने में मदद करना है।
 

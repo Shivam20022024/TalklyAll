@@ -224,6 +224,7 @@ def test_ci04_hinglish_language_continuity_detection():
 def test_ci05_singular_plural_repeated_words_deduplication():
     import re
     _dedupe_plural_word = re.compile(r"\b(\w+?)(?:s|es)?\s+\1(?:s|es)?\b", re.IGNORECASE)
+    _dedupe_hindi_word = re.compile(r'(?:(?<=^)|(?<=\s))(\S+)(\s+\1)+(?=\s|$)', re.IGNORECASE)
     
     cases = [
         ("I noticed your interest in our HRM solution solutions. Do you have a brief moment?",
@@ -239,7 +240,16 @@ def test_ci05_singular_plural_repeated_words_deduplication():
         deduped = _dedupe_plural_word.sub(r"\1", raw)
         assert deduped == expected, f"Failed on '{raw}': got '{deduped}', expected '{expected}'"
 
-    print("✓ CI05: Singular/Plural Repeated Words Deduplication PASSED")
+    hindi_cases = [
+        ("आपके गोदरेज प्रोजेक्ट प्रोजेक्ट की इन्क्वायरी", "आपके गोदरेज प्रोजेक्ट की इन्क्वायरी"),
+        ("यह समाधान समाधान है", "यह समाधान है"),
+        ("अपॉइंटमेंट अपॉइंटमेंट कन्फर्म हो गया", "अपॉइंटमेंट कन्फर्म हो गया"),
+    ]
+    for raw, expected in hindi_cases:
+        deduped = _dedupe_hindi_word.sub(r"\1", raw)
+        assert deduped == expected, f"Hindi dedupe failed on '{raw}': got '{deduped}', expected '{expected}'"
+
+    print("✓ CI05: Singular/Plural & Hindi Repeated Words Deduplication PASSED")
 
 
 if __name__ == "__main__":

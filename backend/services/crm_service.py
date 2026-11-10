@@ -135,20 +135,22 @@ class CRMService:
             "Appointment Booking", "Demo Booking", "Site Visit", "Demo Scheduled", "Enrollment", "Converted",
             "Doctor Consultation", "Consultation Confirmed", "Doctor Appointment", "Clinic Visit", "Slot Confirmed",
             "Loan Application", "Documentation Callback", "Sanction Request", "Pre-Approval", "Sanction Ready",
-            "Executive Walkthrough", "Product Demo", "Meeting Scheduled", "Screen-share Demo"
+            "Executive Walkthrough", "Product Demo", "Meeting Scheduled", "Screen-share Demo",
+            "अपॉइंटमेंट", "डेमो बुक", "कन्फर्म", "साइट विज़िट"
         ]
         summary_conversion_keywords = [
             "confirmed participation", "confirmed seat", "confirmed demo", "seat confirmed", "booked",
             "appointment confirmed", "scheduled demo", "masterclass confirmed", "site visit confirmed",
             "visit scheduled", "consultation confirmed", "sanction quote",
-            "document verification confirmed", "walkthrough confirmed", "screen-share confirmed", "demo booked"
+            "document verification confirmed", "walkthrough confirmed", "screen-share confirmed", "demo booked",
+            "अपॉइंटमेंट तय", "कन्फर्म", "बुक किया गया", "तय कर दिया गया", "शेड्यूल किया"
         ]
 
         lead_score = analysis_result.get("lead_score", 0)
         
         is_callback_or_busy = (
-            bool(timeline and any(cb in str(timeline).lower() for cb in ["call back", "callback", "busy", "reschedule", "later", "not interested"]))
-            or any(cb in summary for cb in ["busy", "call back later", "callback later", "reschedule", "not a good time", "requested for a call back"])
+            bool(timeline and any(cb in str(timeline).lower() for cb in ["call back", "callback", "busy", "reschedule", "later", "not interested", "व्यस्त", "बाद में", "कॉल बैक", "रुचि नहीं"]))
+            or any(cb in summary for cb in ["busy", "call back later", "callback later", "reschedule", "not a good time", "requested for a call back", "व्यस्त", "बाद में कॉल", "रुचि नहीं"])
             or any(i in ["Low Intent Lead", "Not Interested", "Busy"] for i in intents)
         )
 
