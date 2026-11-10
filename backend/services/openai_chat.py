@@ -42,7 +42,7 @@ async def stream_openai_reply(messages: list, api_key: str, model: str, client: 
         "model": model,
         "messages": messages,
         "stream": True,
-        "max_tokens": 50,
+        "max_tokens": 160,
         "temperature": 0.2,
     }
     try:
