@@ -75,7 +75,10 @@ DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
     "1. RAPID OPENER (MANDATORY): Always start your response with a natural acknowledgment "
     "ending with a period or exclamation (e.g. 'Got it.', 'I see.', 'Great.', 'Sure thing.', 'Understood.'). "
     "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
-    "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
+    "2. STRICT SINGLE QUESTION RULE (NEVER STACK QUESTIONS): Ask strictly ONE simple, concise question per turn (under 10 words). "
+    "NEVER ask multiple questions in one breath (e.g. NEVER ask 'क्या आप वीकेंड में आना चाहेंगे? और सुबह का समय ठीक रहेगा या शाम का?'). "
+    "Ask only ONE detail at a time (e.g. 'क्या आप वीकेंड में आना चाहेंगे या वीकडे में?'), then immediately STOP speaking and WAIT for the customer to reply. "
+    "Only ask about time slots (morning/evening) in a subsequent turn AFTER the customer has chosen a day!\n"
     "3. DIRECT FIRST TURN (ZERO IDENTITY RE-ASKING): You already addressed the customer by name in the opening message ('Hi yash...', 'Hello Vikash...'). "
     "When they say 'Yes', 'Yeah', 'Hello', 'Speaking', 'यह', 'यस', 'Haan', 'हाँ', 'Sure', or 'OK', their identity is ALREADY 100% confirmed. "
     "You are STRICTLY FORBIDDEN from asking 'am I speaking with [name]?', 'is this [name]?', or 'just to confirm'. NEVER re-ask their name. "
@@ -92,7 +95,10 @@ DECOUPLED_FIRST_WORD_DIRECTIVE_HI = (
     "Do NOT force repetitive, robotic words like 'समझ गया' at the beginning of your responses. "
     "When connecting your response, use short, warm, gender-neutral phrases like 'जी बिल्कुल, ', 'जी, ', 'बहुत बढ़िया, ', 'ज़रूर, ' ending with a comma (,) so speech flows seamlessly into your question without awkward dead pauses. "
     "If the customer just said 'हाँ बताइए', 'बोलिए', or 'Hello', do NOT say 'समझ गया' - simply say 'जी, क्या आप...' and continue naturally.\n"
-    "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
+    "2. STRICT SINGLE QUESTION RULE (NEVER STACK QUESTIONS): Ask strictly ONE simple, concise question per turn (under 10 words). "
+    "NEVER ask multiple questions in one breath (e.g. NEVER ask 'क्या आप वीकेंड में आना चाहेंगे? और सुबह का समय ठीक रहेगा या शाम का?'). "
+    "Ask only ONE detail at a time (e.g. 'क्या आप वीकेंड में आना चाहेंगे या वीकडे में?'), then immediately STOP speaking and WAIT for the customer to reply. "
+    "Only ask about time slots (morning/evening) in a subsequent turn AFTER the customer has chosen a day!\n"
     "3. DIRECT FIRST TURN (पहचान दोबारा पूछना सख्त मना है): आपने वेलकम मैसेज में ग्राहक का नाम पहले ही ले लिया है ('नमस्ते यश...', 'Hi yash...'). "
     "जब ग्राहक 'हाँ', 'Haan', 'Yes', 'यह', 'यस', 'जी', 'बोलिए', 'Hello' या कोई भी जवाब दे, तो पहचान पूरी तरह कन्फर्म है। "
     "कभी भी 'क्या मेरी बात [नाम] से हो रही है?' या 'Just to confirm, am I speaking with [name]' दोबारा मत पूछिए। "
@@ -616,6 +622,18 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         f"({wait_rem:.2f}s remaining). Processing immediately upon welcome completion..."
                     )
                     await asyncio.sleep(wait_rem)
+                elif not is_welcome_turn and now < agent_speaking_until:
+                    # Customer spoke while AI was still audibly playing on Plivo line - execute clean barge-in
+                    safe_print(
+                        f"[DECOUPLED BARGE-IN]: Customer spoke ('{customer_text}') while AI was audibly speaking "
+                        f"({agent_speaking_until - now:.2f}s remaining). Clearing Plivo audio buffer immediately..."
+                    )
+                    try:
+                        await websocket.send_text(json.dumps({"event": "clearAudio"}))
+                    except Exception as ce:
+                        safe_print(f"[DECOUPLED BARGE-IN ERROR]: Failed to send clearAudio: {ce}")
+                    agent_speaking_until = time.time()
+                    await asyncio.sleep(0.12)
 
                 async with turn_lock:
                     turn_start = time.time()
