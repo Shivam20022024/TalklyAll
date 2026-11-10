@@ -407,8 +407,8 @@ export default function DashboardPage() {
             <span>Top conversion driver:</span>
             <span className="font-semibold text-foreground">
               {convertedLeads > 0
-                ? (config.intentDistribution[0]?.label || 'High Intent')
-                : `${config.intentDistribution[0]?.label || 'High Intent'} (Target)`}
+                ? (realIntents[0]?.label || config.intentDistribution[0]?.label || 'High Intent')
+                : 'Awaiting first call'}
             </span>
           </div>
         </article>
@@ -422,9 +422,9 @@ export default function DashboardPage() {
             <h3 className="text-sm font-black text-foreground">Top Inquired Categories</h3>
             <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black border ${hasRealIntents
               ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-              : 'bg-primary/10 text-primary border-primary/20'
+              : 'bg-muted text-muted-foreground border-border'
               }`}>
-              {hasRealIntents ? `Live Signals (${realIntents.reduce((a, b) => a + (b.count || 0), 0)} calls)` : 'Configured Taxonomy'}
+              {hasRealIntents ? `Live Signals (${realIntents.reduce((a, b) => a + (b.count || 0), 0)} calls)` : '0 Calls Analyzed'}
             </span>
           </div>
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
@@ -437,6 +437,7 @@ export default function DashboardPage() {
             {(hasRealIntents ? realIntents : config.intentDistribution).map((item, idx) => {
               const defaultColors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500']
               const colorClass = item.color || defaultColors[idx % defaultColors.length]
+              const displayPct = hasRealIntents ? item.pct : 0
               return (
                 <div key={item.label}>
                   <div className="flex items-center justify-between text-xs mb-1">
@@ -445,13 +446,13 @@ export default function DashboardPage() {
                       <span className="font-bold text-foreground truncate">{item.label}</span>
                     </div>
                     <span className="font-black text-foreground ml-2 shrink-0">
-                      {item.pct}%{item.count ? ` (${item.count})` : ''}
+                      {hasRealIntents ? `${item.pct}%${item.count ? ` (${item.count})` : ''}` : '0% (0 calls)'}
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
-                      style={{ width: `${Math.min(Math.max(item.pct, 2), 100)}%` }}
+                      style={{ width: `${hasRealIntents ? Math.min(Math.max(item.pct, 2), 100) : 0}%` }}
                     />
                   </div>
                 </div>
@@ -462,7 +463,7 @@ export default function DashboardPage() {
           {!hasRealIntents && (
             <div className="mt-4 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
               <Activity size={13} className="shrink-0 text-primary stroke-[2.5]" />
-              <span>Live breakdown updates automatically as {config.shortLabel} calls are analyzed.</span>
+              <span>No calls analyzed yet. Breakdown updates automatically as {config.shortLabel} calls are analyzed.</span>
             </div>
           )}
         </article>
