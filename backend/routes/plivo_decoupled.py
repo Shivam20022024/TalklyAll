@@ -234,12 +234,13 @@ def prewarm_decoupled_greeting(
     return task
 
 
-def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = False) -> str:
+def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = False, language: str = "Hindi") -> str:
     """
     Sanitize text before speech synthesis so TTS never pronounces formatting artifacts
     like 'underscore', 'asterisk', or placeholder leaks like 'customer_name'.
     On mid-call turns (is_subsequent=True), also strips repetitive customer name vocatives,
     while NEVER stripping the customer name during identity verification or questions.
+    Dynamically normalizes numbers, currency, dates, measurements and times into Hindi words for Hindi/Hinglish TTS.
     """
     if not text:
         return ""
@@ -273,16 +274,25 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
 
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # Dynamic Hindi normalization for TTS if language is Hindi/Hinglish
+    if language:
+        try:
+            from services.hindi_normalizer import normalize_for_tts
+            cleaned = normalize_for_tts(cleaned, language=language)
+        except Exception as norm_err:
+            logger.warning(f"[clean_tts_text] Hindi normalizer error: {norm_err}")
+
     if cleaned and cleaned[0].islower():
         cleaned = cleaned[0].upper() + cleaned[1:]
     return cleaned
 
 
-async def _speak_and_forward(websocket: WebSocket, tts_session: Any, text: str, customer_name: str = "", is_subsequent: bool = False) -> float:
+async def _speak_and_forward(websocket: WebSocket, tts_session: Any, text: str, customer_name: str = "", is_subsequent: bool = False, language: str = "Hindi") -> float:
     """Synthesizes text via Sarvam/Bakbak streaming and forwards every resulting chunk to
     Plivo as a playAudio event - identical wire format to the existing
     sarvam_tts_worker in plivo_routes.py. Returns total audio duration in seconds."""
-    text = clean_tts_text(text, customer_name, is_subsequent=is_subsequent)
+    text = clean_tts_text(text, customer_name, is_subsequent=is_subsequent, language=language)
     if not text:
         return 0.0
     total_audio_sec = 0.0
@@ -334,6 +344,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     # speech_to_text_realtime_streaming.connect() language_code signature.
     # Detect pipeline language strictly from whether welcome_text is in Hindi/Devanagari
     is_hindi_pipeline = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
+    call_lang = ctx.get("call_lang") or ("Hindi" if is_hindi_pipeline else "English")
     directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI if is_hindi_pipeline else DECOUPLED_FIRST_WORD_DIRECTIVE_EN
 
     _sarvam_stt_lang_map = {"en": "en-IN", "hi": "hi-IN"}
@@ -420,13 +431,13 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             safe_print(f"[DECOUPLED]: No prewarm found for call_id={call_id}, synthesizing on-the-fly...")
             sentences = [s.strip() for s in re.split(r'(?<=[।?!.])\s+', welcome_text) if s.strip()]
             if len(sentences) > 1:
-                dur1 = await _speak_and_forward(websocket, tts_session, sentences[0])
+                dur1 = await _speak_and_forward(websocket, tts_session, sentences[0], customer_name, is_subsequent=False, language=call_lang)
                 welcome_duration += dur1
                 for rem in sentences[1:]:
-                    dur_rem = await _speak_and_forward(websocket, tts_session, rem)
+                    dur_rem = await _speak_and_forward(websocket, tts_session, rem, customer_name, is_subsequent=False, language=call_lang)
                     welcome_duration += dur_rem
             else:
-                welcome_duration = await _speak_and_forward(websocket, tts_session, welcome_text)
+                welcome_duration = await _speak_and_forward(websocket, tts_session, welcome_text, customer_name, is_subsequent=False, language=call_lang)
 
         if welcome_text:
             # Add a 0.5s network buffer to ensure Plivo carrier has finished playing out the audio
@@ -588,7 +599,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                                 safe_print(f"[DECOUPLED LATENCY]: OpenAI first clause ready in {first_sentence_ready_at - turn_start:.2f}s: '{first_sent_text}'")
                                 # Run TTS concurrently in background so OpenAI generation is not stalled
                                 first_audio_task = asyncio.create_task(
-                                    _speak_and_forward(websocket, tts_session, first_sent_text, customer_name, is_subsequent=True)
+                                    _speak_and_forward(websocket, tts_session, first_sent_text, customer_name, is_subsequent=True, language=call_lang)
                                 )
 
                     full_reply = full_reply.strip()
@@ -598,7 +609,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                             await first_audio_task
                         return
 
-                    clean_full_reply = clean_tts_text(full_reply, customer_name, is_subsequent=True)
+                    clean_full_reply = clean_tts_text(full_reply, customer_name, is_subsequent=True, language=call_lang)
                     safe_print(f"[AI SPEECH][DECOUPLED]: {clean_full_reply}")
                     messages.append({"role": "assistant", "content": clean_full_reply})
                     transcript_parts.append(f"AI: {clean_full_reply}")
@@ -610,10 +621,10 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         safe_print(f"[DECOUPLED LATENCY]: TTS first-clause audio sent ({dur1:.2f}s), total latency={time.time() - turn_start:.2f}s")
                         remaining_text = full_reply[remainder_start:].strip()
                         if remaining_text:
-                            dur2 = await _speak_and_forward(websocket, tts_session, remaining_text, customer_name, is_subsequent=True)
+                            dur2 = await _speak_and_forward(websocket, tts_session, remaining_text, customer_name, is_subsequent=True, language=call_lang)
                             agent_speaking_until = max(agent_speaking_until, time.time()) + dur2 + 0.1
                     else:
-                        dur3 = await _speak_and_forward(websocket, tts_session, clean_full_reply, customer_name, is_subsequent=True)
+                        dur3 = await _speak_and_forward(websocket, tts_session, clean_full_reply, customer_name, is_subsequent=True, language=call_lang)
                         agent_speaking_until = max(agent_speaking_until, time.time()) + dur3 + 0.1
 
                     reply_lower = clean_full_reply.lower()
@@ -684,7 +695,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     if len(transcript_parts) == 1 and not hangup_triggered:
                         transcript_parts.append(f"AI: {prompt_line}")
                         messages.append({"role": "assistant", "content": prompt_line})
-                        dur = await _speak_and_forward(websocket, tts_session, prompt_line, cname)
+                        dur = await _speak_and_forward(websocket, tts_session, prompt_line, cname, is_subsequent=True, language=call_lang)
                         agent_speaking_until = max(agent_speaking_until, time.time()) + dur + 0.3
                         await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
 

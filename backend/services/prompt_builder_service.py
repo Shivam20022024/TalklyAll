@@ -45,6 +45,17 @@ CRITICAL VOICE AGENT RULES THAT MUST BE ENFORCED IN THE GENERATED PROMPT:
      * key: "city", label: "City", placeholder: "City name"
      * key: "shop_timings", label: "Shop Timings", placeholder: "Opening hours"
      * key: "contact_number", label: "Contact Number", placeholder: "Store contact number"
+6. KNOWLEDGE BASE & FACT GROUNDING (CRITICAL FOR ACCURATE LIVE CALL ANSWERS):
+   - If Knowledge Base, FAQs, pricing, policies, or specific facts are provided:
+     * Extract and format them cleanly under "knowledge_base" in the JSON schema (as a clear Q&A / factual bullet list).
+     * Embed a designated "KNOWLEDGE BASE & VERIFIED FACTS" section into BOTH the outbound "prompt" and "inbound_prompt".
+     * Add this explicit rule in the prompt: "When the caller asks about pricing, policies, timings, warranty, or company facts, answer concisely (1-2 sentences) using the Knowledge Base above. If an answer is NOT in the Knowledge Base, DO NOT invent or guess; politely say a specialist will verify and share details on WhatsApp."
+
+7. INFORMATION ASSISTANCE VS APPOINTMENT BOOKING (ANTI-LOOPING & NATURAL FLOW):
+   - When the prospect asks questions (pricing, subsidies, technical specs, roof space, warranty, weather conditions, or inspection charges), the agent MUST answer factually and concisely in 1-2 sentences.
+   - The agent MUST NEVER force or repeat an appointment/booking pitch immediately after every single factual answer.
+   - Only transition to booking when the customer expresses readiness or when all inquiries have been answered.
+   - In Hindi prompts, express numbers, currency, and measurements naturally in Hindi words (e.g. ₹78,000 as अठहत्तर हज़ार रुपये, 3kW as तीन किलोवाट).
 
 Return your response strictly as a valid JSON object matching the requested schema.
 """
@@ -64,6 +75,9 @@ Brief / SOP / Knowledge Base:
 
 Primary Call Objective:
 {primary_objective}
+
+Knowledge Base / FAQs / Policies / Facts:
+{knowledge_base}
 
 Must-Ask Qualification Questions:
 {must_ask_questions}
@@ -88,6 +102,7 @@ Closing Call-to-Action:
   "inbound_prompt": "Full inbound system prompt matching company's offerings and helpline workflow (in matching language).",
   "default_offering_label": "Label for the offering field (e.g. Solar System Capacity, Vehicle Model, Course Track)",
   "offering_placeholder": "Placeholder text for the offering (e.g. 5kW Rooftop Solar)",
+  "knowledge_base": "Curated FAQs, policies, pricing, and key verified facts (Q&A format or bullet points)",
   "suggested_variables": ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", ...additional vertical variables],
   "specific_variables": [
     {{"key": "variable_name", "label": "Human Label", "placeholder": "Example value"}}
@@ -108,6 +123,7 @@ class PromptBuilderService:
         voice_tone = brief.get("voice_tone", "Warm, professional, consultative").strip() or "Warm, professional, consultative"
 
         sop_or_brief = brief.get("sop_or_brief", "").strip() or "Standard consultative outbound qualification."
+        knowledge_base = brief.get("knowledge_base", "").strip() or ""
         primary_objective = brief.get("primary_objective", "").strip() or "Qualify prospect interest and schedule a follow-up consultation or demo."
 
         must_ask = brief.get("must_ask_questions", "")
@@ -135,6 +151,7 @@ class PromptBuilderService:
             language=language,
             voice_tone=voice_tone,
             sop_or_brief=sop_or_brief,
+            knowledge_base=knowledge_base or "General company policies, verified offerings, and service details.",
             primary_objective=primary_objective,
             must_ask_questions=must_ask_text,
             offerings_and_usps=offerings_and_usps,
@@ -233,6 +250,11 @@ class PromptBuilderService:
                 ),
                 "default_offering_label": "Product / Service Offering",
                 "offering_placeholder": f"e.g. {offerings_and_usps.split(',')[0] if offerings_and_usps else 'Standard Service'}",
+                "knowledge_base": knowledge_base or (
+                    f"Q: What is the offering? A: {{{{offering}}}}.\n"
+                    f"Q: Where is this available? A: {{{{location}}}}.\n"
+                    f"Q: How can I get more details? A: Our specialist will share the complete details and brochure."
+                ),
                 "suggested_variables": ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", "{{shop_address}}"],
                 "specific_variables": [
                     {"key": "shop_address", "label": "Shop Address", "placeholder": "Enter complete shop address"},
@@ -261,6 +283,24 @@ class PromptBuilderService:
                 "placeholder": sv.get("placeholder") or f"e.g. {k}"
             })
         result["specific_variables"] = cleaned_specific
+
+        # Format and ensure knowledge_base exists on result
+        kb_val = result.get("knowledge_base") or knowledge_base or ""
+        if isinstance(kb_val, list):
+            kb_val = "\n".join([str(item) for item in kb_val])
+        result["knowledge_base"] = str(kb_val).strip()
+
+        # If knowledge_base exists, ensure prompt embeds the structured knowledge section
+        if result["knowledge_base"] and "KNOWLEDGE BASE & VERIFIED FACTS" not in result.get("prompt", ""):
+            kb_block = (
+                f"\n\n--- KNOWLEDGE BASE & VERIFIED FACTS ---\n"
+                f"{result['knowledge_base']}\n\n"
+                f"Rule for Caller Questions: Use the Knowledge Base above to answer accurately in 1-2 concise sentences. If an answer is not in this Knowledge Base, do not guess; state that a team member will follow up with verified information."
+            )
+            if "prompt" in result:
+                result["prompt"] += kb_block
+            if "inbound_prompt" in result and "KNOWLEDGE BASE & VERIFIED FACTS" not in result.get("inbound_prompt", ""):
+                result["inbound_prompt"] += kb_block
 
         # Normalize template_id
         raw_id = result.get("template_id") or "custom_agent"

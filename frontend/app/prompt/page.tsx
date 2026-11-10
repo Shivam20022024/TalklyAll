@@ -31,7 +31,10 @@ import {
   FileText,
   Check,
   Plus,
-  Wand2
+  Wand2,
+  BookOpen,
+  Paperclip,
+  Upload
 } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi } from '@/lib/api'
@@ -52,6 +55,7 @@ interface IndustryTemplate {
   inbound_prompt: string
   variables: string[]
   specific_variables?: { key: string; label: string; placeholder: string }[]
+  knowledge_base?: string
 }
 
 const CLIENT_TEMPLATES: Record<string, IndustryTemplate> = {
@@ -388,6 +392,7 @@ export default function PromptPage() {
   const [welcomeMessage, setWelcomeMessage] = useState("")
   const [inboundPromptText, setInboundPromptText] = useState("")
   const [inboundWelcomeMessage, setInboundWelcomeMessage] = useState("")
+  const [knowledgeBase, setKnowledgeBase] = useState("")
   const [offering, setOffering] = useState("")
   const [location, setLocation] = useState("")
   const [industryVariables, setIndustryVariables] = useState<Record<string, string>>({})
@@ -439,7 +444,40 @@ export default function PromptPage() {
   const [wizardMustAskQuestions, setWizardMustAskQuestions] = useState('')
   const [wizardOfferingsUsps, setWizardOfferingsUsps] = useState('')
   const [wizardObjections, setWizardObjections] = useState('')
+  const [wizardKnowledgeBase, setWizardKnowledgeBase] = useState('')
   const [wizardClosingCta, setWizardClosingCta] = useState('')
+  const [uploadingKnowledgeFile, setUploadingKnowledgeFile] = useState(false)
+  const knowledgeFileInputRef = useRef<HTMLInputElement | null>(null)
+  const wizardKnowledgeFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleUploadKnowledgeFile = async (e: React.ChangeEvent<HTMLInputElement>, target: 'studio' | 'wizard' = 'studio') => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingKnowledgeFile(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetchApi('/api/v1/prompt/parse-knowledge-file', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (res && res.extracted_text) {
+        if (target === 'wizard') {
+          setWizardKnowledgeBase(prev => prev ? `${prev}\n\n${res.extracted_text}` : res.extracted_text)
+        } else {
+          setKnowledgeBase(prev => prev ? `${prev}\n\n${res.extracted_text}` : res.extracted_text)
+        }
+        alert(`✅ Extracted knowledge from "${res.filename}"! Added ${res.character_count.toLocaleString()} characters of verified facts into the Knowledge Base.`)
+      }
+    } catch (err: any) {
+      alert(`Failed to parse file: ${err.message || 'Error processing document'}`)
+    } finally {
+      setUploadingKnowledgeFile(false)
+      if (e.target) e.target.value = ''
+    }
+  }
 
   // Initial load guard ref - only initialize once on mount
   const isInitializedRef = useRef(false)
@@ -496,6 +534,7 @@ export default function PromptPage() {
         setWelcomeMessage(data.welcome_message || fallback?.welcome_message || '')
         setInboundPromptText(data.inbound_prompt || fallback?.inbound_prompt || '')
         setInboundWelcomeMessage(data.inbound_welcome_message || fallback?.inbound_welcome_message || '')
+        setKnowledgeBase(data.knowledge_base || fallback?.knowledge_base || '')
         setOffering(data.offering || '')
         setLocation(data.location || '')
         setIndustryVariables(data.variables || {})
@@ -516,6 +555,7 @@ export default function PromptPage() {
         setWelcomeMessage(fallbackTmpl.welcome_message)
         setInboundPromptText(fallbackTmpl.inbound_prompt)
         setInboundWelcomeMessage(fallbackTmpl.inbound_welcome_message)
+        setKnowledgeBase(fallbackTmpl.knowledge_base || '')
         setPromptStatus('Draft')
       }
     } finally {
@@ -562,6 +602,7 @@ export default function PromptPage() {
         must_ask_questions: wizardMustAskQuestions.trim(),
         offerings_and_usps: wizardOfferingsUsps.trim(),
         objections_playbook: wizardObjections.trim(),
+        knowledge_base: wizardKnowledgeBase.trim(),
         closing_call_to_action: wizardClosingCta.trim(),
         save_immediately: true
       }
@@ -589,6 +630,7 @@ export default function PromptPage() {
               prompt: t.prompt,
               inbound_welcome_message: t.inbound_welcome_message,
               inbound_prompt: t.inbound_prompt,
+              knowledge_base: t.knowledge_base || wizardKnowledgeBase.trim() || '',
               variables: t.suggested_variables || ["{{company_name}}", "{{customer_name}}", "{{offering}}"],
               specific_variables: t.specific_variables || []
             }
@@ -609,6 +651,7 @@ export default function PromptPage() {
         setWelcomeMessage(t.welcome_message)
         setInboundPromptText(t.inbound_prompt || '')
         setInboundWelcomeMessage(t.inbound_welcome_message || '')
+        setKnowledgeBase(t.knowledge_base || wizardKnowledgeBase.trim() || '')
         setOffering(t.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || '')
         setPromptStatus('Draft')
         setShowAutoBuildWizard(false)
@@ -646,6 +689,7 @@ export default function PromptPage() {
       setWelcomeMessage(tmpl.welcome_message)
       setInboundPromptText(tmpl.inbound_prompt)
       setInboundWelcomeMessage(tmpl.inbound_welcome_message)
+      setKnowledgeBase(tmpl.knowledge_base || '')
       setPromptStatus('Draft')
     }
   }
@@ -668,6 +712,7 @@ export default function PromptPage() {
           welcome_message: welcomeMessage,
           inbound_prompt: inboundPromptText,
           inbound_welcome_message: inboundWelcomeMessage,
+          knowledge_base: knowledgeBase,
           industry: selectedIndustry,
           offering: offering,
           location: location,
@@ -696,6 +741,7 @@ export default function PromptPage() {
           welcome_message: welcomeMessage,
           inbound_prompt: inboundPromptText,
           inbound_welcome_message: inboundWelcomeMessage,
+          knowledge_base: knowledgeBase,
           industry: selectedIndustry,
           offering: offering,
           location: location,
@@ -1243,6 +1289,61 @@ export default function PromptPage() {
                   onChange={(next) => activeDirection === 'outbound' ? setPromptText(next) : setInboundPromptText(next)}
                   placeholderRole={`You are a professional representative for {{company_name}}, handling ${activeDirection === 'outbound' ? 'outbound' : 'inbound'} calls.`}
                 />
+              </div>
+
+              {/* Agent Knowledge Base Section */}
+              <div className="border-t border-border pt-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <BookOpen size={16} className="text-primary" /> Agent Knowledge Base & Verified FAQs
+                    </h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Company FAQs, pricing, policies, and product details. The AI agent references this during calls to answer caller questions accurately without hallucinating.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      ref={knowledgeFileInputRef}
+                      onChange={(e) => handleUploadKnowledgeFile(e, 'studio')}
+                      accept=".pdf,.xlsx,.xls,.csv,.txt"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => knowledgeFileInputRef.current?.click()}
+                      disabled={uploadingKnowledgeFile}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 hover:bg-muted px-2.5 py-1 text-xs font-semibold text-foreground transition-all cursor-pointer shadow-sm hover:border-primary/50"
+                      title="Upload PDF brochure, Excel pricing/FAQ sheet, or CSV"
+                    >
+                      {uploadingKnowledgeFile ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin text-primary" />
+                          <span>Extracting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Paperclip size={13} className="text-primary" />
+                          <span>Upload PDF / Excel</span>
+                        </>
+                      )}
+                    </button>
+                    <span className="self-start sm:self-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                      Active for Live Calls
+                    </span>
+                  </div>
+                </div>
+                <textarea
+                  value={knowledgeBase}
+                  onChange={(e) => setKnowledgeBase(e.target.value)}
+                  className="w-full resize-y rounded-xl border border-border bg-background p-4 text-xs font-mono leading-relaxed outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 min-h-[120px]"
+                  placeholder={`e.g.\nQ: What is the refund or cancellation policy?\nA: We offer a 100% full refund within 7 days of purchase.\n\nQ: What are the office or store timings?\nA: Monday to Saturday from 9:30 AM to 7:00 PM. Sunday closed.\n\nQ: Are there any hidden fees or charges?\nA: No, all pricing is completely transparent with zero hidden costs.\n\nQ: What documents are required for application?\nA: Only Aadhaar card and latest utility bill.`}
+                />
+                <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>Write simple Q&A pairs, bullet points, or policies. The agent will speak answers naturally in the call language.</span>
+                  <span className="font-mono text-[10px] opacity-75">{knowledgeBase.length} characters</span>
+                </div>
               </div>
             </div>
           </section>
@@ -1810,6 +1911,53 @@ export default function PromptPage() {
                         />
                       </div>
                     </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-foreground">
+                          Knowledge Base & Verified FAQs (Optional)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="file"
+                            ref={wizardKnowledgeFileInputRef}
+                            onChange={(e) => handleUploadKnowledgeFile(e, 'wizard')}
+                            accept=".pdf,.xlsx,.xls,.csv,.txt"
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => wizardKnowledgeFileInputRef.current?.click()}
+                            disabled={uploadingKnowledgeFile}
+                            className="inline-flex items-center gap-1 rounded border border-border bg-background hover:bg-muted px-2 py-0.5 text-[11px] font-semibold text-primary transition-all cursor-pointer"
+                            title="Upload PDF or Excel document"
+                          >
+                            {uploadingKnowledgeFile ? (
+                              <>
+                                <Loader2 size={11} className="animate-spin" />
+                                <span>Reading...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Paperclip size={11} />
+                                <span>Upload PDF / Excel</span>
+                              </>
+                            )}
+                          </button>
+                          <span className="text-[10px] text-primary font-semibold hidden sm:flex items-center gap-1">
+                            <Sparkles size={11} /> Grounded facts & policies
+                          </span>
+                        </div>
+                      </div>
+                      <textarea
+                        value={wizardKnowledgeBase}
+                        onChange={(e) => setWizardKnowledgeBase(e.target.value)}
+                        placeholder="Paste FAQs, product specs, pricing, warranties, or refund policies. The agent will use this knowledge to answer customer questions factually during live calls.&#10;&#10;e.g.&#10;Q: What is the refund policy? A: Full refund within 7 days.&#10;Q: How much is the installation fee? A: Zero installation charges with subsidy.&#10;Q: What documents are required? A: Electricity bill and property ID."
+                        rows={3}
+                        className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary font-mono"
+                      />
+                      <p className="mt-1 text-[11px] text-muted-foreground">The AI will use these verified facts to answer caller questions without hallucinating.</p>
+                    </div>
                   </div>
                 )}
 
@@ -1841,6 +1989,12 @@ export default function PromptPage() {
                       <div className="text-xs pt-1 border-t border-border/50">
                         <span className="text-muted-foreground font-semibold">Goal:</span> <span className="font-bold">{wizardPrimaryObjective || 'Consultative qualification'}</span>
                       </div>
+                      {wizardKnowledgeBase.trim() && (
+                        <div className="text-xs pt-1 border-t border-border/50 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
+                          <CheckCircle2 size={13} />
+                          <span>Knowledge Base attached ({wizardKnowledgeBase.trim().split('\n').filter(Boolean).length} entries)</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-2">

@@ -27,17 +27,21 @@ export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
   const { requireAuth = true, headers, ...customConfig } = options;
   const token = getAuthToken();
 
-  const config: RequestInit = {
-    ...customConfig,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers,
-    },
+  const isFormData = typeof FormData !== 'undefined' && customConfig.body instanceof FormData;
+
+  const reqHeaders: Record<string, string> = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(headers as Record<string, string>),
   };
 
   if (requireAuth && token) {
-    (config.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    reqHeaders['Authorization'] = `Bearer ${token}`;
   }
+
+  const config: RequestInit = {
+    ...customConfig,
+    headers: reqHeaders,
+  };
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
   
@@ -51,7 +55,14 @@ export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.detail || data.message || 'An error occurred');
+    const errDetail = typeof data.detail === 'string'
+      ? data.detail
+      : Array.isArray(data.detail)
+        ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+        : (typeof data.detail === 'object' && data.detail !== null)
+          ? JSON.stringify(data.detail)
+          : data.message || 'An error occurred';
+    throw new Error(errDetail);
   }
 
   return data;

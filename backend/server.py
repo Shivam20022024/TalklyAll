@@ -304,6 +304,15 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
         merged_vars.update(ind_entry["variables"])
     variables = merged_vars
 
+    kb = (
+        ind_entry.get("draft_knowledge_base")
+        or ind_entry.get("published_knowledge_base")
+        or ind_entry.get("knowledge_base")
+        or template_def.get("knowledge_base")
+        or (doc.get("knowledge_base") if doc and doc.get("industry") == active_ind else "")
+        or ""
+    )
+
     return {
         "status": "success",
         "industry": active_ind,
@@ -320,6 +329,7 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
         "inbound_welcome_message": draft_inbound_welcome or published_inbound_welcome or default_inbound_welcome,
         "published_inbound_prompt": published_inbound,
         "published_inbound_welcome_message": published_inbound_welcome,
+        "knowledge_base": kb,
         "prompt_status": status or ("Published" if published else "Draft"),
         "published_at": ind_entry.get("published_at") or (doc.get("published_at") if doc else None),
         "offering": offering,
@@ -353,6 +363,7 @@ async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(re
     offering = payload.get("offering")
     location = payload.get("location")
     variables = payload.get("variables")
+    knowledge_base = payload.get("knowledge_base")
 
     now = datetime.utcnow()
     ind_update = {
@@ -363,6 +374,9 @@ async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(re
         f"industry_prompts.{industry}.status": "Draft",
         f"industry_prompts.{industry}.updated_at": now,
     }
+    if knowledge_base is not None:
+        ind_update[f"industry_prompts.{industry}.draft_knowledge_base"] = str(knowledge_base).strip()
+        ind_update[f"industry_prompts.{industry}.knowledge_base"] = str(knowledge_base).strip()
     if inbound_prompt is not None:
         ind_update[f"industry_prompts.{industry}.draft_inbound_prompt"] = inbound_prompt
         ind_update[f"industry_prompts.{industry}.inbound_prompt"] = inbound_prompt
@@ -398,6 +412,9 @@ async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(re
     if inbound_welcome_message is not None:
         ind_update["draft_inbound_welcome_message"] = inbound_welcome_message
         ind_update["inbound_welcome_message"] = inbound_welcome_message
+    if knowledge_base is not None:
+        ind_update["draft_knowledge_base"] = str(knowledge_base).strip()
+        ind_update["knowledge_base"] = str(knowledge_base).strip()
 
     await db.prompts.update_one(
         {"company_id": current_user["company_id"]},
@@ -412,6 +429,9 @@ async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(re
             "custom_templates.$.draft_welcome_message": welcome_message,
             "custom_templates.$.updated_at": now.isoformat()
         }
+        if knowledge_base is not None:
+            custom_patch["custom_templates.$.knowledge_base"] = str(knowledge_base).strip()
+            custom_patch["custom_templates.$.draft_knowledge_base"] = str(knowledge_base).strip()
         if inbound_prompt is not None:
             custom_patch["custom_templates.$.inbound_prompt"] = inbound_prompt
             custom_patch["custom_templates.$.draft_inbound_prompt"] = inbound_prompt
@@ -447,6 +467,14 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
     offering = payload.get("offering") or ind_entry.get("offering") or (doc or {}).get("offering") or ""
     location = payload.get("location") or ind_entry.get("location") or (doc or {}).get("location") or ""
     variables = payload.get("variables") or ind_entry.get("variables") or (doc or {}).get("variables") or {}
+    knowledge_base = (
+        payload.get("knowledge_base")
+        or ind_entry.get("draft_knowledge_base")
+        or ind_entry.get("knowledge_base")
+        or (doc or {}).get("draft_knowledge_base")
+        or (doc or {}).get("knowledge_base")
+        or ""
+    )
 
     if not prompt:
         raise HTTPException(status_code=400, detail="Nothing to publish - save a draft first")
@@ -490,6 +518,8 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
         f"industry_prompts.{industry}.offering": str(offering).strip() if offering else "",
         f"industry_prompts.{industry}.location": str(location).strip() if location else "",
         f"industry_prompts.{industry}.variables": variables,
+        f"industry_prompts.{industry}.knowledge_base": str(knowledge_base).strip(),
+        f"industry_prompts.{industry}.published_knowledge_base": str(knowledge_base).strip(),
         f"industry_prompts.{industry}.status": "Published",
         f"industry_prompts.{industry}.published_at": now,
         f"industry_prompts.{industry}.updated_at": now,
@@ -506,6 +536,8 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
         "draft_inbound_welcome_message": inbound_welcome,
         "inbound_prompt": inbound_prompt,
         "inbound_welcome_message": inbound_welcome,
+        "knowledge_base": str(knowledge_base).strip(),
+        "published_knowledge_base": str(knowledge_base).strip(),
         "offering": str(offering).strip() if offering else "",
         "location": str(location).strip() if location else "",
         "variables": variables,
@@ -533,6 +565,8 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
                     "custom_templates.$.published_inbound_prompt": inbound_prompt,
                     "custom_templates.$.inbound_welcome_message": inbound_welcome,
                     "custom_templates.$.published_inbound_welcome_message": inbound_welcome,
+                    "custom_templates.$.knowledge_base": str(knowledge_base).strip(),
+                    "custom_templates.$.published_knowledge_base": str(knowledge_base).strip(),
                     "custom_templates.$.variables": [f"{{{{{k.replace('{','').replace('}','')}}}}}" for k in variables.keys()] if isinstance(variables, dict) else (list(variables) if variables else ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}"]),
                     "custom_templates.$.published_at": now.isoformat(),
                     "custom_templates.$.updated_at": now.isoformat()
@@ -581,6 +615,7 @@ async def auto_build_agent_prompt(payload: dict = Body(...), current_user: dict 
             "prompt": generated["prompt"],
             "inbound_welcome_message": generated.get("inbound_welcome_message", ""),
             "inbound_prompt": generated.get("inbound_prompt", ""),
+            "knowledge_base": generated.get("knowledge_base", ""),
             "variables": generated.get("suggested_variables", ["{{company_name}}", "{{customer_name}}", "{{offering}}"]),
             "specific_variables": generated.get("specific_variables", []),
             "created_at": now.isoformat()
@@ -596,6 +631,8 @@ async def auto_build_agent_prompt(payload: dict = Body(...), current_user: dict 
             f"industry_prompts.{t_id}.draft_inbound_prompt": generated.get("inbound_prompt", ""),
             f"industry_prompts.{t_id}.inbound_welcome_message": generated.get("inbound_welcome_message", ""),
             f"industry_prompts.{t_id}.draft_inbound_welcome_message": generated.get("inbound_welcome_message", ""),
+            f"industry_prompts.{t_id}.knowledge_base": generated.get("knowledge_base", ""),
+            f"industry_prompts.{t_id}.draft_knowledge_base": generated.get("knowledge_base", ""),
             f"industry_prompts.{t_id}.name": generated["template_name"],
             f"industry_prompts.{t_id}.description": generated["description"],
             f"industry_prompts.{t_id}.default_offering_label": generated.get("default_offering_label", "Offering"),
@@ -645,6 +682,157 @@ async def delete_custom_template(template_id: str, current_user: dict = Depends(
         }
     )
     return {"status": "success", "message": f"Template {template_id} deleted"}
+
+
+@app.post("/api/v1/prompt/parse-knowledge-file")
+async def parse_knowledge_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_company_access)
+):
+    """
+    Parses an uploaded PDF, Excel (.xlsx, .xls), CSV, or text file
+    and formats its contents into structured knowledge facts / FAQs for the voice agent.
+    """
+    filename = (file.filename or "uploaded_file").strip()
+    lower_fn = filename.lower()
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    extracted_text = ""
+
+    # 1. Handle PDF Documents
+    if lower_fn.endswith(".pdf"):
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            pages_text = []
+            max_pages = min(len(reader.pages), 30)
+            for idx in range(max_pages):
+                txt = reader.pages[idx].extract_text() or ""
+                if txt.strip():
+                    pages_text.append(txt.strip())
+            extracted_text = "\n\n".join(pages_text)
+            if len(reader.pages) > 30:
+                extracted_text += f"\n\n[Note: Extracted first 30 pages out of {len(reader.pages)} pages for optimal voice response latency.]"
+        except Exception as e:
+            logger.error(f"Failed to parse PDF {filename}: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to read PDF document: {str(e)}")
+
+    # 2. Handle Excel Spreadsheets
+    elif lower_fn.endswith((".xlsx", ".xls", ".xlsm", ".xlsb")):
+        try:
+            import pandas as pd
+            df = pd.read_excel(io.BytesIO(content))
+            df = df.dropna(how="all")
+            if df.empty:
+                raise HTTPException(status_code=400, detail="The Excel sheet has no readable data rows.")
+            
+            # Check for Q&A columns
+            q_col = next((c for c in df.columns if any(w in str(c).lower() for w in ["question", "faq", "query", "q"])), None)
+            a_col = next((c for c in df.columns if any(w in str(c).lower() for w in ["answer", "ans", "response", "reply", "solution", "a"]) and c != q_col), None)
+
+            rows_out = []
+            if q_col and a_col:
+                for _, row in df.iterrows():
+                    q_val = str(row.get(q_col) or "").strip()
+                    a_val = str(row.get(a_col) or "").strip()
+                    if q_val and a_val and q_val.lower() != "nan" and a_val.lower() != "nan":
+                        rows_out.append(f"Q: {q_val}\nA: {a_val}")
+            else:
+                # Tabular rows (Products, Specs, Pricing, Policies)
+                for _, row in df.iterrows():
+                    parts = []
+                    for c in df.columns:
+                        val = str(row.get(c) or "").strip()
+                        if val and val.lower() != "nan":
+                            parts.append(f"{c}: {val}")
+                    if parts:
+                        rows_out.append("- " + " | ".join(parts))
+            
+            extracted_text = "\n\n".join(rows_out)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to parse Excel {filename}: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to read Excel spreadsheet: {str(e)}")
+
+    # 3. Handle CSV / TSV Spreadsheets
+    elif lower_fn.endswith((".csv", ".tsv")):
+        try:
+            import pandas as pd
+            text = None
+            for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+                try:
+                    text = content.decode(enc)
+                    break
+                except Exception:
+                    continue
+            if not text:
+                text = content.decode("utf-8", errors="ignore")
+            
+            import io as py_io
+            df = pd.read_csv(py_io.StringIO(text), sep=None, engine="python")
+            df = df.dropna(how="all")
+            
+            q_col = next((c for c in df.columns if any(w in str(c).lower() for w in ["question", "faq", "query", "q"])), None)
+            a_col = next((c for c in df.columns if any(w in str(c).lower() for w in ["answer", "ans", "response", "reply", "solution", "a"]) and c != q_col), None)
+
+            rows_out = []
+            if q_col and a_col:
+                for _, row in df.iterrows():
+                    q_val = str(row.get(q_col) or "").strip()
+                    a_val = str(row.get(a_col) or "").strip()
+                    if q_val and a_val and q_val.lower() != "nan" and a_val.lower() != "nan":
+                        rows_out.append(f"Q: {q_val}\nA: {a_val}")
+            else:
+                for _, row in df.iterrows():
+                    parts = []
+                    for c in df.columns:
+                        val = str(row.get(c) or "").strip()
+                        if val and val.lower() != "nan":
+                            parts.append(f"{c}: {val}")
+                    if parts:
+                        rows_out.append("- " + " | ".join(parts))
+            extracted_text = "\n\n".join(rows_out)
+        except Exception as e:
+            logger.error(f"Failed to parse CSV {filename}: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to read CSV spreadsheet: {str(e)}")
+
+    # 4. Handle TXT / Markdown
+    elif lower_fn.endswith((".txt", ".md", ".text")):
+        for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            try:
+                extracted_text = content.decode(enc)
+                break
+            except Exception:
+                continue
+        if not extracted_text:
+            extracted_text = content.decode("utf-8", errors="ignore")
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file format. Please upload a PDF (.pdf), Excel (.xlsx, .xls), CSV (.csv), or text (.txt) file."
+        )
+
+    # Clean whitespace
+    extracted_text = re.sub(r"[ \t]+", " ", extracted_text).strip()
+    extracted_text = re.sub(r"\n{3,}", "\n\n", extracted_text)
+
+    # Truncate if excessively long (e.g. > 15,000 characters)
+    if len(extracted_text) > 15000:
+        extracted_text = extracted_text[:15000] + "\n\n[Note: Document trimmed to 15,000 characters for optimal live calling latency.]"
+
+    if not extracted_text:
+        raise HTTPException(status_code=400, detail="Could not extract any readable text from the file.")
+
+    return {
+        "status": "success",
+        "filename": filename,
+        "extracted_text": extracted_text,
+        "character_count": len(extracted_text)
+    }
 
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")

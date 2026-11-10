@@ -287,12 +287,47 @@ async def finalize_plivo_call(
     logger.info(f"Plivo call {call_id} finalized successfully.")
 
 
-def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = False) -> str:
+def extract_first_sentence(text_buffer: str) -> tuple[str, str]:
+    """
+    Safely extracts the first complete sentence from text_buffer, protecting against:
+    - Decimals (e.g. 1.5, 3.5)
+    - Currency and abbreviations (sq. ft., Dr., Mr., approx., Rs.)
+    - Ellipses (...)
+    Returns (sentence, remainder). If no complete sentence is found, returns ("", text_buffer).
+    """
+    if not text_buffer:
+        return "", ""
+    candidates = list(re.finditer(r'[।!?]|\.(?!\d)', text_buffer))
+    abbrs = {'sq.', 'ft.', 'kw.', 'dr.', 'mr.', 'mrs.', 'vs.', 'eg.', 'ie.', 'etc.', 'approx.', 'rs.', 'inr.'}
+    for m in candidates:
+        idx = m.end()
+        punct = m.group(0)
+        if punct == '.':
+            # Check if this period is part of an ellipsis
+            if (m.start() > 0 and text_buffer[m.start()-1] == '.') or (idx < len(text_buffer) and text_buffer[idx] == '.'):
+                continue
+            # Check preceding word for abbreviation
+            prefix = text_buffer[:idx]
+            last_word = prefix.split()[-1].lower() if prefix.split() else ''
+            if last_word in abbrs:
+                continue
+            # Must be followed by space or end of string
+            if idx < len(text_buffer) and not text_buffer[idx].isspace():
+                continue
+        sent = text_buffer[:idx].strip()
+        rem = text_buffer[idx:].lstrip()
+        if len(sent) >= 5:
+            return sent, rem
+    return "", text_buffer
+
+
+def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = False, language: str = "Hindi") -> str:
     """
     Sanitize text before speech synthesis so TTS never pronounces formatting artifacts
     like 'underscore', 'asterisk', or placeholder leaks like 'customer_name'.
     On mid-call turns (is_subsequent=True), also strips repetitive customer name vocatives,
     while NEVER stripping the customer name during identity verification or questions.
+    Dynamically normalizes numbers, currency, dates, measurements and times into Hindi words for Hindi/Hinglish TTS.
     """
     if not text:
         return ""
@@ -326,6 +361,15 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
 
     # Collapse extra whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # Dynamic Hindi normalization for TTS if language is Hindi/Hinglish
+    if language:
+        try:
+            from services.hindi_normalizer import normalize_for_tts
+            cleaned = normalize_for_tts(cleaned, language=language)
+        except Exception as norm_err:
+            logger.warning(f"[clean_tts_text] Hindi normalizer error: {norm_err}")
+
     if cleaned and cleaned[0].islower():
         cleaned = cleaned[0].upper() + cleaned[1:]
     return cleaned
@@ -789,24 +833,28 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n1. ACCENT: Maintain your authentic, polite Indian accent consistently across every turn."
         "\n2. REJECTION & HESITATION: If the customer shows explicit rejection ('Not interested', 'No', 'Bye') or soft hesitation ('Call later', 'Busy right now', 'Maybe some other time'), do NOT push the sales pitch. Say a warm goodbye in the call's language and execute end_call."
         "\n3. OFF-TOPIC REMARKS: If the customer makes a sensible off-topic remark or small talk, briefly acknowledge it in one short sentence, then gently guide them back to your objective."
-        "\n4. STRICT STAGE PROGRESSION: Guide responsive customers sequentially through your Key Objectives:"
-        "\n   - Step 1: Opening greeting and availability."
-        "\n   - Step 2: Qualification / discovery requirements."
-        "\n   - Step 3: Value pitch, budget & timeline."
-        "\n   - Step 4: Propose the call to action (demo, appointment, sanction quote)."
-        f"\n   - Step 5: Conclude with a warm goodbye ('{_goodbye_line}') and execute end_call."
+        "\n4. CONVERSATIONAL MODES & STAGE PROGRESSION:"
+        "\n   - MODE A (INFORMATION ASSISTANCE): When the customer asks ANY question (e.g. subsidy amount, pricing, rooftop space required, warranty years, performance in rain/monsoon, installation timeline, or whether inspection is free), PRIORITIZE answering their inquiry factually and concisely in 1-2 sentences using the Knowledge Base. NEVER immediately push or ask to book an appointment/site survey right after answering! Instead, verify if they understood or if they have further questions (e.g. 'क्या आप इसके बारे में कुछ और जानना चाहते हैं?' or 'क्या यह स्पष्ट है?')."
+        "\n   - MODE B (APPOINTMENT SCHEDULING): Transition to scheduling ONLY when: (1) the customer explicitly asks to schedule/book (e.g. 'book a time', 'कब आ सकते हैं', 'slot book kar dijiye', 'appointment fix kar do'), OR (2) all their questions have been answered and they confirm readiness. When proposing a time, offer two clear options (e.g. 'सुबह 10 बजे या दोपहर 2 बजे?'). Once the customer selects a time, confirm it immediately in ONE warm sentence, say goodbye, and execute end_call."
+        "\n   - ANTI-REPETITION MANDATE: NEVER repeatedly ask the same closing or booking question across consecutive turns. If you previously asked for an appointment and the customer asked a technical question instead, answer the question completely and do NOT repeat the appointment question."
         "\n5. ONE QUESTION PER TURN: Ask strictly ONE question per turn. Never speak two questions back-to-back."
         "\n6. AUTOMATIC HANGUP: Immediately after concluding your goodbye, invoke the end_call function."
-        f"\n7. UNCLEAR / GARBLED INPUT: If what the customer said is unintelligible, incoherent, or background noise, do NOT guess. Politely ask them to repeat: '{_repeat_line}'. Only proceed once you get a clear answer."
+        f"\n7. CONTEXTUAL SPEECH-TO-TEXT ROBUSTNESS: Spoken input on phone lines often has minor STT phonetic mishearings or mixed Hinglish. Interpret them contextually without asking to repeat:"
+        "\n   - 'side infection' / 'site infection' -> site inspection (साइट निरीक्षण)"
+        "\n   - 'chhatra roop space' / 'chhat space' -> rooftop space (छत की जगह)"
+        "\n   - 'शूज़ करेंगे' / 'shoes' -> choose / select slot (समय चुनना)"
+        "\n   - 'zaroorat padegi' / 'chal raha hai' -> customer acknowledging or stating current status"
+        f"\n   - Only if input is truly unintelligible noise, politely ask: '{_repeat_line}'."
         "\n8. SERVICE MISMATCH: If the customer expresses a need unrelated to your offering, politely clarify what your company does in one sentence. If they need something else, wish them well and end call."
         "\n9. NEVER READ SLASHES OR PLACEHOLDERS: Silently select the single correct grammatical option (e.g. 'बोल रही हूँ' for female voice); never read formatting artifacts or bracketed placeholders aloud."
         f"{rule_10_language}"
         "\n11. BARE GREETING TO AVAILABILITY: If your opening greeting asked for availability ('Do you have 2 minutes?') and the customer replies with 'Yes', 'Hello', 'Hi', or 'Haan', treat that as consent to proceed. Do NOT re-ask availability; go straight to the next step."
         f"\n12. ATTENTION CHECK MID-CALL: If the customer gives a filler mid-conversation ('Hello', 'Can you hear me?', 'Ji boliye'), do NOT repeat or rephrase your question. Simply give a brief prompt ({_minimal_prompt_hint}) and wait for their answer."
-        "\n13. CONTRADICTION CHECK: If the customer contradicts a detail confirmed earlier in the call, briefly confirm which one they prefer before moving forward."
+        "\n13. CONTRADICTION & MEMORY CHECK: Never re-ask qualification questions that the customer already answered earlier in the call (e.g. if they already confirmed rooftop space or bill > ₹2500, remember it and never ask again). If they contradict an earlier detail, briefly clarify."
         "\n14. IDENTITY VERIFICATION & DIRECT PROGRESSION:"
         "\n   - If your opening welcome message already addressed the customer by name (e.g. 'Hi [CustomerName]...' or 'Hello [CustomerName]...') and the customer clearly acknowledged with 'Yes', 'Speaking', 'Haan', or 'Hello', identity is already 100% established. Proceed immediately to your first qualification/discovery question without re-asking if you are speaking with them."
         "\n   - Only if the opening greeting did NOT use their name or the caller is unknown, confirm identity first: 'Just to confirm, am I speaking with [CustomerName]?'."
+        "\n15. NUMBER & MEASUREMENT SPOKEN PHRASING: When speaking in Hindi, express all numbers, currency, and measurements naturally in Hindi words (e.g. 'अठहत्तर हज़ार रुपये', 'तीन किलोवाट', 'ढाई सौ से तीन सौ वर्ग फुट', 'पच्चीस साल')."
     )
 
     # Collections compliance directive - opt-in only (companies.collections_mode),
@@ -921,6 +969,25 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         f"{contact_info}\n"
     )
 
+    raw_kb = (
+        (specific_ind_prompt.get("published_knowledge_base") if specific_ind_prompt else None)
+        or (specific_ind_prompt.get("knowledge_base") if specific_ind_prompt else None)
+        or (template_def.get("knowledge_base") if isinstance(template_def, dict) else None)
+        or (prompt_doc.get("published_knowledge_base") if prompt_doc else None)
+        or (prompt_doc.get("knowledge_base") if prompt_doc else None)
+        or ""
+    )
+    kb_directive = ""
+    if raw_kb and "KNOWLEDGE BASE & VERIFIED" not in system_prompt:
+        clean_kb = str(raw_kb).strip()
+        kb_directive = (
+            "\n\n--- KNOWLEDGE BASE & VERIFIED COMPANY FACTS ---\n"
+            f"{clean_kb}\n\n"
+            "KNOWLEDGE BASE INSTRUCTIONS:\n"
+            "- When the customer asks any specific questions about offerings, pricing, terms, timings, warranty, eligibility, or policies, refer to the Knowledge Base above to give concise, accurate answers (1-2 sentences).\n"
+            "- If a specific detail is NOT covered in the Knowledge Base, DO NOT guess or fabricate. Politely tell the customer that our specialist will verify and share the exact details.\n"
+        )
+
     # Must stay after the conversation_rules += above - this is what
     # actually finalizes the prompt sent to the model.
     system_prompt = (
@@ -928,6 +995,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         + natural_speech_directive
         + customer_context
         + system_prompt
+        + kb_directive
         + conversation_rules
         + collections_directive
     )
@@ -1006,6 +1074,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     return {
         "system_prompt": system_prompt,
         "welcome_text": welcome_text,
+        "call_lang": str(call_lang).strip() if call_lang else ("Hindi" if _is_hindi_call else "English"),
         "transcription_lang": transcription_lang,
         "company": company,
         "voice_engine": voice_engine,
@@ -1210,6 +1279,7 @@ async def prewarm_openai_session(call_id: str, company_id: str = None):
             "openai_ws": openai_ws,
             "system_prompt": ctx["system_prompt"],
             "welcome_text": ctx["welcome_text"],
+            "call_lang": ctx.get("call_lang"),
             "company": ctx["company"],
             "voice_engine": ctx["voice_engine"],
             "conversation_engine": ctx["conversation_engine"],
@@ -1440,6 +1510,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         system_prompt = prewarmed["system_prompt"]
         welcome_text = prewarmed["welcome_text"]
         company = prewarmed["company"]
+        call_lang = prewarmed.get("call_lang") or "Hindi"
         transcription_lang = None  # unused on the reuse path - session is already configured
         voice_engine = prewarmed["voice_engine"]
         sarvam_speaker = prewarmed["sarvam_speaker"]
@@ -1458,6 +1529,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         ctx = await resolve_call_voice_context(db, call_id, company_id)
         system_prompt = ctx["system_prompt"]
         welcome_text = ctx["welcome_text"]
+        call_lang = ctx.get("call_lang") or ("Hindi" if ctx.get("transcription_lang") == "hi" else "English")
         company = ctx["company"]
         transcription_lang = ctx["transcription_lang"]
         voice_engine = ctx["voice_engine"]
@@ -1517,7 +1589,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
         try:
             while True:
                 chunk = await sarvam_queue.get()
-                chunk = clean_tts_text(chunk, customer_name, is_subsequent=sarvam_mode_active)
+                chunk = clean_tts_text(chunk, customer_name, is_subsequent=sarvam_mode_active, language=call_lang)
                 if not chunk:
                     continue
                 try:
@@ -1804,10 +1876,9 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                             # Flushing early here would let audio escape before
                             # that decision is made.
                             if sentences_flushed_this_response == 0 and not hangup_triggered:
-                                m = re.search(r'^(.*?[.!?।])\s*', text_accum_buffer, re.DOTALL)
-                                if m and len(m.group(1)) >= 6:
-                                    sentence = m.group(1)
-                                    text_accum_buffer = text_accum_buffer[m.end():]
+                                sentence, remainder = extract_first_sentence(text_accum_buffer)
+                                if sentence:
+                                    text_accum_buffer = remainder
                                     await sarvam_queue.put(sentence)
                                     sentences_flushed_this_response += 1
 
@@ -1844,7 +1915,7 @@ async def plivo_realtime_audio_stream(websocket: WebSocket, call_id: str = Query
                         agent_speaking = False
                         text = (event.get("text") or full_response_text).strip()
                         if text:
-                            text = clean_tts_text(text, customer_name, is_subsequent=True)
+                            text = clean_tts_text(text, customer_name, is_subsequent=True, language=call_lang)
                         full_response_text = ""
                         if text:
                             safe_print(f"[AI SPEECH][SARVAM]: {text}")
