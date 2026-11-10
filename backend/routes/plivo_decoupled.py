@@ -40,6 +40,7 @@ from services.sarvam_tts import SarvamTTSSession
 from services.sarvam_stt import SarvamSTTSession
 from services.openai_chat import stream_openai_reply
 from routes.plivo_routes import safe_print, finalize_plivo_call, HALLUCINATION_PHRASES, is_degenerate_transcript
+from services.hindi_normalizer import is_hindi_or_hinglish
 from telephony.plivo_provider import PlivoProvider
 
 # Same proven keyword list and dynamic delay formula as plivo_routes.py's
@@ -85,13 +86,15 @@ DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
 DECOUPLED_FIRST_WORD_DIRECTIVE_HI = (
     "\n\nCRITICAL LOW-LATENCY DELIVERY & CONVERSATION RULES:\n"
     "1. RAPID OPENER (MANDATORY): Always start your response with a natural acknowledgment "
-    "ending with a full stop or exclamation (e.g. 'समझ गया।', 'ठीक है।', 'जी बिल्कुल।', 'जी जरूर।'). "
+    "ending with a full stop or exclamation (e.g. 'समझ गया।', 'ठीक है।', 'जी बिल्कुल।', 'जी जरूर।', 'बहुत बढ़िया।'). "
     "This allows your voice to begin playing immediately in under 1 second while your main response generates.\n"
     "2. CONCISE QUESTION: Follow immediately with strictly ONE clear question in under 12 words.\n"
-    "3. DIRECT FIRST TURN: If the opening greeting already addressed the customer by name and they said 'हाँ' or 'Yes', proceed directly to your first question without re-asking their name.\n"
+    "3. DIRECT FIRST TURN: If the opening greeting already addressed the customer by name and they said 'हाँ', 'Haan', or 'Yes', proceed directly to your first question without re-asking their name.\n"
     "4. ABSOLUTE BAN ON REPEATING CUSTOMER NAME: You already greeted the customer by name in the opening message. "
     "Once the conversation is underway, NEVER repeat or speak their name in your subsequent replies.\n"
-    "5. STRICT LANGUAGE ENFORCEMENT: You MUST converse in natural Hindi/Hinglish unless the customer explicitly speaks English."
+    "5. STRICT LANGUAGE CONTINUITY (HINDI/HINGLISH): Your opening greeting was in Hindi/Hinglish. You MUST converse 100% in natural Hindi/Hinglish throughout this call. "
+    "When the customer answers with words like 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'OK', you MUST NOT switch to English! "
+    "Continue answering and asking questions in Hindi/Hinglish. ONLY switch to English if the customer explicitly commands you to speak in English."
 )
 
 logger = logging.getLogger("talkly-plivo-decoupled")
@@ -188,10 +191,10 @@ def prewarm_decoupled_greeting(
             api_key = os.environ.get("BAKBAK_API_KEY", "").strip() or BAKBAK_API_KEY
             if api_key:
                 v_id = v_id or "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2"
-                v_lang = v_lang or ("hi" if bool(re.search(r"[ऀ-ॿ]", w_text or "")) else "en-in")
+                v_lang = v_lang or ("hi" if is_hindi_or_hinglish(w_text) else "en-in")
                 session = BakbakTTSSession(api_key, v_id, v_lang, v_mod)
             elif SARVAM_API_KEY:
-                is_hi = bool(re.search(r"[ऀ-ॿ]", w_text or ""))
+                is_hi = is_hindi_or_hinglish(w_text)
                 speaker = (ctx.get("sarvam_speaker") if ctx else None) or ("ishita_enhi_customer" if is_hi else "simran_en_conversation")
                 lang = "hi-IN" if is_hi else "en-IN"
                 session = SarvamTTSSession(SARVAM_API_KEY, speaker, lang)
@@ -342,14 +345,14 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     # a language the campaign was never configured for. "en-IN"/"hi-IN"
     # confirmed valid against the installed sarvamai SDK's own
     # speech_to_text_realtime_streaming.connect() language_code signature.
-    # Detect pipeline language strictly from whether welcome_text is in Hindi/Devanagari
-    is_hindi_pipeline = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
+    # Detect pipeline language from Hindi Devanagari or Roman Hinglish keywords
+    is_hindi_pipeline = is_hindi_or_hinglish(welcome_text, system_prompt, ctx.get("call_lang"))
     call_lang = ctx.get("call_lang") or ("Hindi" if is_hindi_pipeline else "English")
     directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI if is_hindi_pipeline else DECOUPLED_FIRST_WORD_DIRECTIVE_EN
 
     _sarvam_stt_lang_map = {"en": "en-IN", "hi": "hi-IN"}
     if is_hindi_pipeline:
-        stt_language_code = _sarvam_stt_lang_map.get(ctx.get("transcription_lang"), "hi-IN")
+        stt_language_code = "hi-IN"
     else:
         stt_language_code = "en-IN"
 
@@ -678,7 +681,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             await asyncio.sleep(wait_for_finish + 5.0)
             if len(transcript_parts) == 1 and not hangup_triggered:
                 safe_print("[DECOUPLED]: User has been silent for 5.0s after welcome message finished. Prompting gently...")
-                is_hindi = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
+                is_hindi = is_hindi_or_hinglish(welcome_text, system_prompt, call_lang)
                 is_inbound = bool(ctx.get("is_inbound", False))
                 cname = ctx.get("customer_name") or ""
                 if is_inbound:

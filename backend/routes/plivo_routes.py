@@ -35,6 +35,7 @@ from services.crm_service import crm_service
 from services.billing_service import billing_service
 from services.sarvam_tts import SarvamTTSSession, sarvam_voice_for
 from services.bakbak_tts import BakbakTTSSession, bakbak_voice_for
+from services.hindi_normalizer import normalize_for_tts, is_hindi_or_hinglish
 from industry_templates import INDUSTRY_TEMPLATES
 import re
 import requests
@@ -793,9 +794,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     system_prompt = re.sub(r"₹\s*₹", "₹", system_prompt)
     system_prompt = re.sub(r"Rs\.?\s*₹", "₹", system_prompt, flags=re.IGNORECASE)
 
-    # Single-language versions of phrases that rules 2/4/7/12 below used to
-    # show as "Hindi: X / English: Y" side by side.
-    _is_hindi_call = bool(re.search(r"[ऀ-ॿ]", welcome_text or ""))
+    # Robust language detection: checks Devanagari script, Roman Hindi/Hinglish keywords, and metadata
+    _is_hindi_call = is_hindi_or_hinglish(welcome_text, system_prompt, str(call_doc.get("language") if call_doc else ""))
     _goodbye_line = "बहुत-बहुत धन्यवाद, आपका दिन शुभ हो! अलविदा।" if _is_hindi_call else "Thank you so much, have a great day! Goodbye."
     _repeat_line = "माफ कीजिए, क्या आप फिर से बता सकते हैं?" if _is_hindi_call else "Sorry, could you repeat that?"
     _minimal_prompt_hint = "'जी?', 'हाँ, बोलिए', or 'जी, बताइए'" if _is_hindi_call else "'Yes?' or 'Go ahead'"
@@ -806,11 +806,28 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "CRITICAL VOICE & ACCENT DIRECTIVE:\n"
             "- IDENTITY: You are an Indian professional voice representative calling from an office in India.\n"
             "- ACCENT: Speak in natural, everyday Hindi / Hinglish.\n"
-            "- STRICT LANGUAGE LOCK (HINDI): This call is configured in HINDI and your opening greeting was in Hindi. You MUST speak in natural Hindi/Hinglish throughout the entire call. Even when the customer gives a short English acknowledgment like 'Yes', 'Okay', 'Hello', or 'Sure', you MUST continue in Hindi/Hinglish. NEVER switch to English unless the customer explicitly demands English (e.g. 'talk in English' or 'speak in English').\n"
-            "- LANGUAGE LIMIT: You speak Hindi and English. If the customer speaks a different regional language, politely say that you can continue in Hindi or English.\n\n"
+            "- STRICT LANGUAGE LOCK (HINDI / HINGLISH): This call is configured in HINDI / HINGLISH and your opening greeting was in Hindi/Hinglish. You MUST speak and converse in natural Hindi/Hinglish throughout the entire call. "
+            "Even when the customer gives short responses, mixed terms, or common English words like 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'Okay', 'Hello', 'Sure', 'Noida', you MUST continue speaking in Hindi/Hinglish. "
+            "NEVER switch to English unless the customer explicitly demands English (e.g. 'talk in English' or 'speak in English').\n"
+            "- LANGUAGE LIMIT: You speak Hindi and English. If the customer speaks a different regional language, politely say in Hindi that you can continue in Hindi or English.\n\n"
         )
         rule_10_language = (
-            "\n10. DO NOT DEFAULT TO ENGLISH ON A BARE FILLER WORD: Your opening greeting was in Hindi. If the customer's reply is only a short filler/acknowledgment like 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Sir', 'Thanks', 'Theek hai', 'Boliye', 'Bataiye', this is them confirming they are listening, NOT a request to switch to English. You MUST continue your very next response in Hindi/Hinglish, exactly as if they had said 'haan' instead. Only switch to English once the customer explicitly commands you to speak in English (e.g. 'talk in English', 'speak in English') - not before."
+            "\n10. ABSOLUTE LANGUAGE CONTINUITY (DO NOT SWITCH TO ENGLISH): Your opening greeting was in Hindi/Hinglish. You MUST continue speaking and asking questions in natural Hindi/Hinglish for the entire conversation. "
+            "When the customer answers in Hindi, Hinglish, or short common words (e.g. 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Boliye', 'Bataiye', 'Theek hai'), "
+            "this is standard conversational Indian response — it is NOT a request to switch to English! "
+            "You MUST continue your next responses in Hindi/Hinglish (e.g. 'बहुत बढ़िया! आप किस ब्रांड या मॉडल को देख रहे हैं?' or 'Great! Aap kis brand ya model ko dekh rahe hain?'). "
+            "NEVER switch to English unless the customer explicitly commands you to speak in English (e.g. 'talk in English', 'speak in English') — not otherwise."
+        )
+        natural_speech_directive = (
+            "\n\nNATURAL HUMAN CONVERSATION STYLE (HINDI / HINGLISH):"
+            "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday conversational Hindi/Hinglish phrasing beats long formal sentences."
+            "\n- STRICT LANGUAGE CONTINUATION: Since your opening greeting was in Hindi/Hinglish, stay in natural Hindi/Hinglish across every turn. Even if the customer answers 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Yes', do NOT switch to English. Answer in Hindi/Hinglish."
+            "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'समझ गया,' NOT 'समझ गया, [name],'; say 'जी बिल्कुल,' NOT 'जी बिल्कुल, [name],')."
+            "\n- Keep acknowledgements brief and natural in Hindi/Hinglish: 'जी बिल्कुल', 'हाँ जी', 'बहुत अच्छा', 'समझ गया', 'बढ़िया', 'ज़रूर' - not stiff transitions."
+            "\n- Ask ONE short, plain question at a time in Hindi/Hinglish (e.g. 'आप किस तरह का मॉडल या ब्रांड देख रहे हैं?', 'क्या कल सुबह आना सही रहेगा?')."
+            "\n- React briefly to what the customer just said before moving on - a quick 'जी अच्छा', 'समझ गया', 'बढ़िया', 'सही है' shows you are actually listening."
+            "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
+            "\n- Never sound like a call-center script, an email, or a formal announcement. This is a live, warm, human conversation between two people in Hindi/Hinglish.\n\n"
         )
     else:
         indian_accent_directive = (
@@ -828,18 +845,17 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         # Clean any stale Hindi language instructions from English prompts
         system_prompt = re.sub(r"(?i)Converse in Hindi/?Hinglish naturally", "Converse strictly in English naturally", system_prompt)
         system_prompt = re.sub(r"(?i)हिंदी/?हिंग्लिश में स्वाभाविक रूप से", "English में स्वाभाविक रूप से", system_prompt)
-
-    natural_speech_directive = (
-        "\n\nNATURAL HUMAN CONVERSATION STYLE:"
-        "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday phrasing beats long formal sentences."
-        "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'I see,' NOT 'I see, [name],'; say 'Got it,' NOT 'Got it, [name],'; say 'You\\'re welcome!' NOT 'You\\'re welcome, [name]!'). In real life, humans never repeat someone's name on every single reply."
-        "\n- Keep acknowledgements brief and natural: 'Great, thanks!', 'Sure, no problem', 'Got it', 'Perfect' - not stiff transitions like 'Thank you for that information.'"
-        "\n- Ask ONE short, plain question at a time. Prefer 'What exactly are you looking for?' over a long compound sentence."
-        "\n- Use natural contractions (I'm, you're, that's, don't, can't, we'll) instead of full formal forms."
-        "\n- React briefly to what the customer just said before moving on - a quick 'Oh nice', 'I see', 'Makes sense', 'Okay cool' shows you're actually listening."
-        "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
-        "\n- Never sound like a call-center script, an email, or a formal announcement being read aloud. This is a live, warm, human conversation between two people.\n\n"
-    )
+        natural_speech_directive = (
+            "\n\nNATURAL HUMAN CONVERSATION STYLE (ENGLISH):"
+            "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday phrasing beats long formal sentences."
+            "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'I see,' NOT 'I see, [name],'; say 'Got it,' NOT 'Got it, [name],'; say 'You\\'re welcome!' NOT 'You\\'re welcome, [name]!'). In real life, humans never repeat someone's name on every single reply."
+            "\n- Keep acknowledgements brief and natural: 'Great, thanks!', 'Sure, no problem', 'Got it', 'Perfect' - not stiff transitions like 'Thank you for that information.'"
+            "\n- Ask ONE short, plain question at a time. Prefer 'What exactly are you looking for?' over a long compound sentence."
+            "\n- Use natural contractions (I'm, you're, that's, don't, can't, we'll) instead of full formal forms."
+            "\n- React briefly to what the customer just said before moving on - a quick 'Oh nice', 'I see', 'Makes sense', 'Okay cool' shows you're actually listening."
+            "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
+            "\n- Never sound like a call-center script, an email, or a formal announcement being read aloud. This is a live, warm, human conversation between two people.\n\n"
+        )
 
     conversation_rules = (
         "\n\nCRITICAL CONVERSATIONAL & REJECTION RULES:"

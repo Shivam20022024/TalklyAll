@@ -437,3 +437,47 @@ def normalize_for_tts(text: str, language: str = "Hindi") -> str:
     # Clean up any duplicate spaces
     normalized = re.sub(r'[ \t]+', ' ', normalized).strip()
     return normalized
+
+
+HINGLISH_KEYWORDS_REGEX = re.compile(
+    r"(?i)\b("
+    r"namaste|namaskar|pranam|kya|aap|aapka|aapke|aapki|hain|hai|hoon|hum|humare|hamara|hamare|hamari|"
+    r"raha|rahe|rahi|baat|bol|bolte|bolna|kar|karte|karein|karenge|karo|bataiye|boliye|theek|accha|achha|"
+    r"shubh|dhanyawad|zaroorat|chhat|paas|kaise|kaisa|kaisi|sakte|sakti|kariye|denge|milega|milegi|"
+    r"kitna|kitni|kitne|chahiye|shuru|kripya|bhi|nahi|nahin|sunte|sun|rha|rhi|rhe|hoga|hogi|honge|"
+    r"sirf|abhi|kal|aaj|samay|jagah|subah|dopahar|shaam|raat|rupaye|rupayee|hazaar|crore|lakh|"
+    r"yahan|wahan|kisi|kuch|zyada|zyaada|kam|wala|wali|wale|chahiye|chal|raha"
+    r")\b"
+)
+
+
+def is_hindi_or_hinglish(text: str = "", prompt: str = "", metadata_lang: str = "") -> bool:
+    """
+    Robustly checks if a conversation, greeting, or prompt is in Hindi or Hinglish,
+    whether written in Devanagari script (हिंदी) or Roman script (Hinglish).
+    """
+    combined = ((text or "") + " " + (prompt or "")).strip()
+    if not combined and not metadata_lang:
+        return False
+
+    # 1. Check Devanagari script
+    if re.search(r"[\u0900-\u097F]", combined):
+        return True
+
+    # 2. Check metadata language
+    if metadata_lang:
+        m = str(metadata_lang).lower().strip()
+        if any(h in m for h in ("hi", "hindi", "hinglish")):
+            return True
+
+    # 3. Check Roman Hindi / Hinglish keywords in greeting
+    matches = HINGLISH_KEYWORDS_REGEX.findall(text or "")
+    if len(matches) >= 1:
+        return True
+
+    # 4. Check Roman Hindi / Hinglish keywords in prompt
+    prompt_matches = HINGLISH_KEYWORDS_REGEX.findall(prompt or "")
+    if len(prompt_matches) >= 2:
+        return True
+
+    return False

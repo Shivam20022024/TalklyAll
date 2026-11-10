@@ -176,6 +176,21 @@ def test_ci03_hinglish_amount_and_weather_phrases():
     print("✓ CI03: Hinglish Amount & Weather Normalization PASSED")
 
 
+def test_ci04_hinglish_language_continuity_detection():
+    from services.hindi_normalizer import is_hindi_or_hinglish
+    # The Vishal Mega Mart Hinglish greeting from user call
+    vishal_greeting = "Namaste! Main Saanvi bol rahi hoon Vishal Mega Mart se. Hamare yahan sabhi electronic items par 10% discount chal raha hai. Kya aap kisi electronic item ki shopping plan kar rahe hain?"
+    assert is_hindi_or_hinglish(vishal_greeting) is True, "Hinglish greeting must be recognized as Hindi/Hinglish!"
+
+    solar_devanagari = "नमस्ते Rohit, मैं Saanvi हूँ TCS से। आपके सौर पैनल इंस्टॉलेशन के लिए बात करने के लिए कॉल किया है।"
+    assert is_hindi_or_hinglish(solar_devanagari) is True, "Devanagari greeting must be recognized as Hindi/Hinglish!"
+
+    english_greeting = "Hello John, this is Saanvi from Vishal Mega Mart. We have a 10% discount on electronics. Are you planning any shopping today?"
+    assert is_hindi_or_hinglish(english_greeting) is False, "Pure English greeting must not be classified as Hindi!"
+
+    print("✓ CI04: Hinglish Call Language Continuity & Auto-Detection PASSED")
+
+
 if __name__ == "__main__":
     print("\nRunning Talkly AI Voice Intelligence & TTS Normalization Test Suite...\n")
     test_tn01_currency_normalization()
@@ -189,6 +204,7 @@ if __name__ == "__main__":
     test_ci01_clean_tts_formatting_sanitization()
     test_ci02_appointment_booking_tool_validation()
     test_ci03_hinglish_amount_and_weather_phrases()
+    test_ci04_hinglish_language_continuity_detection()
     print("\n==========================================")
-    print("ALL 11 TEST SUITES COMPLETED SUCCESSFULLY! ")
+    print("ALL 12 TEST SUITES COMPLETED SUCCESSFULLY! ")
     print("==========================================\n")
