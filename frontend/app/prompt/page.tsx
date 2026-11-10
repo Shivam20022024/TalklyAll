@@ -76,7 +76,7 @@ IMPORTANT RULE 3 (language consistency): Reply in the same language you opened w
 
 Key Objectives:
 1. Warm Greeting: Acknowledge the customer's inquiry for {{offering}} in {{location}}.
-2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing to your other questions.
+2. Direct Qualification (No Identity Re-asking): You already addressed {{customer_name}} by name in the opening greeting. When the customer acknowledges or replies, proceed directly to asking their configuration preferences. NEVER ask "am I speaking with {{customer_name}}?".
 3. Ask Configuration: Ask what configuration they are looking for (e.g. 2BHK, 3BHK, Villa).
 4. Ask Budget: Ask their budget range {{budget}}.
 5. Ask Timeline: Ask their timeline to purchase.
@@ -164,7 +164,7 @@ IMPORTANT RULE 3 (language consistency): Reply in the same language you opened w
 
 Key Objectives:
 1. Connect: Acknowledge their recent inquiry for the {{offering}} curriculum.
-2. Confirm Identity: If the customer did not already confirm their identity in response to your greeting, ask if you're speaking with {{customer_name}}. If they already confirmed or replied affirmatively (e.g. "Yes") to your greeting addressing them by name, proceed directly to Background Discovery.
+2. Direct Qualification (No Identity Re-asking): You already addressed {{customer_name}} by name in the opening greeting. When the customer acknowledges, replies, or says yes/yeah/haan/yeh, their identity is confirmed. NEVER ask 'am I speaking with {{customer_name}}?' or 'is this {{customer_name}}?'. Proceed directly to Background Discovery.
 3. Background Discovery: Ask whether they are currently a college student, working professional, or career switcher ({{current_role}}).
 4. Program Value: Highlight industry-led projects, guaranteed placement support, flexible weekend batches ({{batch_time}}), and mentor guidance.
 5. Free Demo / Counseling: Invite them to attend a free live workshop or schedule a 1-on-1 career roadmap call this week.
@@ -249,7 +249,7 @@ IMPORTANT RULE 3 (language consistency): Reply in the same language you opened w
 
 Key Questions and Flow to ask in order:
 1. Warm Introduction: Acknowledge speaking with {{customer_name}} and confirm if they have a quick minute.
-2. Confirm Identity: Ask if you're speaking with {{customer_name}}, in your own words, and wait for a clear yes before continuing to your other questions.
+2. Direct Discovery (No Identity Re-asking): You already addressed {{customer_name}} by name in the opening greeting. Once the customer acknowledges or replies, their identity is confirmed. NEVER ask 'am I speaking with {{customer_name}}?'. Proceed directly to Discovery.
 3. Discovery: Ask ONE open question about their current situation or needs related to {{offering}} - e.g. what they use today, what matters most to them, or what prompted their interest.
 4. Qualification: Based on their answer, ask ONE relevant follow-up question that digs into what matters most to them specifically about {{offering}} and their team size ({{company_size}}).
 5. Value Pitch: Highlight 2-3 benefits of {{offering}} that are relevant to what they just told you matters to them.

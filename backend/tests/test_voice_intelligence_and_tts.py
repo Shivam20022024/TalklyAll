@@ -188,6 +188,13 @@ def test_ci04_hinglish_language_continuity_detection():
     english_greeting = "Hello John, this is Saanvi from Vishal Mega Mart. We have a 10% discount on electronics. Are you planning any shopping today?"
     assert is_hindi_or_hinglish(english_greeting) is False, "Pure English greeting must not be classified as Hindi!"
 
+    # Test English call with English metadata where system prompt has stray phonetic correction words
+    prompt_with_stray_glossary = "You are a counselor. ASR corrections: site infection -> साइट निरीक्षण."
+    assert is_hindi_or_hinglish("Hi Yash, this is TCS calling.", prompt_with_stray_glossary, "English") is False, "English metadata must not be overridden by stray glossary terms!"
+
+    # Test Hinglish call metadata
+    assert is_hindi_or_hinglish("Hi Yash, this is TCS calling.", "", "Hinglish") is True, "Hinglish metadata must evaluate to True!"
+
     print("✓ CI04: Hinglish Call Language Continuity & Auto-Detection PASSED")
 
 

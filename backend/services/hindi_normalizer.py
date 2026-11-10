@@ -456,28 +456,32 @@ def is_hindi_or_hinglish(text: str = "", prompt: str = "", metadata_lang: str = 
     Robustly checks if a conversation, greeting, or prompt is in Hindi or Hinglish,
     whether written in Devanagari script (हिंदी) or Roman script (Hinglish).
     """
-    combined = ((text or "") + " " + (prompt or "")).strip()
-    if not combined and not metadata_lang:
-        return False
+    clean_text = (text or "").strip()
+    clean_prompt = (prompt or "").strip()
+    clean_meta = str(metadata_lang or "").lower().strip()
 
-    # 1. Check Devanagari script
-    if re.search(r"[\u0900-\u097F]", combined):
-        return True
+    # 1. Check explicit metadata language
+    if clean_meta:
+        if any(h in clean_meta for h in ("hi", "hindi", "hinglish")):
+            return True
+        if clean_meta in ("en", "english", "en-in", "en-us"):
+            # Only override explicit English metadata if the greeting itself is Hindi/Hinglish
+            if re.search(r"[\u0900-\u097F]", clean_text) or len(HINGLISH_KEYWORDS_REGEX.findall(clean_text)) >= 1:
+                return True
+            return False
 
-    # 2. Check metadata language
-    if metadata_lang:
-        m = str(metadata_lang).lower().strip()
-        if any(h in m for h in ("hi", "hindi", "hinglish")):
+    # 2. Check welcome greeting text
+    if clean_text:
+        if re.search(r"[\u0900-\u097F]", clean_text):
+            return True
+        if len(HINGLISH_KEYWORDS_REGEX.findall(clean_text)) >= 1:
             return True
 
-    # 3. Check Roman Hindi / Hinglish keywords in greeting
-    matches = HINGLISH_KEYWORDS_REGEX.findall(text or "")
-    if len(matches) >= 1:
-        return True
-
-    # 4. Check Roman Hindi / Hinglish keywords in prompt
-    prompt_matches = HINGLISH_KEYWORDS_REGEX.findall(prompt or "")
-    if len(prompt_matches) >= 2:
-        return True
+    # 3. Check prompt body (require substantial Devanagari or multiple Hinglish keywords)
+    if clean_prompt:
+        if len(re.findall(r"[\u0900-\u097F]", clean_prompt)) >= 10:
+            return True
+        if len(HINGLISH_KEYWORDS_REGEX.findall(clean_prompt)) >= 2:
+            return True
 
     return False

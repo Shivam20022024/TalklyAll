@@ -236,7 +236,7 @@ class PromptBuilderService:
                     "IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the customer clearly and consistently speaks in a different language.\n\n"
                     "Key Objectives:\n"
                     f"1. Warm Greeting: Acknowledge speaking with {{{{customer_name}}}} for {{{{offering}}}} in {{{{location}}}}.\n"
-                    "2. Confirm Identity: Ask if you're speaking with the right person and wait for confirmation.\n"
+                    "2. Direct Qualification (No Identity Re-asking): You already addressed the customer by name in the opening greeting. Once they acknowledge or reply, proceed directly to qualification without asking to confirm their identity.\n"
                     f"3. Qualification: Ask the key questions:\n{must_ask_text}\n"
                     f"4. Value Pitch: Highlight {offerings_and_usps}.\n"
                     f"5. Objection Handling: {objections_playbook}.\n"
