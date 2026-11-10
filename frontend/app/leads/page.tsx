@@ -66,8 +66,8 @@ function LeadsContent() {
     setCampaignId(searchParams.get('campaign_id'))
   }, [searchParams])
 
-  const loadLeads = async () => {
-    setLoading(true)
+  const loadLeads = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const qs = new URLSearchParams()
       qs.append('range', range)
@@ -78,13 +78,24 @@ function LeadsContent() {
     } catch (e) {
       console.error(e)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     loadLeads()
   }, [range, campaignId])
+
+  // Real-time auto-refresh: When any lead is in 'Calling' status, poll every 3s so the table updates
+  // automatically as soon as call ends & AI analysis finishes. Otherwise poll every 15s.
+  useEffect(() => {
+    const hasCalling = leads.some((l) => (l.status || '').toLowerCase() === 'calling')
+    const pollInterval = hasCalling ? 3000 : 15000
+    const interval = setInterval(() => {
+      loadLeads(true)
+    }, pollInterval)
+    return () => clearInterval(interval)
+  }, [leads, range, campaignId])
 
   const loadRecoveryAnalytics = async () => {
     try {

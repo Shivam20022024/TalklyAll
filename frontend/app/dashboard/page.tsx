@@ -102,9 +102,9 @@ export default function DashboardPage() {
 
   // Load Dashboard metrics & campaigns
   useEffect(() => {
-    async function loadDashboard() {
+    async function loadDashboard(silent = false) {
       try {
-        setLoading(true)
+        if (!silent) setLoading(true)
         const industryQuery = selectedIndustry ? `&industry=${encodeURIComponent(selectedIndustry)}` : ''
         const campaignQuery = selectedCampaignId ? `&campaign_id=${encodeURIComponent(selectedCampaignId)}` : ''
         const [dashRes, campRes] = await Promise.all([
@@ -124,10 +124,16 @@ export default function DashboardPage() {
       } catch (e) {
         console.error('Failed to load dashboard data', e)
       } finally {
-        setLoading(false)
+        if (!silent) setLoading(false)
       }
     }
     loadDashboard()
+
+    // Background auto-refresh every 12 seconds so dashboard metrics stay synced
+    const interval = setInterval(() => {
+      loadDashboard(true)
+    }, 12000)
+    return () => clearInterval(interval)
   }, [range, selectedCampaignId, selectedIndustry])
 
   const config = INDUSTRY_CONFIGS[selectedIndustry] || INDUSTRY_CONFIGS.real_estate

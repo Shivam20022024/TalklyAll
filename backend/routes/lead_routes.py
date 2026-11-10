@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
+from starlette.concurrency import run_in_threadpool
 from datetime import datetime
 import uuid
 import csv
@@ -473,7 +474,7 @@ async def upload_leads_csv(
     current_user: dict = Depends(require_company_access)
 ):
     content = await file.read()
-    rows = parse_any_file_to_rows(content, file.filename or "upload.csv")
+    rows = await run_in_threadpool(parse_any_file_to_rows, content, file.filename or "upload.csv")
 
     if not rows:
         raise HTTPException(status_code=400, detail="Could not find any readable rows in the uploaded file.")

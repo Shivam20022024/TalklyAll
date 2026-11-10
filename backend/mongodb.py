@@ -61,6 +61,7 @@ async def ensure_indexes():
 
     await db.calls.create_index([("company_id", 1), ("created_at", -1)])
     await db.leads.create_index([("company_id", 1), ("created_at", -1)])
+    await db.leads.create_index([("company_id", 1), ("lastContact", -1), ("created_at", -1)])
 
     try:
         await db.companies.create_index("company_id", unique=True)
