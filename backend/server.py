@@ -580,6 +580,10 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
         {"company_id": company_id},
         {"$set": comp_update}
     )
+    await db.users.update_many(
+        {"company_id": company_id},
+        {"$set": {"industry": industry, "updated_at": now}}
+    )
     return {"status": "success", "industry": industry, "bolna_synced": bolna_synced, "agent_id": agent_id}
 
 
@@ -799,7 +803,23 @@ async def parse_knowledge_file(
             logger.error(f"Failed to parse CSV {filename}: {e}")
             raise HTTPException(status_code=400, detail=f"Failed to read CSV spreadsheet: {str(e)}")
 
-    # 4. Handle TXT / Markdown
+    # 4. Handle Word Documents (.docx)
+    elif lower_fn.endswith(".docx"):
+        try:
+            import docx
+            doc = docx.Document(io.BytesIO(content))
+            paras = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [c.text.strip() for c in row.cells if c.text and c.text.strip()]
+                    if cells:
+                        paras.append(" - " + " | ".join(cells))
+            extracted_text = "\n\n".join(paras)
+        except Exception as e:
+            logger.error(f"Failed to parse Word document {filename}: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to read Word document: {str(e)}")
+
+    # 5. Handle TXT / Markdown
     elif lower_fn.endswith((".txt", ".md", ".text")):
         for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
             try:
@@ -813,7 +833,7 @@ async def parse_knowledge_file(
     else:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported file format. Please upload a PDF (.pdf), Excel (.xlsx, .xls), CSV (.csv), or text (.txt) file."
+            detail="Unsupported file format. Please upload a PDF (.pdf), Word (.docx), Excel (.xlsx, .xls), CSV (.csv), or text (.txt) file."
         )
 
     # Clean whitespace

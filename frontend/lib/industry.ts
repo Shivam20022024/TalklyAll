@@ -15,10 +15,13 @@ import {
   ShieldCheck,
   CheckCircle2,
   Banknote,
-  ShoppingBag
+  ShoppingBag,
+  Sun,
+  Zap
 } from 'lucide-react'
 
-export type IndustryKey = 'real_estate' | 'healthcare' | 'edtech' | 'bfsi' | 'general_sales' | 'collections' | 'ecommerce'
+export type StandardIndustryKey = 'real_estate' | 'healthcare' | 'edtech' | 'bfsi' | 'general_sales' | 'collections' | 'ecommerce'
+export type IndustryKey = StandardIndustryKey | string
 
 export interface IndustryConfig {
   id: IndustryKey
@@ -315,5 +318,123 @@ export const INDUSTRY_CONFIGS: Record<IndustryKey, IndustryConfig> = {
       { objection: 'Incomplete address / landmark missing', frequency: '22%', aiHandling: 'Collects landmark and updates shipping label before warehouse dispatch' },
     ],
     keyExtractionFields: ['Order Status (Confirmed/Cancelled)', 'COD Amount', 'Delivery Address & Landmark', 'Payment Readiness (Cash/UPI)']
+  }
+}
+
+/**
+ * Resolves an IndustryConfig for any standard or custom industry vertical.
+ * If the industry is a custom vertical (e.g. solar energy, consultation, retail),
+ * it dynamically builds an intelligent, tailored configuration rather than falling
+ * back to an unrelated preset.
+ */
+export function getIndustryConfig(
+  industry?: string | null,
+  customTitle?: string | null,
+  customOffering?: string | null
+): IndustryConfig {
+  if (industry && (INDUSTRY_CONFIGS as any)[industry]) {
+    return (INDUSTRY_CONFIGS as any)[industry]
+  }
+
+  const raw = (industry || 'custom').trim()
+  const lowerRaw = raw.toLowerCase()
+  const lowerTitle = (customTitle || '').toLowerCase()
+  const lowerOff = (customOffering || '').toLowerCase()
+
+  const isSolar = lowerRaw.includes('solar') || lowerTitle.includes('solar') || lowerOff.includes('solar')
+
+  let cleanLabel = customTitle?.trim()
+  if (!cleanLabel) {
+    cleanLabel = raw
+      .replace(/^custom_/i, '')
+      .replace(/_/g, ' ')
+      .trim()
+      .split(' ')
+      .map(w => {
+        const u = w.toUpperCase()
+        if (['AI', 'ML', 'TCS', 'BHK', 'COD', 'EMI', 'VIP', 'DBT'].includes(u)) return u
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+      })
+      .join(' ')
+  }
+
+  if (isSolar) {
+    return {
+      id: raw,
+      label: cleanLabel || 'Rooftop Solar Consultation',
+      shortLabel: 'Solar Energy',
+      tagline: 'Solar Lead Qualification, Subsidy Guidance & Free Site Survey Booking',
+      iconName: 'Sun',
+      offeringName: customOffering || 'Solar Panel System (kW)',
+      leadTerm: 'Solar Inquiries',
+      conversionGoal: 'Site Surveys Booked',
+      metrics: {
+        total_leads: { label: 'Solar Inquiries', icon: Users, tone: 'blue', desc: 'Solar consultations & inquiries captured' },
+        calls_made: { label: 'Outreach Dialed', icon: Phone, tone: 'violet', desc: 'AI consultation calls initiated' },
+        connected_calls: { label: 'Connected Homeowners', icon: Activity, tone: 'green', desc: 'Engaged in roof & bill qualification' },
+        qualified_leads: { label: 'Site Surveys Booked', icon: Target, tone: 'orange', desc: 'Technical site survey confirmed' },
+        interested_leads: { label: 'Subsidy Qualified', icon: Sparkles, tone: 'blue', desc: 'Roof & bill criteria eligible' },
+        conversion_rate: { label: 'Survey Booking Rate', icon: TrendingUp, tone: 'green', desc: 'Site surveys vs inquiries' },
+      },
+      funnelStages: [
+        'Total Solar Inquiries',
+        'Outreach Contacted',
+        'Connected Homeowners',
+        'Roof & Bill Qualified',
+        'Subsidy Eligible',
+        'Site Surveys Booked'
+      ],
+      intentDistribution: [
+        { label: '3kW Residential System', pct: 45, color: 'bg-amber-500' },
+        { label: '5kW Residential System', pct: 30, color: 'bg-emerald-500' },
+        { label: '10kW + Commercial', pct: 15, color: 'bg-blue-500' },
+        { label: 'Subsidy & Net Metering', pct: 10, color: 'bg-purple-500' },
+      ],
+      topObjections: [
+        { objection: 'Subsidy Process Too Complicated', frequency: '42%', aiHandling: 'Explains direct PM Surya Ghar DBT transfer of ₹78,000 handled end-to-end' },
+        { objection: 'Rainy or Cloudy Season Efficiency', frequency: '31%', aiHandling: 'Clarifies panels operate using diffuse daylight and year-round net metering grid banking' },
+        { objection: 'Upfront Installation Cost', frequency: '20%', aiHandling: 'Highlights zero-down financing where monthly solar savings exceed EMI' },
+      ],
+      keyExtractionFields: ['Roof Ownership (Independent / Flat)', 'Monthly Electricity Bill', 'System Capacity (kW)', 'Preferred Survey Slot']
+    }
+  }
+
+  return {
+    id: raw,
+    label: cleanLabel || 'Custom Consultation & Sales',
+    shortLabel: cleanLabel?.split(' ')[0] || 'Custom',
+    tagline: 'Automated Lead Qualification, Consultation & Appointment Scheduling',
+    iconName: 'Sparkles',
+    offeringName: customOffering || 'Product / Service Offering',
+    leadTerm: 'Prospective Leads',
+    conversionGoal: 'Appointments Booked',
+    metrics: {
+      total_leads: { label: 'Total Inquiries', icon: Users, tone: 'blue', desc: 'Inquiries captured for this vertical' },
+      calls_made: { label: 'Outreach Calls', icon: Phone, tone: 'violet', desc: 'AI voice qualification calls initiated' },
+      connected_calls: { label: 'Connected Prospects', icon: Activity, tone: 'green', desc: 'Prospects engaged in live conversation' },
+      qualified_leads: { label: 'Qualified Leads', icon: Target, tone: 'orange', desc: 'Requirements & budget verified' },
+      interested_leads: { label: 'High-Intent Prospects', icon: Sparkles, tone: 'blue', desc: 'Ready for consultation callback' },
+      conversion_rate: { label: 'Conversion Rate', icon: TrendingUp, tone: 'green', desc: 'Qualified bookings vs total leads' },
+    },
+    funnelStages: [
+      'Total Lead Inquiries',
+      'Outreach Contacted',
+      'Connected & Engaged',
+      'Requirement Qualified',
+      'High-Intent Prospects',
+      'Appointments Booked'
+    ],
+    intentDistribution: [
+      { label: 'High Interest / Ready to Buy', pct: 40, color: 'bg-blue-500' },
+      { label: 'Information & Pricing Inquiry', pct: 35, color: 'bg-emerald-500' },
+      { label: 'Evaluating Alternatives', pct: 15, color: 'bg-amber-500' },
+      { label: 'Callback Requested', pct: 10, color: 'bg-purple-500' },
+    ],
+    topObjections: [
+      { objection: 'Need more information', frequency: '35%', aiHandling: 'Provides verified facts and offers specialist walkthrough' },
+      { objection: 'Pricing question', frequency: '30%', aiHandling: 'Explains transparent pricing tiers and ROI structure' },
+      { objection: 'Timing inconvenient', frequency: '25%', aiHandling: 'Schedules exact callback date and time window' },
+    ],
+    keyExtractionFields: ['Customer Need', 'Budget / Scale', 'Location', 'Next Step Agreed']
   }
 }

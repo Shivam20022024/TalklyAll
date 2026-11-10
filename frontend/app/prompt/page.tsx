@@ -472,7 +472,18 @@ export default function PromptPage() {
         alert(`✅ Extracted knowledge from "${res.filename}"! Added ${res.character_count.toLocaleString()} characters of verified facts into the Knowledge Base.`)
       }
     } catch (err: any) {
-      alert(`Failed to parse file: ${err.message || 'Error processing document'}`)
+      const msg = typeof err === 'string'
+        ? err
+        : typeof err?.message === 'string' && err.message !== '[object Object]'
+          ? err.message
+          : typeof err?.detail === 'string'
+            ? err.detail
+            : (typeof err?.message === 'object' && err.message !== null)
+              ? JSON.stringify(err.message)
+              : (typeof err?.detail === 'object' && err.detail !== null)
+                ? JSON.stringify(err.detail)
+                : (err ? String(err) : 'Error processing document');
+      alert(`Failed to parse file: ${msg}`)
     } finally {
       setUploadingKnowledgeFile(false)
       if (e.target) e.target.value = ''

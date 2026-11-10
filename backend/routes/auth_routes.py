@@ -269,12 +269,25 @@ async def get_company_settings(current_user: dict = Depends(require_company_acce
     company = await db.companies.find_one({"company_id": current_user["company_id"]})
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    prompt_doc = await db.prompts.find_one({"company_id": current_user["company_id"]})
+    effective_industry = company.get("industry") or (prompt_doc or {}).get("industry") or "real_estate"
+
+    custom_name = None
+    if prompt_doc and "custom_templates" in prompt_doc:
+        for t in prompt_doc.get("custom_templates", []):
+            if t.get("id") == effective_industry:
+                custom_name = t.get("name")
+                break
+
     return {
         "status": "success",
         "company": {
             "company_id": company.get("company_id"),
             "name": company.get("name"),
-            "industry": company.get("industry") or "healthcare",
+            "industry": effective_industry,
+            "custom_industry_name": custom_name,
+            "offering": company.get("offering") or (prompt_doc or {}).get("offering", ""),
             "webhook_url": company.get("webhook_url", ""),
             "plan_type": company.get("plan_type", "trial")
         }

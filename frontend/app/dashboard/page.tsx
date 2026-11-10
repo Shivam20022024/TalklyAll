@@ -22,15 +22,16 @@ import {
   Users,
   Banknote,
   ShoppingBag,
+  Sun,
 } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { MetricCard } from '@/components/ui/MetricCard'
 import { MiniChart } from '@/components/ui/MiniChart'
 import { fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/providers/AuthProvider'
-import { INDUSTRY_CONFIGS, IndustryKey } from '@/lib/industry'
+import { INDUSTRY_CONFIGS, IndustryKey, getIndustryConfig } from '@/lib/industry'
 
-const INDUSTRY_ICONS: Record<IndustryKey, any> = {
+const INDUSTRY_ICONS: Record<string, any> = {
   real_estate: Building2,
   healthcare: Stethoscope,
   edtech: GraduationCap,
@@ -46,9 +47,11 @@ export default function DashboardPage() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
 
   // Adaptive Industry Selection:
-  // For company logins, always locked 100% to their company profile industry.
+  // For company logins, always synchronized to their company profile & active agent prompt.
   // Only platform Super Admins see the demo switcher.
-  const [selectedIndustry, setSelectedIndustry] = useState<IndustryKey>('healthcare')
+  const [selectedIndustry, setSelectedIndustry] = useState<string>('')
+  const [customIndustryTitle, setCustomIndustryTitle] = useState<string>('')
+  const [customOffering, setCustomOffering] = useState<string>('')
 
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [campaignsList, setCampaignsList] = useState<any[]>([])
@@ -63,36 +66,55 @@ export default function DashboardPage() {
     else setGreeting('Good evening')
   }, [])
 
-  // Initialize industry from company settings for company users, or localStorage for Super Admin demo
+  // Initialize industry from company settings / active prompt for company users, or localStorage for Super Admin demo
   useEffect(() => {
     async function initIndustry() {
       if (!isSuperAdmin) {
-        if (user?.industry && INDUSTRY_CONFIGS[user.industry as IndustryKey]) {
-          setSelectedIndustry(user.industry as IndustryKey)
-          return
-        }
         try {
           const res = await fetchApi('/api/v1/auth/company-settings')
-          if (res?.company?.industry && INDUSTRY_CONFIGS[res.company.industry as IndustryKey]) {
-            setSelectedIndustry(res.company.industry as IndustryKey)
+          const compInd = res?.company?.industry || user?.industry
+          if (compInd) {
+            setSelectedIndustry(compInd)
+            if (res?.company?.custom_industry_name) {
+              setCustomIndustryTitle(res.company.custom_industry_name)
+            }
+            if (res?.company?.offering) {
+              setCustomOffering(res.company.offering)
+            }
             return
           }
         } catch { }
+
+        try {
+          const promptRes = await fetchApi('/api/v1/prompt')
+          if (promptRes?.industry) {
+            setSelectedIndustry(promptRes.industry)
+            if (promptRes.offering) setCustomOffering(promptRes.offering)
+            return
+          }
+        } catch { }
+
+        if (user?.industry) {
+          setSelectedIndustry(user.industry)
+          return
+        }
+        setSelectedIndustry('real_estate')
       } else {
         try {
-          const saved = localStorage.getItem('talkly_selected_industry') as IndustryKey
-          if (saved && INDUSTRY_CONFIGS[saved]) {
+          const saved = localStorage.getItem('talkly_selected_industry')
+          if (saved) {
             setSelectedIndustry(saved)
             return
           }
         } catch { }
+        setSelectedIndustry('real_estate')
       }
     }
     initIndustry()
   }, [user?.industry, isSuperAdmin])
 
   // Handle switching industry (Super Admin demo mode)
-  const handleIndustryChange = async (ind: IndustryKey) => {
+  const handleIndustryChange = async (ind: string) => {
     setSelectedIndustry(ind)
     setSelectedCampaignId('') // Reset campaign filter when switching industry
     try {
@@ -117,8 +139,8 @@ export default function DashboardPage() {
         // If super admin selected a campaign with an associated industry, preview that industry
         if (isSuperAdmin && selectedCampaignId && campRes) {
           const camp = campRes.find((c: any) => c.campaign_id === selectedCampaignId)
-          if (camp?.industry && INDUSTRY_CONFIGS[camp.industry as IndustryKey] && camp.industry !== selectedIndustry) {
-            setSelectedIndustry(camp.industry as IndustryKey)
+          if (camp?.industry && camp.industry !== selectedIndustry) {
+            setSelectedIndustry(camp.industry)
           }
         }
       } catch (e) {
@@ -136,8 +158,9 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [range, selectedCampaignId, selectedIndustry])
 
-  const config = INDUSTRY_CONFIGS[selectedIndustry] || INDUSTRY_CONFIGS.real_estate
-  const IndustryIcon = INDUSTRY_ICONS[selectedIndustry] || Building2
+  const config = getIndustryConfig(selectedIndustry, customIndustryTitle, customOffering)
+  const isSolar = (selectedIndustry || '').toLowerCase().includes('solar') || (customIndustryTitle || '').toLowerCase().includes('solar')
+  const IndustryIcon = isSolar ? Sun : (INDUSTRY_ICONS[selectedIndustry] || Sparkles)
 
   const callsMade = Number(dashboardData?.calls_made || 0)
   const totalLeads = Number(dashboardData?.total_leads || 0)
@@ -246,7 +269,7 @@ export default function DashboardPage() {
           >
             <option value="">All {config.shortLabel} Campaigns</option>
             {campaignsList
-              .filter((c: any) => isSuperAdmin || c.industry === selectedIndustry)
+              .filter((c: any) => isSuperAdmin || !selectedIndustry || c.industry === selectedIndustry || (String(c.industry || '').startsWith('custom_') && String(selectedIndustry || '').startsWith('custom_')))
               .map((c: any) => (
                 <option key={c.campaign_id} value={c.campaign_id}>
                   {c.name} {c.offering ? `(${c.offering})` : ''} {isSuperAdmin && c.industry ? `• ${INDUSTRY_CONFIGS[c.industry as IndustryKey]?.shortLabel || c.industry}` : ''}

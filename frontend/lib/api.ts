@@ -55,13 +55,28 @@ export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const errDetail = typeof data.detail === 'string'
-      ? data.detail
-      : Array.isArray(data.detail)
-        ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
-        : (typeof data.detail === 'object' && data.detail !== null)
-          ? JSON.stringify(data.detail)
-          : data.message || 'An error occurred';
+    let errDetail = 'An error occurred';
+    if (typeof data?.detail === 'string' && data.detail.trim()) {
+      errDetail = data.detail;
+    } else if (Array.isArray(data?.detail)) {
+      errDetail = data.detail.map((d: any) => d.msg || (typeof d === 'string' ? d : JSON.stringify(d))).join(', ');
+    } else if (typeof data?.detail === 'object' && data.detail !== null) {
+      errDetail = JSON.stringify(data.detail);
+    } else if (typeof data?.message === 'string' && data.message.trim()) {
+      errDetail = data.message;
+    } else if (typeof data?.message === 'object' && data.message !== null) {
+      errDetail = JSON.stringify(data.message);
+    } else if (typeof data?.error === 'string' && data.error.trim()) {
+      errDetail = data.error;
+    } else if (typeof data?.error === 'object' && data.error !== null) {
+      errDetail = JSON.stringify(data.error);
+    } else if (typeof data === 'string' && (data as string).trim()) {
+      errDetail = data;
+    } else if (response.statusText) {
+      errDetail = `HTTP ${response.status}: ${response.statusText}`;
+    } else {
+      errDetail = `Request failed with status ${response.status}`;
+    }
     throw new Error(errDetail);
   }
 
