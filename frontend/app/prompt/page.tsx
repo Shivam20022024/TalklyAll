@@ -870,6 +870,15 @@ export default function PromptPage() {
           <button onClick={handleResetToTemplate} className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-all" title="Reset this vertical to factory template">
             <RotateCcw size={14} /> Reset
           </button>
+          {selectedIndustry.startsWith('custom_') && (
+            <button
+              onClick={(e) => handleDeleteCustomTemplate(selectedIndustry, currentTemplate?.name || 'Custom Agent', e)}
+              className="flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 hover:border-red-500/60 shadow-xs transition-all cursor-pointer"
+              title="Delete this custom agent prompt"
+            >
+              <Trash2 size={15} /> Delete Custom Agent
+            </button>
+          )}
           <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-50 transition-all">
             <Save size={15} />{saving ? "Saving..." : "Save Draft"}
           </button>
@@ -1040,10 +1049,10 @@ export default function PromptPage() {
                           e.stopPropagation()
                           handleDeleteCustomTemplate(ct.id, ct.name, e)
                         }}
-                        className="opacity-0 group-hover:opacity-100 hover:text-destructive p-1 rounded transition-opacity cursor-pointer"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-500/10 p-1 rounded-md transition-colors cursor-pointer"
                         title="Delete this custom template"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -1175,6 +1184,15 @@ export default function PromptPage() {
                   <CheckCircle2 size={12} />
                   {activeLiveIndustry === selectedIndustry ? 'Active for Live Calls' : promptStatus === 'Published' ? 'Published' : 'Draft'}
                 </span>
+                {selectedIndustry.startsWith('custom_') && (
+                  <button
+                    onClick={(e) => handleDeleteCustomTemplate(selectedIndustry, currentTemplate?.name || 'Custom Agent', e)}
+                    className="flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+                    title="Delete this custom agent prompt"
+                  >
+                    <Trash2 size={12} /> Delete Agent
+                  </button>
+                )}
               </div>
             </div>
 

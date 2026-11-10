@@ -675,7 +675,7 @@ async def get_custom_templates(current_user: dict = Depends(require_company_acce
 
 @app.delete("/api/v1/prompt/custom-templates/{template_id}")
 async def delete_custom_template(template_id: str, current_user: dict = Depends(require_company_access)):
-    """Deletes a company custom agent template."""
+    """Deletes a company custom agent template and safely resets active vertical if deleted."""
     db = mongodb.get_db()
     company_id = current_user["company_id"]
     await db.prompts.update_one(
@@ -685,6 +685,22 @@ async def delete_custom_template(template_id: str, current_user: dict = Depends(
             "$unset": {f"industry_prompts.{template_id}": ""}
         }
     )
+    # If the company was using this template as active vertical, reset cleanly
+    comp = await db.companies.find_one({"company_id": company_id})
+    if comp and comp.get("industry") == template_id:
+        now = datetime.utcnow()
+        await db.companies.update_one(
+            {"company_id": company_id},
+            {"$set": {"industry": "real_estate", "updated_at": now}}
+        )
+        await db.users.update_many(
+            {"company_id": company_id},
+            {"$set": {"industry": "real_estate", "updated_at": now}}
+        )
+        await db.prompts.update_one(
+            {"company_id": company_id},
+            {"$set": {"industry": "real_estate", "updated_at": now}}
+        )
     return {"status": "success", "message": f"Template {template_id} deleted"}
 
 
