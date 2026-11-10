@@ -417,22 +417,65 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             except Exception as e:
                 safe_print(f"[DECOUPLED PREWARM NOTICE]: Prewarm wait ended: {e}")
 
+        # Ensure Plivo media stream handshake is complete ("start" event received)
+        # before dispatching audio into the track so Plivo's media server doesn't drop the audio.
+        try:
+            raw_init = await asyncio.wait_for(websocket.receive_text(), timeout=1.5)
+            init_data = json.loads(raw_init)
+            init_evt = init_data.get("event")
+            if init_evt == "start":
+                st_id = init_data.get("start", {}).get("streamId") or init_data.get("streamId")
+                safe_print(f"[DECOUPLED]: Plivo media stream ready (streamId={st_id}) for call_id={call_id}")
+            elif init_evt == "media":
+                p = (init_data.get("media") or {}).get("payload") or init_data.get("payload")
+                if p:
+                    await stt_session.push_audio(p)
+        except Exception as init_err:
+            safe_print(f"[DECOUPLED]: Handshake start wait: {init_err}")
+
         if prewarmed_result and prewarmed_result.get("chunks"):
-            # FAST PATH: Play pre-synthesized audio chunks immediately (0ms delay!)
+            # FAST PATH: Play pre-synthesized audio chunks immediately into active stream
             t_play_start = time.time()
             welcome_duration = prewarmed_result["duration"]
             for audio_b64 in prewarmed_result["chunks"]:
-                play_msg = {
-                    "event": "playAudio",
-                    "media": {
-                        "contentType": "audio/x-mulaw",
-                        "sampleRate": 8000,
-                        "payload": audio_b64
+                try:
+                    raw_audio = base64.b64decode(audio_b64)
+                    chunk_sz = 8000  # 1-second slices of 8kHz mulaw
+                    if len(raw_audio) > chunk_sz:
+                        for offset in range(0, len(raw_audio), chunk_sz):
+                            sub_b64 = base64.b64encode(raw_audio[offset:offset + chunk_sz]).decode("ascii")
+                            play_msg = {
+                                "event": "playAudio",
+                                "media": {
+                                    "contentType": "audio/x-mulaw",
+                                    "sampleRate": 8000,
+                                    "payload": sub_b64
+                                }
+                            }
+                            await websocket.send_text(json.dumps(play_msg))
+                            await asyncio.sleep(0.01)
+                    else:
+                        play_msg = {
+                            "event": "playAudio",
+                            "media": {
+                                "contentType": "audio/x-mulaw",
+                                "sampleRate": 8000,
+                                "payload": audio_b64
+                            }
+                        }
+                        await websocket.send_text(json.dumps(play_msg))
+                except Exception:
+                    play_msg = {
+                        "event": "playAudio",
+                        "media": {
+                            "contentType": "audio/x-mulaw",
+                            "sampleRate": 8000,
+                            "payload": audio_b64
+                        }
                     }
-                }
-                await websocket.send_text(json.dumps(play_msg))
+                    await websocket.send_text(json.dumps(play_msg))
             safe_print(
-                f"[DECOUPLED LATENCY]: Instant welcome audio sent {((time.time() - t_play_start)*1000):.1f}ms after stream connect! "
+                f"[DECOUPLED LATENCY]: Instant welcome audio sent {((time.time() - t_play_start)*1000):.1f}ms after stream start! "
                 f"(Audio duration: {welcome_duration:.2f}s)"
             )
         elif welcome_text:
@@ -553,16 +596,16 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     safe_print(f"[DECOUPLED]: Dropped likely hallucinated/degenerate STT text: '{customer_text}'")
                     return
 
-                # Only apply the pickup shield during the opening welcome message.
-                # Mid-call turns must NEVER drop the customer's answer!
+                # If customer speaks during welcome message, buffer until welcome audio completes
                 now = time.time()
                 is_welcome_turn = len(transcript_parts) <= 1
                 if is_welcome_turn and now < agent_speaking_until:
+                    wait_rem = agent_speaking_until - now
                     safe_print(
-                        f"[DECOUPLED PICKUP SHIELD]: Ignored speech while AI is still audibly speaking welcome line "
-                        f"({agent_speaking_until - now:.2f}s remaining): '{customer_text}'"
+                        f"[DECOUPLED PICKUP BUFFER]: Buffered customer speech '{customer_text}' during welcome line "
+                        f"({wait_rem:.2f}s remaining). Processing immediately upon welcome completion..."
                     )
-                    return
+                    await asyncio.sleep(wait_rem)
 
                 async with turn_lock:
                     turn_start = time.time()
@@ -709,14 +752,13 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
 
         welcome_silence_task = asyncio.create_task(check_welcome_silence())
-        turn_tasks.add(welcome_silence_task)
-        welcome_silence_task.add_done_callback(turn_tasks.discard)
 
         plivo_task = asyncio.create_task(plivo_to_stt())
         stt_task = asyncio.create_task(stt_to_gemini())
         done, pending = await asyncio.wait({plivo_task, stt_task}, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
+        welcome_silence_task.cancel()
 
         # Let any turn that was already mid-flight (customer's last
         # utterance already transcribed, Gemini/TTS in progress) finish
