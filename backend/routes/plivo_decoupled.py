@@ -370,7 +370,21 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     # Detect pipeline language from Hindi Devanagari or Roman Hinglish keywords
     is_hindi_pipeline = is_hindi_or_hinglish(welcome_text, system_prompt, ctx.get("call_lang"))
     call_lang = ctx.get("call_lang") or ("Hindi" if is_hindi_pipeline else "English")
-    directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI if is_hindi_pipeline else DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+
+    v_gender = ctx.get("voice_gender") or "Female"
+    gender_rules = (
+        f"\n6. GENDER CONSISTENCY: Your voice persona is {v_gender.upper()}. In Hindi/Hinglish, strictly use "
+        + ("FEMININE verb forms ('बोल रही हूँ', 'समझ गई', 'सकती हूँ', 'करूँगी'). Never use masculine forms ('रहा हूँ', 'सकता हूँ', 'गया').\n" if v_gender == "Female"
+           else "MASCULINE verb forms ('बोल रहा हूँ', 'समझ गया', 'सकता हूँ', 'करूँगा'). Never use feminine forms ('रही हूँ', 'सकती हूँ', 'गई').\n")
+    )
+    ind_anchor = (
+        f"7. STRICT INDUSTRY FOCUS: You are representing {customer_name or 'the customer'}'s inquiry. "
+        "Stick strictly to the domain of your offering! Never ask about 'model' or 'brand' on a property/real-estate call, or 'BHK' on a healthcare call.\n"
+    )
+    if is_hindi_pipeline:
+        directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI + gender_rules + ind_anchor
+    else:
+        directive = DECOUPLED_FIRST_WORD_DIRECTIVE_EN
 
     _sarvam_stt_lang_map = {"en": "en-IN", "hi": "hi-IN"}
     if is_hindi_pipeline:
@@ -743,17 +757,32 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     break
 
         speech_stopped_at = None
+        pending_transcript_buffer = ""
+        TRAILING_HESITATIONS = ("एप्रोक्स", "लगभग", "और", "मतलब", "यानी", "around", "approx", "about", "and", "or", "लेकिन", "बट")
 
         async def stt_to_gemini():
-            nonlocal speech_stopped_at
+            nonlocal speech_stopped_at, pending_transcript_buffer
             async for ev in stt_session.events():
                 safe_print(f"[DECOUPLED STT EVENT]: {ev}")
                 if ev["type"] == "speech_stopped":
                     speech_stopped_at = time.time()
                 elif ev["type"] == "final":
+                    txt = (ev.get("text") or "").strip()
+                    if pending_transcript_buffer:
+                        txt = f"{pending_transcript_buffer} {txt}".strip()
+                        pending_transcript_buffer = ""
+                    clean_trailing = txt.rstrip("।!?,. ").lower()
+                    if clean_trailing.endswith(TRAILING_HESITATIONS):
+                        safe_print(f"[DECOUPLED PAUSE BUFFER]: Customer ended on hesitation word ('{txt}'). Waiting for completion...")
+                        pending_transcript_buffer = txt
+                        await asyncio.sleep(0.7)
+                        if pending_transcript_buffer == txt:
+                            pending_transcript_buffer = ""
+                        else:
+                            continue
                     if speech_stopped_at is not None:
                         safe_print(f"[DECOUPLED LATENCY]: Sarvam final transcript {time.time() - speech_stopped_at:.2f}s after speech_stopped")
-                    t = asyncio.create_task(handle_final_transcript(ev["text"]))
+                    t = asyncio.create_task(handle_final_transcript(txt))
                     turn_tasks.add(t)
                     t.add_done_callback(turn_tasks.discard)
                 elif ev["type"] == "error":

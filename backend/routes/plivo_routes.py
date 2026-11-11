@@ -756,23 +756,30 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         welcome_text = welcome_text.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
         system_prompt = system_prompt.replace(f"{{{{{vk}}}}}", str(vv)).replace(f"{{{vk}}}", str(vv))
 
+    # Robust language detection: checks Devanagari script, Roman Hindi/Hinglish keywords, and metadata
+    _is_hindi_call = is_hindi_or_hinglish(welcome_text, system_prompt, str(call_doc.get("language") if call_doc else ""))
+
+    # Dynamic Voice Gender Resolution & Persona Alignment
+    raw_gender = (call_doc.get("voice_gender") if call_doc else None) or (company.get("voice_gender") if company else None) or "Female"
+    voice_gender = "Male" if str(raw_gender).strip().lower() == "male" else "Female"
+
     # Natural language fallbacks for any remaining unassigned industry variable tags
     natural_fallbacks = {
-        "{{budget}}": "budget",
-        "{{doctor_name}}": "डॉ. मेहता",
-        "{{appointment_time}}": "कल सुबह 11 बजे",
-        "{{preferred_time}}": "convenient time",
-        "{{batch_time}}": "flexible batch",
-        "{{current_role}}": "current background",
-        "{{loan_amount}}": "loan amount",
-        "{{tenure}}": "tenure",
-        "{{company_size}}": "team size",
-        "{{amount_due}}": "overdue amount",
-        "{{due_date}}": "due date",
-        "{{order_amount}}": "2,199",
-        "{{order_id}}": "recent order",
-        "{{delivery_address}}": "your delivery address",
-        "{{shop_address}}": shop_address or "our store representative",
+        "{{budget}}": "budget" if not _is_hindi_call else "बजट",
+        "{{doctor_name}}": "the doctor" if not _is_hindi_call else "हमारे विशेषज्ञ डॉक्टर",
+        "{{appointment_time}}": "convenient time" if not _is_hindi_call else "सुविधाजनक समय",
+        "{{preferred_time}}": "convenient time" if not _is_hindi_call else "सुविधाजनक समय",
+        "{{batch_time}}": "flexible batch" if not _is_hindi_call else "सुविधाजनक बैच",
+        "{{current_role}}": "current background" if not _is_hindi_call else "आपकी वर्तमान प्रोफ़ाइल",
+        "{{loan_amount}}": "loan amount" if not _is_hindi_call else "लोन राशि",
+        "{{tenure}}": "tenure" if not _is_hindi_call else "अवधि",
+        "{{company_size}}": "team size" if not _is_hindi_call else "टीम साइज",
+        "{{amount_due}}": "overdue amount" if not _is_hindi_call else "बकाया राशि",
+        "{{due_date}}": "due date" if not _is_hindi_call else "देय तिथि",
+        "{{order_amount}}": "order amount" if not _is_hindi_call else "ऑर्डर राशि",
+        "{{order_id}}": "recent order" if not _is_hindi_call else "हालिया ऑर्डर",
+        "{{delivery_address}}": "your delivery address" if not _is_hindi_call else "डिलीवरी पता",
+        "{{shop_address}}": shop_address or ("our store representative" if not _is_hindi_call else "हमारे स्टोर प्रतिनिधि"),
         "{{landmark}}": landmark or "",
         "{{city}}": city or "",
         "{{shop_timings}}": shop_timings or "",
@@ -781,6 +788,17 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     for tag, fb in natural_fallbacks.items():
         welcome_text = welcome_text.replace(tag, fb)
         system_prompt = system_prompt.replace(tag, fb)
+
+    # Dynamic Hindi Grammar Alignment based on selected voice gender
+    if _is_hindi_call:
+        if voice_gender == "Female":
+            welcome_text = re.sub(r'(?<!\S)बोल रहा हूँ', 'बोल रही हूँ', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)सकता हूँ', 'सकती हूँ', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)समझ गया', 'समझ गई', welcome_text)
+        else:
+            welcome_text = re.sub(r'(?<!\S)बोल रही हूँ', 'बोल रहा हूँ', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)सकती हूँ', 'सकता हूँ', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)समझ गई', 'समझ गया', welcome_text)
 
     # Collapse an exact word immediately repeated back-to-back ("options
     # options", "program program") - confirmed live, happens whenever a
@@ -811,17 +829,21 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     system_prompt = re.sub(r"₹\s*₹", "₹", system_prompt)
     system_prompt = re.sub(r"Rs\.?\s*₹", "₹", system_prompt, flags=re.IGNORECASE)
 
-    # Robust language detection: checks Devanagari script, Roman Hindi/Hinglish keywords, and metadata
-    _is_hindi_call = is_hindi_or_hinglish(welcome_text, system_prompt, str(call_doc.get("language") if call_doc else ""))
     _goodbye_line = "बहुत-बहुत धन्यवाद, आपका दिन शुभ हो! अलविदा।" if _is_hindi_call else "Thank you so much, have a great day! Goodbye."
     _repeat_line = "माफ कीजिए, क्या आप फिर से बता सकते हैं?" if _is_hindi_call else "Sorry, could you repeat that?"
     _minimal_prompt_hint = "'जी?', 'हाँ, बोलिए', or 'जी, बताइए'" if _is_hindi_call else "'Yes?' or 'Go ahead'"
 
     # Enforce strict language lock based on the prompt/greeting's language
     if _is_hindi_call:
+        gender_directive = (
+            f"- GENDER CONSISTENCY: Your agent persona is {voice_gender.upper()}. In Hindi/Hinglish, always use "
+            + ("FEMININE verb forms ('बोल रही हूँ', 'समझ गई', 'सकती हूँ', 'करूँगी'). Never use masculine forms ('रहा हूँ', 'सकता हूँ', 'गया').\n" if voice_gender == "Female"
+               else "MASCULINE verb forms ('बोल रहा हूँ', 'समझ गया', 'सकता हूँ', 'करूँगा'). Never use feminine forms ('रही हूँ', 'सकती हूँ', 'गई').\n")
+        )
         indian_accent_directive = (
             "CRITICAL VOICE & ACCENT DIRECTIVE:\n"
             "- IDENTITY: You are an Indian professional voice representative calling from an office in India.\n"
+            f"{gender_directive}"
             "- ACCENT: Speak in natural, everyday Hindi / Hinglish.\n"
             "- STRICT LANGUAGE LOCK (HINDI / HINGLISH): This call is configured in HINDI / HINGLISH and your opening greeting was in Hindi/Hinglish. You MUST speak and converse in natural Hindi/Hinglish throughout the entire call. "
             "Even when the customer gives short responses, mixed terms, or common English words like 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'Okay', 'Hello', 'Sure', 'Noida', you MUST continue speaking in Hindi/Hinglish. "
@@ -832,7 +854,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "\n10. ABSOLUTE LANGUAGE CONTINUITY (DO NOT SWITCH TO ENGLISH): Your opening greeting was in Hindi/Hinglish. You MUST continue speaking and asking questions in natural Hindi/Hinglish for the entire conversation. "
             "When the customer answers in Hindi, Hinglish, or short common words (e.g. 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Boliye', 'Bataiye', 'Theek hai'), "
             "this is standard conversational Indian response — it is NOT a request to switch to English! "
-            "You MUST continue your next responses in Hindi/Hinglish (e.g. 'बहुत बढ़िया! आप किस ब्रांड या मॉडल को देख रहे हैं?' or 'Great! Aap kis brand ya model ko dekh rahe hain?'). "
+            "You MUST continue your next responses in Hindi/Hinglish (e.g. 'बहुत बढ़िया! क्या कल सुबह आना सही रहेगा?' or 'Great! Kya kal subah aana theek rahega?'). "
             "NEVER switch to English unless the customer explicitly commands you to speak in English (e.g. 'talk in English', 'speak in English') — not otherwise."
         )
         natural_speech_directive = (
@@ -840,8 +862,9 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "\n- Talk like a real person on a phone call, not someone reading a script. Short, warm, everyday conversational Hindi/Hinglish phrasing beats long formal sentences."
             "\n- STRICT LANGUAGE CONTINUATION: Since your opening greeting was in Hindi/Hinglish, stay in natural Hindi/Hinglish across every turn. Even if the customer answers 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Yes', do NOT switch to English. Answer in Hindi/Hinglish."
             "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'जी बिल्कुल,' NOT 'जी बिल्कुल, [name],')."
-            "\n- Keep acknowledgements brief, gender-neutral, and natural in Hindi/Hinglish: 'जी बिल्कुल', 'हाँ जी', 'बहुत अच्छा', 'बढ़िया', 'ज़रूर' - never use stiff transitions or robotic 'समझ गया' (especially in female voice or when customer just said 'हाँ बताइए')."
-            "\n- Ask ONE short, plain question at a time in Hindi/Hinglish (e.g. 'आप किस तरह का मॉडल या ब्रांड देख रहे हैं?', 'क्या कल सुबह आना सही रहेगा?')."
+            "\n- Keep acknowledgements brief, natural, and gender-consistent in Hindi/Hinglish: 'जी बिल्कुल', 'हाँ जी', 'बहुत अच्छा', 'बढ़िया', 'ज़रूर' - never use stiff transitions or robotic fillers."
+            "\n- Ask ONE short, plain question at a time in Hindi/Hinglish (e.g. 'क्या कल सुबह आना सही रहेगा?', 'आप कौन सा समय पसंद करेंगे?')."
+            f"\n- STRICT INDUSTRY VOCABULARY ANCHORING: You are representing {company_name} regarding {offering or 'our services'} in the {call_industry or 'specified'} vertical. Stick strictly to vocabulary of this offering! In Real Estate, speak about configurations (2BHK, 3BHK, Villa, Budget, Site Visit) and NEVER ask about 'model' or 'brand'. In Healthcare, speak about consultations and appointments. In Automotive, speak about test drives and vehicles."
             "\n- React contextually to what the customer just said before moving on - a quick 'जी अच्छा', 'जी बिल्कुल', 'बढ़िया', 'ज़रूर' shows you are listening, but only acknowledge when they actually gave information. If they just said 'हाँ बताइए', flow directly into your question without saying 'समझ गया'."
             "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
             "\n- Never sound like a call-center script, an email, or a formal announcement. This is a live, warm, human conversation between two people in Hindi/Hinglish.\n\n"
@@ -1146,6 +1169,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "bakbak_language": bakbak_voice["language"] if bakbak_voice else None,
         "bakbak_model": bakbak_voice["model"] if bakbak_voice else None,
         "customer_name": customer_name,
+        "voice_gender": voice_gender,
         "is_inbound": is_inbound,
         "call_uuid": call_doc.get("plivo_call_uuid") if call_doc else None,
     }
