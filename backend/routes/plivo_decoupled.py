@@ -388,7 +388,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     if is_hindi_pipeline:
         directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI + gender_rules + ind_anchor
     else:
-        directive = DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+        directive = DECOUPLED_FIRST_WORD_DIRECTIVE_EN + ind_anchor
 
     _sarvam_stt_lang_map = {"en": "en-IN", "hi": "hi-IN"}
     if is_hindi_pipeline:
