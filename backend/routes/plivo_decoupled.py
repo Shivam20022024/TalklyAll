@@ -351,6 +351,8 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     welcome_text = ctx["welcome_text"]
     customer_name = ctx.get("customer_name") or ""
     company = ctx.get("company")
+    offering = ctx.get("offering") or ""
+    company_name = (company.get("name") if isinstance(company, dict) else None) or "the company"
     bakbak_voice_id = ctx.get("bakbak_voice_id")
     bakbak_language = ctx.get("bakbak_language")
     bakbak_model = ctx.get("bakbak_model")
@@ -378,10 +380,10 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
            else "MASCULINE verb forms ('बोल रहा हूँ', 'समझ गया', 'सकता हूँ', 'करूँगा'). Never use feminine forms ('रही हूँ', 'सकती हूँ', 'गई').\n")
     )
     ind_anchor = (
-        f"7. STRICT INDUSTRY FOCUS: You are representing {customer_name or 'the customer'}'s inquiry. "
-        "Stick strictly to the domain of your offering! Never ask about 'model' or 'brand' on a property/real-estate call, or 'BHK' on a healthcare call.\n"
-        "8. NO OVER-REPETITION: Do NOT repeat the full offering name on every turn. Refer to it naturally as 'प्रॉपर्टी', 'फ्लैट', or ask directly (e.g. 'इसके लिए आपका बजट क्या है?').\n"
-        "9. BUYER FLEXIBILITY: If the customer asks for an alternate configuration (e.g. 2BHK instead of 3BHK, or Villa), NEVER reject them or say you only focus on one unit! Always accept warmly: 'जी बिल्कुल! हमारे पास 2BHK के भी बेहतरीन ऑप्शन्स उपलब्ध हैं। आपका 2BHK के लिए बजट लगभग कितना रहेगा?' and qualify them.\n"
+        f"7. DOMAIN INTEGRITY: You are representing {company_name} regarding {offering or 'our services'}. "
+        "Stick strictly to the domain, terminology, and facts provided in your system prompt and knowledge base. Never invent terms or concepts from unrelated industries.\n"
+        "8. NO OVER-REPETITION: Do NOT repeat the full formal offering title on every turn. Refer to it naturally in conversation or ask your question directly.\n"
+        "9. SALES & OFFERING FLEXIBILITY (NEVER REJECT INQUIRIES): If the customer asks for an alternate option, variant, timing, tier, or configuration, NEVER reject them or say you only offer one thing! Always acknowledge warmly that suitable options are available, explore their requirements, and guide them to the next step.\n"
     )
     if is_hindi_pipeline:
         directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI + gender_rules + ind_anchor

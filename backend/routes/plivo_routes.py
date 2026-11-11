@@ -864,9 +864,9 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "\n- ZERO NAME REPETITION: You already greeted the customer by name in the opening message. Once the conversation is underway, NEVER repeat or say their name again in your responses (e.g. say 'जी बिल्कुल,' NOT 'जी बिल्कुल, [name],')."
             "\n- Keep acknowledgements brief, natural, and gender-consistent in Hindi/Hinglish: 'जी बिल्कुल', 'हाँ जी', 'बहुत अच्छा', 'बढ़िया', 'ज़रूर' - never use stiff transitions or robotic fillers."
             "\n- Ask ONE short, plain question at a time in Hindi/Hinglish (e.g. 'क्या कल सुबह आना सही रहेगा?', 'आप कौन सा समय पसंद करेंगे?')."
-            f"\n- STRICT INDUSTRY VOCABULARY ANCHORING: You are representing {company_name} regarding {offering or 'our services'} in the {call_industry or 'specified'} vertical. Stick strictly to vocabulary of this offering! In Real Estate, speak about configurations (2BHK, 3BHK, Villa, Budget, Site Visit) and NEVER ask about 'model' or 'brand'. In Healthcare, speak about consultations and appointments. In Automotive, speak about test drives and vehicles."
-            "\n- NO OVER-REPETITION OF OFFERING NAME: You already mentioned the offering in your opening greeting. In subsequent turns, do NOT repeat the full offering name in every question! Refer to it naturally as 'प्रॉपर्टी', 'फ्लैट', 'यूनिट', or ask your question directly (e.g. say 'इसके लिए आपका बजट लगभग कितना रहेगा?')."
-            "\n- CONFIGURATION FLEXIBILITY (NEVER REJECT BUYERS): In property/sales calls, if the customer requests a different configuration (e.g. asking for 2BHK when 3BHK was mentioned, or asking for Villa), NEVER say you only focus on one unit or turn them away! Always confirm that we have excellent options and ask their budget and timeline."
+            f"\n- DOMAIN INTEGRITY: You are representing {company_name} regarding {offering or 'our services'}. Stick strictly to the domain, terminology, and facts provided in your system prompt and knowledge base. Never invent terms or concepts from unrelated industries."
+            "\n- NO OVER-REPETITION OF OFFERING NAME: You already introduced the offering in your opening greeting. In subsequent turns, do NOT repeat the full formal offering title in every question. Refer to it naturally in conversation or ask your question directly (e.g. say 'इसके लिए आपका बजट लगभग कितना रहेगा?' or 'इसके लिए कौन सा समय सही रहेगा?')."
+            "\n- SALES & OFFERING FLEXIBILITY (NEVER REJECT INQUIRIES): If the customer asks for an alternate option, variant, timing, tier, or configuration, NEVER turn them down or say you only offer one thing! Always acknowledge warmly that suitable options are available, explore their requirements, and guide them to the next step."
             "\n- React contextually to what the customer just said before moving on - a quick 'जी अच्छा', 'जी बिल्कुल', 'बढ़िया', 'ज़रूर' shows you are listening, but only acknowledge when they actually gave information. If they just said 'हाँ बताइए', flow directly into your question without saying 'समझ गया'."
             "\n- Vary how you start each turn. Don't open every single turn the same way - mix it up the way a real person would."
             "\n- Never sound like a call-center script, an email, or a formal announcement. This is a live, warm, human conversation between two people in Hindi/Hinglish.\n\n"
@@ -1173,6 +1173,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "customer_name": customer_name,
         "voice_gender": voice_gender,
         "is_inbound": is_inbound,
+        "offering": offering,
+        "call_industry": call_industry,
         "call_uuid": call_doc.get("plivo_call_uuid") if call_doc else None,
     }
 
