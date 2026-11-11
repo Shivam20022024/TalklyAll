@@ -380,6 +380,8 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     ind_anchor = (
         f"7. STRICT INDUSTRY FOCUS: You are representing {customer_name or 'the customer'}'s inquiry. "
         "Stick strictly to the domain of your offering! Never ask about 'model' or 'brand' on a property/real-estate call, or 'BHK' on a healthcare call.\n"
+        "8. NO OVER-REPETITION: Do NOT repeat the full offering name on every turn. Refer to it naturally as 'प्रॉपर्टी', 'फ्लैट', or ask directly (e.g. 'इसके लिए आपका बजट क्या है?').\n"
+        "9. BUYER FLEXIBILITY: If the customer asks for an alternate configuration (e.g. 2BHK instead of 3BHK, or Villa), NEVER reject them or say you only focus on one unit! Always accept warmly: 'जी बिल्कुल! हमारे पास 2BHK के भी बेहतरीन ऑप्शन्स उपलब्ध हैं। आपका 2BHK के लिए बजट लगभग कितना रहेगा?' and qualify them.\n"
     )
     if is_hindi_pipeline:
         directive = DECOUPLED_FIRST_WORD_DIRECTIVE_HI + gender_rules + ind_anchor
