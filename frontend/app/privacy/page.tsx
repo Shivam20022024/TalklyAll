@@ -6,9 +6,9 @@ export default function PrivacyPage() {
       <section>
         <h2>1. Overview</h2>
         <p>
-          This Privacy Policy explains what personal data TalklyAI (operated by Novalantis) collects,
+          This Privacy Policy explains what personal data Voice AI collects,
           how we use it, who we share it with, and the choices you have. It applies to businesses that
-          use TalklyAI ("you", "your company") and, where relevant, to the people your company calls
+          use Voice AI ("you", "your company") and, where relevant, to the people your company calls
           through the platform.
         </p>
       </section>
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
       <section>
         <h2>5. Multi-Tenant Data Isolation</h2>
         <p>
-          TalklyAI is a multi-tenant platform. Each company's data — calls, leads, prompts, and billing
+          Voice AI is a multi-tenant platform. Each company's data — calls, leads, prompts, and billing
           — is logically isolated and scoped to that company's account; one customer cannot access
           another's data through the platform.
         </p>
@@ -77,7 +77,7 @@ export default function PrivacyPage() {
           Under India's Digital Personal Data Protection Act, 2023, and other applicable law, you may
           have the right to access, correct, or request erasure of your personal data, and to withdraw
           consent for processing where consent is the basis for it. To exercise these rights, contact us
-          at <a href="mailto:info@novalantis.com">info@novalantis.com</a>.
+          at <a href="mailto:support@voiceai.internal">support@voiceai.internal</a>.
         </p>
       </section>
 
@@ -93,7 +93,7 @@ export default function PrivacyPage() {
       <section>
         <h2>9. Cookies &amp; Local Storage</h2>
         <p>
-          TalklyAI uses browser local storage to keep you signed in and may use basic analytics to
+          Voice AI uses browser local storage to keep you signed in and may use basic analytics to
           understand product usage. We do not use third-party advertising trackers.
         </p>
       </section>
@@ -107,7 +107,7 @@ export default function PrivacyPage() {
         <h2>11. Contact / Grievance Officer</h2>
         <p>
           For privacy questions, data requests, or complaints, contact{' '}
-          <a href="mailto:info@novalantis.com">info@novalantis.com</a>.
+          <a href="mailto:support@voiceai.internal">support@voiceai.internal</a>.
         </p>
       </section>
 

@@ -603,7 +603,7 @@ export default function PromptPage() {
 
       const payload = {
         agent_name: wizardAgentName.trim() || 'Saanvi',
-        company_name: wizardCompanyName.trim() || user?.company_name || 'Talkly',
+        company_name: wizardCompanyName.trim() || user?.company_name || 'Voice AI',
         industry: wizardIndustry.trim() || 'Custom Business',
         agent_designation: wizardAgentDesignation.trim() || 'Consultation Specialist',
         language: wizardLanguage,
@@ -810,7 +810,7 @@ export default function PromptPage() {
   }
 
   // Live preview helpers
-  const sampleCompanyName = user?.company_name || 'Talkly'
+  const sampleCompanyName = user?.company_name || 'Voice AI'
   const sampleCustomerName = 'Rahul Sharma'
   const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'ecommerce' ? 'Wireless Earbuds' : selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
   const sampleLocation = location.trim() || 'Connaught Place, New Delhi'
@@ -903,7 +903,7 @@ export default function PromptPage() {
                 </span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground max-w-2xl leading-relaxed">
-                Have a unique business or SOP? Answer a few quick questions or paste your company brief, and Talkly AI will automatically generate a tailored voice agent with anti-repetition rules, dynamic variables, and custom greetings.
+                Have a unique business or SOP? Answer a few quick questions or paste your company brief, and Voice AI will automatically generate a tailored voice agent with anti-repetition rules, dynamic variables, and custom greetings.
               </p>
             </div>
           </div>
@@ -1441,9 +1441,9 @@ export default function PromptPage() {
               <HelpCircle size={15} className="text-primary" /> How Dynamic Variables Work
             </h2>
             <ol className="mt-2.5 space-y-2 text-xs text-muted-foreground list-decimal pl-4 leading-relaxed">
-              <li><strong className="text-foreground">Lead / CSV Value:</strong> If an uploaded CSV has an <code className="text-primary">offering</code> or custom column, Talkly uses it first.</li>
-              <li><strong className="text-foreground">Vertical Default:</strong> If the lead has no offering, Talkly injects your configured default offering from above.</li>
-              <li><strong className="text-foreground">No Cross-Industry Leaks:</strong> Talkly automatically prevents an old EdTech or loan offering from ever appearing in a Real Estate call.</li>
+              <li><strong className="text-foreground">Lead / CSV Value:</strong> If an uploaded CSV has an <code className="text-primary">offering</code> or custom column, Voice AI uses it first.</li>
+              <li><strong className="text-foreground">Vertical Default:</strong> If the lead has no offering, Voice AI injects your configured default offering from above.</li>
+              <li><strong className="text-foreground">No Cross-Industry Leaks:</strong> Voice AI automatically prevents an old EdTech or loan offering from ever appearing in a Real Estate call.</li>
             </ol>
           </section>
         </div>
@@ -1718,7 +1718,7 @@ export default function PromptPage() {
                   </p>
                 </div>
                 <div className="max-w-xs text-[11px] text-muted-foreground/80">
-                  Applying Talkly's anti-repetition rules, one-question pacing, and dynamic lead variable bindings.
+                  Applying Voice AI's anti-repetition rules, one-question pacing, and dynamic lead variable bindings.
                 </div>
               </div>
             ) : (
@@ -2011,7 +2011,7 @@ export default function PromptPage() {
                       <span className="text-[10px] font-black uppercase tracking-wider text-primary">AGENT BLUEPRINT SUMMARY</span>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div><span className="text-muted-foreground font-semibold">Agent:</span> <span className="font-bold">{wizardAgentName} ({wizardAgentDesignation})</span></div>
-                        <div><span className="text-muted-foreground font-semibold">Company:</span> <span className="font-bold">{wizardCompanyName || user?.company_name || 'Talkly'}</span></div>
+                        <div><span className="text-muted-foreground font-semibold">Company:</span> <span className="font-bold">{wizardCompanyName || user?.company_name || 'Voice AI'}</span></div>
                         <div><span className="text-muted-foreground font-semibold">Industry:</span> <span className="font-bold">{wizardIndustry || 'Custom'}</span></div>
                         <div><span className="text-muted-foreground font-semibold">Language:</span> <span className="font-bold">{wizardLanguage}</span></div>
                       </div>
@@ -2028,7 +2028,7 @@ export default function PromptPage() {
 
                     <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-2">
                       <CheckCircle2 size={16} className="shrink-0" />
-                      <span>Ready to generate! Talkly AI will formulate your outbound greeting, anti-repetition rules, dynamic variables, and system prompt.</span>
+                      <span>Ready to generate! Voice AI will formulate your outbound greeting, anti-repetition rules, dynamic variables, and system prompt.</span>
                     </div>
                   </div>
                 )}

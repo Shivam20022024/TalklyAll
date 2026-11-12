@@ -144,7 +144,7 @@ export default function BillingPage() {
         order_id: order.id,
         amount: order.amount,
         currency: order.currency,
-        name: 'TalklyAI',
+        name: 'Voice AI',
         description: 'Wallet Recharge',
         prefill: dashboard?.company_name ? { name: dashboard.company_name } : undefined,
         theme: { color: '#000000' },
@@ -158,7 +158,7 @@ export default function BillingPage() {
                 razorpay_signature: response.razorpay_signature
               })
             })
-            alert(`₹${amountToCharge.toFixed(2)} credited successfully to your TalklyAI wallet!`)
+            alert(`₹${amountToCharge.toFixed(2)} credited successfully to your Voice AI wallet!`)
             setShowTopupModal(false)
             setCustomAmount('')
             loadData(true)

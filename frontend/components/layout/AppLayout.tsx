@@ -84,7 +84,7 @@ function AccountMenu({ align = 'right' }: { align?: 'right' | 'left' }) {
         <div className="avatar avatar-blue">{initials}</div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold">{user?.name || 'User'}</p>
-          <p className="truncate text-[11px] text-muted-foreground">{user?.email || 'user@talkly.ai'}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{user?.email || 'user@voiceai.com'}</p>
         </div>
         <ChevronDown size={15} className="text-muted-foreground" />
       </button>
@@ -366,7 +366,7 @@ function Sidebar({ open, onClose, user, navGroups }: { open: boolean; onClose: (
         <div className="flex h-[76px] items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
             <div className="brand-mark"><Bot size={20} /></div>
-            <span className="text-[17px] font-bold tracking-tight">TalklyAI</span>
+            <span className="text-[17px] font-bold tracking-tight">Voice AI</span>
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground lg:hidden" aria-label="Close navigation"><X size={17} /></button>
         </div>
@@ -431,7 +431,7 @@ export default function AppLayout({ children, title = 'Dashboard' }: { children:
             <button onClick={() => setMenuOpen(true)} className="rounded-lg border border-border p-2 text-muted-foreground lg:hidden" aria-label="Open navigation"><Menu size={19} /></button>
             <div className="hidden lg:block">
               <p className="text-sm font-semibold">{title}</p>
-              <p className="text-[11px] text-muted-foreground">{isSuperAdmin ? 'TalklyAI platform' : 'TalklyAI workspace'}</p>
+              <p className="text-[11px] text-muted-foreground">{isSuperAdmin ? 'Voice AI platform' : 'Voice AI workspace'}</p>
             </div>
             <div className="flex items-center gap-2">
               {isSuperAdmin && <CompanySelector />}

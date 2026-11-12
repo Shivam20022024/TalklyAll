@@ -612,7 +612,7 @@ function LeadsContent() {
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h2 className="text-lg font-bold">Quick Call</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">TalklyAI will greet this customer by name during the call.</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Voice AI will greet this customer by name during the call.</p>
               </div>
               <button onClick={() => setShowQuickCallModal(false)} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
             </div>

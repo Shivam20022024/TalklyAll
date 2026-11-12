@@ -37,7 +37,7 @@ export default function VoiceIntelligencePage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('agent_name', 'TalklyAI Agent')
+      formData.append('agent_name', 'Voice AI Agent')
 
       const token = getAuthToken()
       

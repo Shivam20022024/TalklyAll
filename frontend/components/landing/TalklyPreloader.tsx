@@ -203,7 +203,7 @@ export default function TalklyPreloader({
     <motion.div
       className="talkly-preloader"
       role="status"
-      aria-label="Loading TalklyAI"
+      aria-label="Loading Voice AI"
       animate={curtain}
       transition={{ duration: reduce ? 0.3 : CURTAIN_SECONDS, ease: curtainEase }}
       onAnimationComplete={() => {
@@ -226,7 +226,7 @@ export default function TalklyPreloader({
             transition={{ duration: reduce ? 0.3 : 0.9, ease: softEase }}
           >
             <LogoMark className="talkly-preloader-mark" />
-            <span translate="no" className="talkly-preloader-name">TalklyAI</span>
+            <span translate="no" className="talkly-preloader-name">Voice AI</span>
           </motion.div>
 
           <motion.div className="talkly-preloader-wave" {...enter(0.35)}>
@@ -249,10 +249,10 @@ export default function TalklyPreloader({
         </div>
 
         <motion.div className="talkly-preloader-powered" {...enter(0.7)}>
-          <span className="talkly-preloader-label">Powered by</span>
+          <span className="talkly-preloader-label">Autonomous Enterprise</span>
           <span className="talkly-preloader-brand">
             <span className="talkly-preloader-dot" />
-            <span translate="no" className="talkly-preloader-word">Novalantis</span>
+            <span translate="no" className="talkly-preloader-word">Voice Platform</span>
           </span>
         </motion.div>
       </motion.div>

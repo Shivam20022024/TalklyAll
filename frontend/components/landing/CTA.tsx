@@ -9,7 +9,7 @@ export default function CTA() {
       <Reveal amount={0.2}>
         <div className="relative overflow-hidden rounded-3xl border border-[#dbe3fb] bg-gradient-to-br from-[#e6eeff] via-[#eff0ff] to-[#f0ebff] px-6 py-12 sm:px-10 lg:px-16 lg:py-16">
           <div className="relative z-10 max-w-[36rem]">
-            <h2 className="h-section">Let TalklyAI Handle Your Customer Conversations</h2>
+            <h2 className="h-section">Let Voice AI Handle Your Customer Conversations</h2>
             <p className="mt-4 text-[1.0625rem] leading-relaxed text-ink/75 text-pretty">
               Automate conversations, qualify leads, and drive business growth with AI-powered voice calling.
             </p>

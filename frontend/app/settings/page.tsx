@@ -60,7 +60,7 @@ export default function SettingsPage() {
   // Telephony State (Haira-inspired Call Settings)
   const [telephonyMode, setTelephonyMode] = useState<'shared' | 'custom'>('shared')
   const [sharedNumber, setSharedNumber] = useState('+918065535758')
-  const [sharedLabel, setSharedLabel] = useState('+91 80 6553 5758 (Talkly Plivo shared number)')
+  const [sharedLabel, setSharedLabel] = useState('+91 80 6553 5758 (Voice AI Plivo shared number)')
   const [connectedLine, setConnectedLine] = useState<any>(null)
   const [selectedProvider, setSelectedProvider] = useState<TelephonyProviderKey>('plivo')
   const [inboundRouting, setInboundRouting] = useState({ mode: 'ai_agent', fallback_number: '' })
@@ -134,7 +134,7 @@ export default function SettingsPage() {
         if (telRes) {
           setTelephonyMode(telRes.mode || 'shared')
           setSharedNumber(telRes.shared_number || '+918031830100')
-          setSharedLabel(telRes.shared_number_label || '+91 80 3183 0100 (Talkly shared number)')
+          setSharedLabel(telRes.shared_number_label || '+91 80 3183 0100 (Voice AI shared number)')
           setConnectedLine(telRes.connected_line || null)
           if (telRes.inbound_webhook_url) {
             setInboundWebhookUrl(telRes.inbound_webhook_url)
@@ -351,7 +351,7 @@ export default function SettingsPage() {
   }
 
   const handleDisconnectLine = async () => {
-    if (!confirm('Are you sure you want to disconnect this line and revert to the Talkly shared number pool?')) return
+    if (!confirm('Are you sure you want to disconnect this line and revert to the Voice AI shared number pool?')) return
     setDisconnectingLine(true)
     try {
       await fetchApi('/api/v1/telephony/disconnect', { method: 'POST' })
@@ -457,7 +457,7 @@ export default function SettingsPage() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Choose the number and phone provider used to call your leads. This is optional: with no provider connected, calls go out from the Talkly shared number.
+                Choose the number and phone provider used to call your leads. This is optional: with no provider connected, calls go out from the Voice AI shared number.
               </p>
             </div>
 
@@ -478,7 +478,7 @@ export default function SettingsPage() {
                     {telephonyMode === 'custom' && connectedLine ? (
                       `Connected via ${connectedLine.provider?.toUpperCase()} • Inbound calls route to ${inboundRouting.mode === 'ai_agent' ? '24/7 AI Receptionist' : 'Human Forwarding Number'}`
                     ) : (
-                      'You have not connected a phone provider. Calls use the Talkly shared number.'
+                      'You have not connected a phone provider. Calls use the Voice AI shared number.'
                     )}
                   </div>
                 </div>
@@ -503,12 +503,12 @@ export default function SettingsPage() {
                 {/* Column 1: Keep Shared */}
                 <div className="space-y-2">
                   <div className="font-semibold text-foreground flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" /> Keep the Talkly shared number when:
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" /> Keep the Voice AI shared number when:
                   </div>
                   <ul className="space-y-1.5 text-muted-foreground pl-3 list-disc">
-                    <li>You are happy for leads to see a Talkly shared number. There is nothing to set up.</li>
+                    <li>You are happy for leads to see a Voice AI shared number. There is nothing to set up.</li>
                     <li>You do not have an existing account with a telecom provider.</li>
-                    <li>You want call minutes deducted simply from your Talkly prepaid wallet (₹12/min).</li>
+                    <li>You want call minutes deducted simply from your Voice AI prepaid wallet (₹12/min).</li>
                   </ul>
                 </div>
 
@@ -638,7 +638,7 @@ export default function SettingsPage() {
                         {inboundWebhookUrl}
                       </code>
                       <p className="text-[11px] text-muted-foreground">
-                        In your Plivo Console (Voice &gt; Applications), attach your phone number to an application with this URL set as the <strong>Primary Answer URL</strong> (HTTP POST) so customers who call back connect directly to your Talkly AI Agent.
+                        In your Plivo Console (Voice &gt; Applications), attach your phone number to an application with this URL set as the <strong>Primary Answer URL</strong> (HTTP POST) so customers who call back connect directly to your Voice AI Agent.
                       </p>
                     </div>
                   )}
@@ -649,14 +649,14 @@ export default function SettingsPage() {
                     {PROVIDERS.find(p => p.id === selectedProvider)?.name} integration is on the roadmap
                   </p>
                   <p className="text-muted-foreground max-w-md mx-auto text-[11px]">
-                    Talkly currently uses high-volume Plivo SIP trunking for sub-400ms bidirectional streaming and guaranteed Truecaller CLI across India. To connect your company's official registered Caller ID today, please select <strong>Plivo</strong> above.
+                    Voice AI currently uses high-volume Plivo SIP trunking for sub-400ms bidirectional streaming and guaranteed Truecaller CLI across India. To connect your company's official registered Caller ID today, please select <strong>Plivo</strong> above.
                   </p>
                 </div>
               ) : selectedProvider === 'bolna' ? (
                 <div className="py-6 px-4 text-center border border-dashed border-purple-500/30 rounded-lg text-xs space-y-2 bg-purple-500/5">
                   <p className="font-semibold text-foreground">Bolna Direct Native SIP</p>
                   <p className="text-muted-foreground max-w-md mx-auto text-[11px]">
-                    Bolna Direct is integrated with Talkly's shared carrier infrastructure. To connect a custom company phone line with dedicated Caller ID, select <strong>Plivo</strong>.
+                    Bolna Direct is integrated with Voice AI's shared carrier infrastructure. To connect a custom company phone line with dedicated Caller ID, select <strong>Plivo</strong>.
                   </p>
                 </div>
               ) : (
@@ -746,7 +746,7 @@ export default function SettingsPage() {
               </span>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
-              When a prospect agrees to attend a demo session, clinic consultation, or asks for WhatsApp details during an AI call, TalklyAI automatically dispatches the confirmation, meeting link, and brochure directly to their WhatsApp.
+              When a prospect agrees to attend a demo session, clinic consultation, or asks for WhatsApp details during an AI call, Voice AI automatically dispatches the confirmation, meeting link, and brochure directly to their WhatsApp.
             </p>
 
             {whatsappSaveSuccess && (
@@ -1033,7 +1033,7 @@ export default function SettingsPage() {
                     />
                     <div>
                       <div className="text-xs font-bold text-foreground">AI Voice Agent (24/7 Intelligent Receptionist)</div>
-                      <div className="text-[11px] text-muted-foreground">Talkly AI answers immediately with your customized industry persona and qualifies the caller.</div>
+                      <div className="text-[11px] text-muted-foreground">Voice AI answers immediately with your customized industry persona and qualifies the caller.</div>
                     </div>
                   </label>
 

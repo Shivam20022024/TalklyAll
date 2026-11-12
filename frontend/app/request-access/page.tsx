@@ -47,7 +47,7 @@ export default function RequestAccessPage() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Request submitted</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your access request is now pending review. Once a TalklyAI administrator approves it,
+            Your access request is now pending review. Once a Voice AI administrator approves it,
             you&apos;ll be able to sign in with the email and password you provided.
           </p>
           <Link href="/login" className="mt-6 inline-block rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">
@@ -82,13 +82,13 @@ export default function RequestAccessPage() {
           <Field label="Password" type="password" required value={form.password} onChange={(v) => set('password', v)} placeholder="Choose a password" />
           <Field label="Phone (optional)" value={form.phone} onChange={(v) => set('phone', v)} placeholder="+91 98765 43210" />
           <div className="space-y-1">
-            <label className="text-sm font-medium">How will you use TalklyAI? (optional)</label>
+            <label className="text-sm font-medium">How will you use Voice AI? (optional)</label>
             <textarea
               value={form.use_case}
               onChange={(e) => set('use_case', e.target.value)}
               rows={3}
               className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Outbound calling for real-estate leads…"
+              placeholder="Outbound calling for business leads…"
             />
           </div>
 
@@ -106,7 +106,7 @@ export default function RequestAccessPage() {
           <Link href="/login" className="font-semibold text-primary hover:underline">Sign in</Link>
         </p>
       </div>
-      <div className="mt-8 text-center text-sm font-medium text-muted-foreground">Made by Novalantis</div>
+      <div className="mt-8 text-center text-sm font-medium text-muted-foreground">Autonomous Enterprise Voice Platform</div>
     </div>
   );
 }

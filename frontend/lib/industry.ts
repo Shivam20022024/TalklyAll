@@ -235,7 +235,7 @@ export const INDUSTRY_CONFIGS: Record<IndustryKey, IndustryConfig> = {
       { label: 'Inbound Call Screening', pct: 10, color: 'bg-purple-500' },
     ],
     topObjections: [
-      { objection: 'Already using standard dialer / CRM', frequency: '43%', aiHandling: 'Explains how TalklyAI integrates seamlessly with existing CRMs (HubSpot/Salesforce/Zoho) rather than replacing them' },
+      { objection: 'Already using standard dialer / CRM', frequency: '43%', aiHandling: 'Explains how Voice AI integrates seamlessly with existing CRMs (HubSpot/Salesforce/Zoho) rather than replacing them' },
       { objection: 'AI sounds robotic / unnatural', frequency: '34%', aiHandling: 'Offers instant live call test to hear native conversational Hindi/English intonation' },
       { objection: 'Implementation timeline concerns', frequency: '16%', aiHandling: 'Demonstrates 10-minute zero-code campaign setup with pre-built vertical templates' },
     ],

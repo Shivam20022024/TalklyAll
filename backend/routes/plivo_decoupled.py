@@ -352,7 +352,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
     customer_name = ctx.get("customer_name") or ""
     company = ctx.get("company")
     offering = ctx.get("offering") or ""
-    company_name = (company.get("name") if isinstance(company, dict) else None) or "the company"
+    company_name = (company.get("name") if isinstance(company, dict) else None) or "Voice AI"
     bakbak_voice_id = ctx.get("bakbak_voice_id")
     bakbak_language = ctx.get("bakbak_language")
     bakbak_model = ctx.get("bakbak_model")

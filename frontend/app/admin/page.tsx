@@ -36,7 +36,7 @@ export default function PlatformDashboard() {
         <div>
           <p className="eyebrow text-primary">Platform / Overview</p>
           <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">All Companies</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Global metrics across every tenant on TalklyAI.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Global metrics across every tenant on Voice AI.</p>
         </div>
         <Link href="/admin/companies" className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90">
           <Building2 size={15} />Manage Companies

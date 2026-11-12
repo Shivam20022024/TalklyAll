@@ -54,7 +54,7 @@ export default function InboundCallsPage() {
     setExporting(true)
     try {
       const blob = await fetchBlob('/api/v1/calls/export?direction=inbound')
-      downloadBlob(blob, 'talkly_inbound_calls.xlsx')
+      downloadBlob(blob, 'voiceai_inbound_calls.xlsx')
     } catch (e: any) {
       alert(e.message || 'Failed to export inbound calls')
     } finally {
@@ -565,7 +565,7 @@ export default function InboundCallsPage() {
                       return (
                         <div key={i} className={`flex flex-col ${isAi ? 'items-start' : 'items-end'}`}>
                           <span className="text-[10px] font-bold text-muted-foreground mb-1">
-                            {isAi ? '🤖 Talkly AI' : '👤 Caller'}
+                            {isAi ? '🤖 Voice AI' : '👤 Caller'}
                           </span>
                           <div className={`rounded-xl px-3.5 py-2 text-xs leading-relaxed max-w-[85%] ${
                             isAi

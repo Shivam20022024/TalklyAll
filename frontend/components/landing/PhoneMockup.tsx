@@ -94,7 +94,7 @@ export default function PhoneMockup() {
                 <div className="text-center">
                   <LogoMark className="mx-auto h-6 w-6" />
                   <p translate="no" className="mt-1.5 font-display text-[0.9375rem] font-semibold text-ink">
-                    TalklyAI
+                    Voice AI
                   </p>
                   <p className="mt-2 inline-block rounded-full bg-haze px-2.5 py-0.5 text-[0.6875rem] font-medium text-brand-dark">
                     Sample call
@@ -127,7 +127,7 @@ export default function PhoneMockup() {
                       }`}
                     >
                       <span className="mb-0.5 block text-[0.6875rem] font-semibold text-muted">
-                        {current.speaker === 'ai' ? 'TalklyAI' : 'Customer'}
+                        {current.speaker === 'ai' ? 'Voice AI' : 'Customer'}
                       </span>
                       {current.text}
                     </motion.div>

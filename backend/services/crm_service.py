@@ -75,7 +75,7 @@ class CRMService:
                     return requests.post(
                         webhook_url,
                         json=payload,
-                        headers={"Content-Type": "application/json", "User-Agent": "TalklyAI-Webhook/1.0"},
+                        headers={"Content-Type": "application/json", "User-Agent": "VoiceAI-Webhook/1.0"},
                         timeout=10
                     )
                 resp = await run_in_threadpool(_dispatch)
@@ -103,14 +103,14 @@ class CRMService:
         """Sends a verification ping to validate the webhook URL."""
         test_payload = {
             "event": "webhook.test",
-            "message": "TalklyAI Webhook connection verified successfully!",
+            "message": "Voice AI Webhook connection verified successfully!",
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
         }
         def _ping():
             return requests.post(
                 webhook_url,
                 json=test_payload,
-                headers={"Content-Type": "application/json", "User-Agent": "TalklyAI-Webhook/1.0"},
+                headers={"Content-Type": "application/json", "User-Agent": "VoiceAI-Webhook/1.0"},
                 timeout=8
             )
         resp = await run_in_threadpool(_ping)

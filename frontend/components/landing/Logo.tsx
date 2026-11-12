@@ -30,10 +30,10 @@ export function LogoMark({ className = 'h-6 w-6' }: { className?: string }) {
 
 export default function Logo() {
   return (
-    <Link href="/" aria-label="TalklyAI home" className="inline-flex items-center gap-2 rounded-md">
+    <Link href="/" aria-label="Voice AI home" className="inline-flex items-center gap-2 rounded-md">
       <LogoMark />
       <span translate="no" className="font-display text-[1.1875rem] font-semibold tracking-[-0.03em] text-ink">
-        TalklyAI
+        Voice AI
       </span>
     </Link>
   )

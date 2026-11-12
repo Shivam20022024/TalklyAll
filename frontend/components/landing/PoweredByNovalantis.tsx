@@ -49,38 +49,15 @@ export default function PoweredByNovalantis() {
       <div className="wrap powered-strip-inner">
         <motion.p className="powered-strip-label" variants={fadeUp}>Powered by</motion.p>
 
-        {/* The reveal lives on this wrapper: a link with hover states stops inheriting the sequence. */}
+        {/* The reveal lives on this wrapper */}
         <motion.div variants={logoIn}>
-          <motion.a
-            href={company.site}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`${company.name} (opens in a new tab)`}
-            className="powered-strip-brand"
-            variants={lift}
-            initial="rest"
-            animate="rest"
-            whileHover="active"
-            whileFocus="active"
-          >
-            <motion.span aria-hidden="true" className="powered-strip-glow" variants={glow} />
-            <span aria-hidden="true" className="powered-strip-sweep-clip">
-              <span className="powered-strip-sweep" />
-            </span>
-            <img
-              src="/novalantis-logo.png"
-              alt={company.name}
-              width={384}
-              height={170}
-              loading="lazy"
-              decoding="async"
-              className="powered-strip-logo"
-            />
-          </motion.a>
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold tracking-tight text-ink font-display">Voice AI</span>
+          </div>
         </motion.div>
 
         <motion.p className="powered-strip-tagline" variants={fadeUp}>
-          Building intelligent technology for businesses.
+          Autonomous conversational intelligence for enterprise operations.
         </motion.p>
       </div>
     </motion.div>
@@ -90,16 +67,13 @@ export default function PoweredByNovalantis() {
 // Compact one-line version for places where the product should stay the focus.
 export function NovalantisEndorsement() {
   return (
-    <a
-      href={company.site}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`A product by ${company.name} (opens in a new tab)`}
+    <div
+      aria-label="Enterprise Voice AI Platform"
       className="novalantis-endorsement"
     >
       <AudioLines size={15} className="flex-none text-brand" aria-hidden="true" />
-      <span>A product by</span>
-      <strong translate="no">{company.name}</strong>
-    </a>
+      <span>Enterprise</span>
+      <strong translate="no">Voice AI Platform</strong>
+    </div>
   )
 }

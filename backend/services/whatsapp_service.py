@@ -196,7 +196,7 @@ class WhatsAppService:
 
             customer_name = call.get("customer_name") or "Valued Customer"
             company = await db.companies.find_one({"company_id": company_id})
-            company_name = company.get("name") if company else "TalklyAI"
+            company_name = company.get("name") if company else "Voice AI"
             offering = reqs.get("offering") or call.get("offering") or "Session"
 
             # Check if AI generated a tailored draft

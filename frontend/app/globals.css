@@ -626,3 +626,10 @@
 html {
   scroll-padding-top: 4.25rem;
 }
+
+/* Hide Next.js development indicator badge so investor demo is completely clean */
+nextjs-portal,
+[data-nextjs-toast],
+[data-nextjs-dialog-overlay] {
+  display: none !important;
+}

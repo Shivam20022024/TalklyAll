@@ -7,7 +7,7 @@
 export const loginUrl = '/login'
 
 export const contact = {
-  email: 'info@novalantis.com',
+  email: 'contact@voiceai.internal',
   phones: [
     { label: '+91 78368 57658', href: 'tel:+917836857658' },
     { label: '+91 91424 18268', href: 'tel:+919142418268' },
@@ -16,19 +16,19 @@ export const contact = {
 }
 
 export const company = {
-  name: 'Novalantis',
-  site: 'https://novalantis.com/',
-  privacy: 'https://novalantis.com/privacy-policy/',
-  terms: 'https://novalantis.com/terms-of-service/',
-  blog: 'https://novalantis.com/resources/blogs/',
-  overview: 'https://novalantis.com/products/talklyai/',
+  name: 'Voice AI',
+  site: '#',
+  privacy: '/privacy',
+  terms: '/terms',
+  blog: '#',
+  overview: '#',
 }
 
 export const introVideo = {
   src: '/TalklyAI.mp4',
   // The current file runs 30 seconds. Update this label if a longer demo replaces it.
   label: 'Watch 30-sec Intro',
-  title: 'TalklyAI intro video',
+  title: 'Voice AI intro video',
 }
 
 export const navLinks = [
@@ -63,7 +63,7 @@ export const heroCall = {
 
 export const howItWorks = [
   { title: 'Upload Leads', body: 'Import CSV/Excel files or connect campaigns.' },
-  { title: 'AI Makes the Call', body: 'TalklyAI calls customers and conducts natural conversations.' },
+  { title: 'AI Makes the Call', body: 'Voice AI calls customers and conducts natural conversations.' },
   { title: 'Analyze Conversations', body: 'Calls are transcribed and analyzed for sentiment, intent and lead quality.' },
   { title: 'Take Action', body: 'Results appear in the dashboard, with automated WhatsApp follow-ups.' },
 ]
