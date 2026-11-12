@@ -285,11 +285,10 @@ export default function InboundCallsPage() {
               <button
                 key={f.id}
                 onClick={() => setFilterStatus(f.id)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-                  filterStatus === f.id
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${filterStatus === f.id
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'border border-border/80 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
+                  }`}
               >
                 {f.label}
               </button>
@@ -428,12 +427,11 @@ export default function InboundCallsPage() {
                       {/* Status */}
                       <td className="px-2 py-4 align-top text-center">
                         <div className="inline-flex items-center gap-1.5">
-                          <span className={`h-2 w-2 rounded-full shrink-0 ${
-                            displayStatus === 'Completed' ? 'bg-emerald-500' :
-                            displayStatus === 'Analyzed' ? 'bg-purple-500' :
-                            displayStatus === 'In Progress' ? 'bg-blue-500 animate-ping' :
-                            displayStatus === 'Not Answered' ? 'bg-amber-500' : 'bg-muted-foreground'
-                          }`} />
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${displayStatus === 'Completed' ? 'bg-emerald-500' :
+                              displayStatus === 'Analyzed' ? 'bg-purple-500' :
+                                displayStatus === 'In Progress' ? 'bg-blue-500 animate-ping' :
+                                  displayStatus === 'Not Answered' ? 'bg-amber-500' : 'bg-muted-foreground'
+                            }`} />
                           <span className="text-xs font-medium text-foreground">{displayStatus}</span>
                         </div>
                       </td>
@@ -567,11 +565,10 @@ export default function InboundCallsPage() {
                           <span className="text-[10px] font-bold text-muted-foreground mb-1">
                             {isAi ? '🤖 Voice AI' : '👤 Caller'}
                           </span>
-                          <div className={`rounded-xl px-3.5 py-2 text-xs leading-relaxed max-w-[85%] ${
-                            isAi
+                          <div className={`rounded-xl px-3.5 py-2 text-xs leading-relaxed max-w-[85%] ${isAi
                               ? 'bg-muted/70 text-foreground border border-border/60'
                               : 'bg-primary text-primary-foreground font-medium shadow-xs'
-                          }`}>
+                            }`}>
                             {cleanText}
                           </div>
                         </div>

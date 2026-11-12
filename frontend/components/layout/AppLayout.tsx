@@ -175,7 +175,7 @@ function NotificationBell() {
   const handleOpenNotification = async (n: any) => {
     try {
       await fetchApi(`/api/v1/notifications/${n.id}/read`, { method: 'POST' });
-    } catch {}
+    } catch { }
     setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
     setUnreadCount((c) => Math.max(0, c - (n.read ? 0 : 1)));
     setOpen(false);
@@ -187,7 +187,7 @@ function NotificationBell() {
       await fetchApi('/api/v1/notifications/read-all', { method: 'POST' });
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
-    } catch {}
+    } catch { }
   };
 
   return (
@@ -255,7 +255,7 @@ function CompanySelector() {
   useEffect(() => {
     fetchApi('/api/v1/admin/companies?limit=200')
       .then((r) => setCompanies(r.data || []))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   return (
