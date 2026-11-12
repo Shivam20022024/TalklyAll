@@ -14,3 +14,7 @@ npm install
 npm run dev
 ```
 
+# Demo Credentials
+
+- **Email**: `boss9877082909@gmail.com`
+- **Password**: `password123456`
