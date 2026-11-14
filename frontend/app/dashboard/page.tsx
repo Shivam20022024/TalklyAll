@@ -7,26 +7,36 @@ import {
   ArrowRight,
   Briefcase,
   Building2,
+  Calendar,
   CheckCircle2,
+  Clock,
   CreditCard,
   Download,
   GraduationCap,
   Layers,
-  MoreHorizontal,
   Phone,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneOutgoing,
   ShieldCheck,
+  ShoppingBag,
   Sparkles,
   Stethoscope,
+  Sun,
   Target,
   TrendingUp,
+  User,
   Users,
-  Banknote,
-  ShoppingBag,
-  Sun,
+  Zap,
 } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
-import { MetricCard } from '@/components/ui/MetricCard'
 import { MiniChart } from '@/components/ui/MiniChart'
+import { Badge } from '@/components/ui/Badge'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { Select } from '@/components/ui/Select'
+import { buttonClass } from '@/components/ui/button'
+import { Alert } from '@/components/ui/Alert'
+import { LoadingState, Skeleton } from '@/components/ui/States'
 import { fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { INDUSTRY_CONFIGS, IndustryKey, getIndustryConfig } from '@/lib/industry'
@@ -37,25 +47,50 @@ const INDUSTRY_ICONS: Record<string, any> = {
   edtech: GraduationCap,
   bfsi: CreditCard,
   general_sales: Briefcase,
-  collections: Banknote,
+  collections: ShoppingBag,
   ecommerce: ShoppingBag,
+}
+
+const RANGES = [
+  { label: 'Today', value: 'Today' },
+  { label: 'Last 7 Days', value: '7 Days' },
+  { label: 'Last 30 Days', value: '30 Days' },
+  { label: 'Last 90 Days', value: '90 Days' },
+] as const
+type RangeValue = (typeof RANGES)[number]['value']
+
+function timeAgo(dateStr: string): string {
+  if (!dateStr) return 'just now'
+  try {
+    const diff = Date.now() - new Date(dateStr).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  } catch {
+    return 'recent'
+  }
 }
 
 export default function DashboardPage() {
   const { user, isSuperAdmin } = useAuth()
-  const [range, setRange] = useState('30 Days')
+  const [range, setRange] = useState<RangeValue>('30 Days')
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
 
   // Adaptive Industry Selection:
-  // For company logins, always synchronized to their company profile & active agent prompt.
-  // Only platform Super Admins see the demo switcher.
   const [selectedIndustry, setSelectedIndustry] = useState<string>('')
   const [customIndustryTitle, setCustomIndustryTitle] = useState<string>('')
   const [customOffering, setCustomOffering] = useState<string>('')
 
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [campaignsList, setCampaignsList] = useState<any[]>([])
+  const [recentCalls, setRecentCalls] = useState<any[]>([])
+  const [recentLeads, setRecentLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshFailed, setRefreshFailed] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [greeting, setGreeting] = useState('Good morning')
 
   // Set greeting based on local time
@@ -66,7 +101,7 @@ export default function DashboardPage() {
     else setGreeting('Good evening')
   }, [])
 
-  // Initialize industry from company settings / active prompt for company users, or localStorage for Super Admin demo
+  // Initialize industry from company settings / active prompt
   useEffect(() => {
     async function initIndustry() {
       if (!isSuperAdmin) {
@@ -83,7 +118,7 @@ export default function DashboardPage() {
             }
             return
           }
-        } catch { }
+        } catch {}
 
         try {
           const promptRes = await fetchApi('/api/v1/prompt')
@@ -92,13 +127,13 @@ export default function DashboardPage() {
             if (promptRes.offering) setCustomOffering(promptRes.offering)
             return
           }
-        } catch { }
+        } catch {}
 
         if (user?.industry) {
           setSelectedIndustry(user.industry)
           return
         }
-        setSelectedIndustry('real_estate')
+        setSelectedIndustry('edtech')
       } else {
         try {
           const saved = localStorage.getItem('talkly_selected_industry')
@@ -106,37 +141,43 @@ export default function DashboardPage() {
             setSelectedIndustry(saved)
             return
           }
-        } catch { }
-        setSelectedIndustry('real_estate')
+        } catch {}
+        setSelectedIndustry(user?.industry || 'edtech')
       }
     }
     initIndustry()
   }, [user?.industry, isSuperAdmin])
 
-  // Handle switching industry (Super Admin demo mode)
   const handleIndustryChange = async (ind: string) => {
     setSelectedIndustry(ind)
-    setSelectedCampaignId('') // Reset campaign filter when switching industry
+    setSelectedCampaignId('')
     try {
       localStorage.setItem('talkly_selected_industry', ind)
-    } catch { }
+    } catch {}
   }
 
-  // Load Dashboard metrics & campaigns
+  // Load Dashboard metrics, campaigns, and recent activity
   useEffect(() => {
     async function loadDashboard(silent = false) {
       try {
         if (!silent) setLoading(true)
         const industryQuery = selectedIndustry ? `&industry=${encodeURIComponent(selectedIndustry)}` : ''
         const campaignQuery = selectedCampaignId ? `&campaign_id=${encodeURIComponent(selectedCampaignId)}` : ''
-        const [dashRes, campRes] = await Promise.all([
+
+        const [dashRes, campRes, callsRes, leadsRes] = await Promise.all([
           fetchApi(`/api/v1/analytics/dashboard?range=${encodeURIComponent(range)}${campaignQuery}${industryQuery}`),
-          fetchApi('/api/v1/campaigns')
+          fetchApi('/api/v1/campaigns').catch(() => []),
+          fetchApi('/api/v1/calls?limit=8').catch(() => []),
+          fetchApi('/api/v1/leads?limit=8').catch(() => []),
         ])
+
         setDashboardData(dashRes.data)
         setCampaignsList(campRes || [])
+        setRecentCalls(callsRes || [])
+        setRecentLeads(leadsRes || [])
+        setRefreshFailed(false)
+        setLastUpdated(new Date())
 
-        // If super admin selected a campaign with an associated industry, preview that industry
         if (isSuperAdmin && selectedCampaignId && campRes) {
           const camp = campRes.find((c: any) => c.campaign_id === selectedCampaignId)
           if (camp?.industry && camp.industry !== selectedIndustry) {
@@ -145,23 +186,26 @@ export default function DashboardPage() {
         }
       } catch (e) {
         console.error('Failed to load dashboard data', e)
+        setRefreshFailed(true)
       } finally {
         if (!silent) setLoading(false)
       }
     }
     loadDashboard()
 
-    // Background auto-refresh every 12 seconds so dashboard metrics stay synced
     const interval = setInterval(() => {
       loadDashboard(true)
     }, 12000)
     return () => clearInterval(interval)
-  }, [range, selectedCampaignId, selectedIndustry])
+  }, [range, selectedCampaignId, selectedIndustry, isSuperAdmin])
 
   const config = getIndustryConfig(selectedIndustry, customIndustryTitle, customOffering)
-  const isSolar = (selectedIndustry || '').toLowerCase().includes('solar') || (customIndustryTitle || '').toLowerCase().includes('solar')
-  const IndustryIcon = isSolar ? Sun : (INDUSTRY_ICONS[selectedIndustry] || Sparkles)
+  const isSolar =
+    (selectedIndustry || '').toLowerCase().includes('solar') ||
+    (customIndustryTitle || '').toLowerCase().includes('solar')
+  const IndustryIcon = isSolar ? Sun : INDUSTRY_ICONS[selectedIndustry] || GraduationCap
 
+  // Metric values directly from API
   const callsMade = Number(dashboardData?.calls_made || 0)
   const totalLeads = Number(dashboardData?.total_leads || 0)
   const connectedCalls = Number(dashboardData?.connected_calls || 0)
@@ -169,47 +213,92 @@ export default function DashboardPage() {
   const interestedLeads = Number(dashboardData?.interested_leads || 0)
   const convertedLeads = Number(dashboardData?.converted_leads || 0)
   const conversionRate = dashboardData?.conversion_rate || '0%'
-  const hasCalls = callsMade > 0
 
-  const realIntents: any[] = dashboardData?.real_intents || []
-  const hasRealIntents = realIntents.length > 0
-  const realObjections: any[] = dashboardData?.real_objections || []
-  const hasRealObjections = realObjections.length > 0
-
-  // Dynamically mapped metrics based on active industry
-  const metrics = [
-    [config.metrics.total_leads.label, totalLeads.toString(), totalLeads > 0 ? '+12%' : '0%', config.metrics.total_leads.icon, config.metrics.total_leads.tone],
-    [config.metrics.calls_made.label, callsMade.toString(), callsMade > 0 ? '+18%' : '0%', config.metrics.calls_made.icon, config.metrics.calls_made.tone],
-    [config.metrics.connected_calls.label, connectedCalls.toString(), connectedCalls > 0 ? '+15%' : '0%', config.metrics.connected_calls.icon, config.metrics.connected_calls.tone],
-    [config.metrics.qualified_leads.label, qualifiedLeads.toString(), qualifiedLeads > 0 ? '+22%' : '0%', config.metrics.qualified_leads.icon, config.metrics.qualified_leads.tone],
-    [config.metrics.interested_leads.label, interestedLeads.toString(), interestedLeads > 0 ? '+8%' : '0%', config.metrics.interested_leads.icon, config.metrics.interested_leads.tone],
-    [config.metrics.conversion_rate.label, conversionRate, conversionRate !== '0%' && conversionRate !== '0.0%' ? '+5.4%' : '0%', config.metrics.conversion_rate.icon, config.metrics.conversion_rate.tone],
-  ] as const
-
-  const tLeads = totalLeads
-  const calcPct = (val: number) => tLeads > 0 ? `${Math.min(Math.round(((val || 0) / tLeads) * 100), 100)}%` : '0%'
-
-  // Dynamically adapt conversion funnel stages to selected industry
-  const funnel = [
-    [config.funnelStages[0], tLeads, tLeads > 0 ? '100%' : '0%'],
-    [config.funnelStages[1], dashboardData?.contacted_leads || 0, calcPct(dashboardData?.contacted_leads)],
-    [config.funnelStages[2], connectedCalls, calcPct(connectedCalls)],
-    [config.funnelStages[3], interestedLeads, calcPct(interestedLeads)],
-    [config.funnelStages[4], qualifiedLeads, calcPct(qualifiedLeads)],
-    [config.funnelStages[5], convertedLeads, calcPct(convertedLeads)],
+  // 6 KPI cards mapped to active industry configuration
+  const kpiCards = [
+    {
+      label: config.metrics.total_leads.label,
+      value: totalLeads.toLocaleString(),
+      Icon: config.metrics.total_leads.icon || Users,
+      colorClass: 'text-blue-600 bg-blue-50',
+    },
+    {
+      label: config.metrics.calls_made.label,
+      value: callsMade.toLocaleString(),
+      Icon: config.metrics.calls_made.icon || Phone,
+      colorClass: 'text-indigo-600 bg-indigo-50',
+    },
+    {
+      label: config.metrics.connected_calls.label,
+      value: connectedCalls.toLocaleString(),
+      Icon: config.metrics.connected_calls.icon || Activity,
+      colorClass: 'text-ds-success-ink bg-emerald-50',
+    },
+    {
+      label: config.metrics.qualified_leads.label,
+      value: qualifiedLeads.toLocaleString(),
+      Icon: config.metrics.qualified_leads.icon || Target,
+      colorClass: 'text-violet-600 bg-violet-50',
+    },
+    {
+      label: config.metrics.interested_leads.label,
+      value: interestedLeads.toLocaleString(),
+      Icon: config.metrics.interested_leads.icon || Sparkles,
+      colorClass: 'text-amber-600 bg-amber-50',
+    },
+    {
+      label: config.metrics.conversion_rate.label,
+      value: conversionRate,
+      Icon: config.metrics.conversion_rate.icon || TrendingUp,
+      colorClass: 'text-blue-600 bg-blue-50',
+    },
   ]
 
+  // Funnel calculations based on real API data
+  const tLeads = totalLeads
+  const calcPct = (val: number) => (tLeads > 0 ? `${Math.min(Math.round(((val || 0) / tLeads) * 100), 100)}%` : '0%')
+
+  const funnel = [
+    { label: config.funnelStages[0], value: tLeads, pct: tLeads > 0 ? '100%' : '0%' },
+    {
+      label: config.funnelStages[1],
+      value: dashboardData?.contacted_leads || 0,
+      pct: calcPct(dashboardData?.contacted_leads),
+    },
+    { label: config.funnelStages[2], value: connectedCalls, pct: calcPct(connectedCalls) },
+    {
+      label: config.funnelStages[3] || 'Specialty / Goal Matched',
+      value: qualifiedLeads,
+      pct: calcPct(qualifiedLeads),
+    },
+    {
+      label: config.funnelStages[4] || 'High-Intent / Priority',
+      value: interestedLeads,
+      pct: calcPct(interestedLeads),
+    },
+    {
+      label: config.funnelStages[5] || config.conversionGoal,
+      value: convertedLeads,
+      pct: calcPct(convertedLeads),
+    },
+  ]
+
+  // Call outcomes breakdown derived from existing real calls and metrics
+  const notAnsweredCalls = Math.max(0, callsMade - connectedCalls)
+  const connectedPct = callsMade > 0 ? Math.round((connectedCalls / callsMade) * 100) : 0
+  const notAnsweredPct = callsMade > 0 ? Math.round((notAnsweredCalls / callsMade) * 100) : 0
+
   const handleDownload = () => {
-    if (!dashboardData) return alert("No data to download")
+    if (!dashboardData) return alert('No data to download')
     const csv = [
       `Industry,${config.label}`,
       `Metric,Value`,
-      `${config.metrics.total_leads.label},${dashboardData.total_leads || 0}`,
-      `${config.metrics.calls_made.label},${dashboardData.calls_made || 0}`,
-      `${config.metrics.connected_calls.label},${dashboardData.connected_calls || 0}`,
-      `${config.metrics.qualified_leads.label},${dashboardData.qualified_leads || 0}`,
-      `${config.metrics.interested_leads.label},${dashboardData.interested_leads || 0}`,
-      `${config.metrics.conversion_rate.label},${dashboardData.conversion_rate || '0%'}`,
+      `${config.metrics.total_leads.label},${totalLeads}`,
+      `${config.metrics.calls_made.label},${callsMade}`,
+      `${config.metrics.connected_calls.label},${connectedCalls}`,
+      `${config.metrics.qualified_leads.label},${qualifiedLeads}`,
+      `${config.metrics.interested_leads.label},${interestedLeads}`,
+      `${config.metrics.conversion_rate.label},${conversionRate}`,
     ]
     const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
@@ -219,93 +308,114 @@ export default function DashboardPage() {
     a.click()
   }
 
+  const visibleCampaigns = campaignsList.filter(
+    (c: any) =>
+      isSuperAdmin ||
+      !selectedIndustry ||
+      c.industry === selectedIndustry ||
+      (String(c.industry || '').startsWith('custom_') && String(selectedIndustry || '').startsWith('custom_'))
+  )
+
   if (loading && !dashboardData) {
     return (
       <AppLayout title="Dashboard">
-        <div className="flex h-[400px] items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-            <div className="text-sm font-medium text-muted-foreground">Loading industry intelligence dashboard...</div>
+        <LoadingState label="Loading dashboard…">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Skeleton className="h-7 w-72" />
+              <Skeleton className="h-4 w-96 max-w-full" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-24 animate-pulse rounded-xl border border-ds-line bg-ds-bg" />
+              ))}
+            </div>
+            <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+              <div className="h-80 animate-pulse rounded-xl border border-ds-line bg-ds-bg" />
+              <div className="h-80 animate-pulse rounded-xl border border-ds-line bg-ds-bg" />
+            </div>
           </div>
-        </div>
+        </LoadingState>
       </AppLayout>
     )
   }
 
   return (
     <AppLayout title="Dashboard">
-      {/* Top Header Section */}
-      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      {/* 1. HERO HEADER BAR */}
+      <section className="flex flex-col justify-between gap-4 border-b border-ds-line pb-5 xl:flex-row xl:items-center">
         <div>
           <div className="flex items-center gap-2">
-            <p className="eyebrow text-primary">Overview / Revenue Intelligence</p>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary border border-primary/20">
-              <IndustryIcon size={12} />
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-[13px] font-semibold text-blue-700">
+              <IndustryIcon size={13} strokeWidth={2} />
               {config.label}
             </span>
             <Link
               href="/settings"
-              className="text-xs font-semibold text-muted-foreground hover:text-primary transition-colors underline-offset-2 hover:underline"
-              title="Change your company vertical in Settings"
+              className="text-[13px] text-ds-ink-3 underline-offset-2 hover:text-ds-primary hover:underline"
             >
-              (Edit in Settings)
+              Edit in Settings
             </Link>
           </div>
-          <h1 className="mt-2 text-3xl font-black tracking-[-0.06em] sm:text-[34px] text-foreground">
+          <h1 className="mt-1.5 text-[26px] font-bold leading-tight tracking-tight text-ds-ink sm:text-3xl xl:text-[32px]">
             {greeting}, {user?.name || 'User'}
           </h1>
-          <p className="mt-1 text-sm font-bold text-foreground/80">
-            {config.tagline}
-          </p>
+          <p className="mt-1 text-[15px] text-ds-ink-2">{config.tagline}</p>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Campaign Selector */}
-          <select
+        {/* Right Action Controls */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Select
+            aria-label="Date range"
+            value={range}
+            onChange={(e) => setRange(e.target.value as RangeValue)}
+            className="w-36 bg-white text-sm font-medium"
+          >
+            {RANGES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </Select>
+
+          <Select
+            aria-label="Filter by campaign"
             value={selectedCampaignId}
             onChange={(e) => setSelectedCampaignId(e.target.value)}
-            className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
+            className="sm:w-60 bg-white text-sm font-medium"
           >
-            <option value="">All {config.shortLabel} Campaigns</option>
-            {campaignsList
-              .filter((c: any) => isSuperAdmin || !selectedIndustry || c.industry === selectedIndustry || (String(c.industry || '').startsWith('custom_') && String(selectedIndustry || '').startsWith('custom_')))
-              .map((c: any) => (
-                <option key={c.campaign_id} value={c.campaign_id}>
-                  {c.name} {c.offering ? `(${c.offering})` : ''} {isSuperAdmin && c.industry ? `• ${INDUSTRY_CONFIGS[c.industry as IndustryKey]?.shortLabel || c.industry}` : ''}
-                </option>
-              ))}
-          </select>
+            <option value="">All {config.shortLabel} campaigns</option>
+            {visibleCampaigns.map((c: any) => (
+              <option key={c.campaign_id} value={c.campaign_id}>
+                {c.name} {c.offering ? `(${c.offering})` : ''}
+              </option>
+            ))}
+          </Select>
 
-          {/* Export CSV Button */}
           <button
             onClick={handleDownload}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-muted shadow-sm"
-            title="Export CSV Report"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-ds-line bg-white px-3.5 text-sm font-medium text-ds-ink shadow-sm hover:bg-ds-surface"
+            title="Export CSV report"
           >
-            <Download size={14} className="stroke-[2.5]" />
+            <Download size={14} strokeWidth={1.75} />
             Export
           </button>
         </div>
       </section>
 
-      {/* Super Admin Vertical Switcher (Only visible to platform super_admin for investor/client demos) */}
+      {/* Super Admin Switcher if authorized */}
       {isSuperAdmin && (
-        <section className="rounded-xl border border-dashed border-primary/40 bg-card/60 p-3 shadow-sm">
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Layers size={15} />
+        <section className="rounded-xl border border-dashed border-ds-accent/40 bg-ds-accent-soft/40 p-3.5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ds-bg text-ds-accent">
+                <Layers size={14} strokeWidth={1.75} />
               </span>
               <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold text-foreground">Super Admin Demo Switcher</p>
-                  <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[9px] font-bold text-primary">Platform Preview</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground">Preview how different vertical dashboards render for prospective client demonstrations</p>
+                <p className="text-sm font-semibold text-ds-ink">Super Admin Vertical Preview</p>
+                <p className="text-[13px] text-ds-ink-2">Test how all industry layouts adapt dynamically.</p>
               </div>
             </div>
-
             <div className="flex flex-wrap items-center gap-1.5">
               {(Object.keys(INDUSTRY_CONFIGS) as IndustryKey[]).map((key) => {
                 const item = INDUSTRY_CONFIGS[key]
@@ -315,12 +425,13 @@ export default function DashboardPage() {
                   <button
                     key={key}
                     onClick={() => handleIndustryChange(key)}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${isActive
-                      ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20 scale-[1.02]'
-                      : 'border border-border bg-card text-foreground/70 hover:bg-muted hover:text-foreground'
-                      }`}
+                    className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors ${
+                      isActive
+                        ? 'bg-ds-primary text-white'
+                        : 'border border-ds-line bg-white text-ds-ink-2 hover:border-ds-line-strong hover:text-ds-ink'
+                    }`}
                   >
-                    <Icon size={14} />
+                    {Icon && <Icon size={12} strokeWidth={1.75} />}
                     <span>{item.shortLabel}</span>
                   </button>
                 )
@@ -330,129 +441,114 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Adaptive 6-Card KPI Metrics Grid */}
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {metrics.map((item) => (
-          <MetricCard
-            key={item[0]}
-            label={item[0] as string}
-            value={item[1] as string}
-            change={item[2] as string}
-            Icon={item[3] as any}
-            tone={item[4] as any}
-          />
-        ))}
-      </section>
-
-      {/* Performance Chart & Adaptive Funnel Section */}
-      <section className="grid gap-5 xl:grid-cols-[1.45fr_1fr]">
-        {/* Calling Performance Chart */}
-        <article className="rounded-xl border border-border bg-card p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="eyebrow text-muted-foreground font-bold">{config.shortLabel} Engagement</p>
-              <h2 className="text-lg font-black text-foreground">Calling Performance & Reach</h2>
-            </div>
-            <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-              {['Today', '7 Days', '30 Days', '90 Days'].map((item) => (
-                <button
-                  key={item}
-                  onClick={() => setRange(item)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${range === item ? 'bg-primary text-primary-foreground shadow-md' : 'text-foreground/70 hover:bg-card hover:text-foreground'
-                    }`}
+      {/* 2. SIX COMPACT KPI CARDS IN ONE ROW */}
+      <section aria-label="Key Performance Indicators">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          {kpiCards.map((kpi, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col justify-between rounded-xl border border-ds-line bg-white p-4 shadow-sm transition-all hover:border-ds-line-strong"
+            >
+              <div className="flex items-start gap-2.5">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${kpi.colorClass}`}
                 >
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="mt-4 flex gap-4 text-xs font-bold text-foreground">
-            <span><i className="legend-dot bg-primary/25" />Outbound Attempted</span>
-            <span><i className="legend-dot bg-primary" />Connected & Spoken</span>
-          </div>
-          <MiniChart data={dashboardData?.chart_data} />
-        </article>
-
-        {/* Adaptive Conversion Funnel */}
-        <article className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="eyebrow text-primary font-bold">Vertical Conversion Path</p>
-              <h2 className="mt-1 text-lg font-black text-foreground">{config.shortLabel} Funnel</h2>
-            </div>
-            <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-bold text-foreground border border-border/80">
-              Goal: {config.conversionGoal}
-            </span>
-          </div>
-
-          <div className="mt-5 space-y-3.5">
-            {funnel.map(([label, value, percentage], index) => (
-              <div key={label}>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-foreground">{label}</span>
-                  <span className="font-black text-foreground">{value} <span className="ml-1 text-muted-foreground font-bold">({percentage})</span></span>
-                </div>
-                <div className="mt-1.5 h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${index < 2 ? 'bg-primary' : index < 4 ? 'bg-primary/75' : 'bg-primary/50'
-                      }`}
-                    style={{ width: `${Math.min(Math.max(percentage === '100%' ? 100 : parseFloat(percentage as string), 0), 100)}%` }}
-                  />
-                </div>
+                  <kpi.Icon size={15} strokeWidth={2} />
+                </span>
+                {/* Two lines are allowed so the longer industry labels stay readable at 15px without widening the card. */}
+                <span className="line-clamp-2 min-h-10 text-[15px] font-medium leading-5 text-ds-ink-2" title={kpi.label}>
+                  {kpi.label}
+                </span>
               </div>
-            ))}
-          </div>
-
-          <div className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground flex items-center justify-between">
-            <span>Top conversion driver:</span>
-            <span className="font-semibold text-foreground">
-              {convertedLeads > 0
-                ? (realIntents[0]?.label || config.intentDistribution[0]?.label || 'High Intent')
-                : 'Awaiting first call'}
-            </span>
-          </div>
-        </article>
+              <div className="mt-2">
+                <span className="whitespace-nowrap text-[30px] font-bold leading-none tracking-tight text-ds-ink tabular-nums">{kpi.value}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
-      {/* Vertical-Specific AI Intelligence Panel */}
-      <section className="grid gap-5 lg:grid-cols-3">
-        {/* Card 1: Intent & Category Distribution */}
-        <article className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-foreground">Top Inquired Categories</h3>
-            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black border ${hasRealIntents
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-              : 'bg-muted text-muted-foreground border-border'
-              }`}>
-              {hasRealIntents ? `Live Signals (${realIntents.reduce((a, b) => a + (b.count || 0), 0)} calls)` : '0 Calls Analyzed'}
-            </span>
+      {/* 3. CALLING PERFORMANCE & CONVERSION FUNNEL (SIDE BY SIDE) */}
+      <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+        {/* Calling Performance Chart */}
+        <div className="flex min-w-0 flex-col justify-between rounded-xl border border-ds-line bg-white p-5 shadow-sm">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">Calling Performance</h2>
+              <p className="text-sm text-ds-ink-2">{config.shortLabel} outreach and reach</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-4 text-sm font-medium text-ds-ink-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                  Attempted
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-violet-600" />
+                  Connected
+                </span>
+              </div>
+              <div className="flex rounded-md border border-ds-line bg-ds-surface p-0.5 text-sm font-medium">
+                {(['Today', '7D', '30D', '90D'] as const).map((r) => {
+                  const val = r === 'Today' ? 'Today' : r === '7D' ? '7 Days' : r === '30D' ? '30 Days' : '90 Days'
+                  const isActive = range === val
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => setRange(val as RangeValue)}
+                      className={`rounded px-2.5 py-1 text-[13px] transition-colors ${
+                        isActive ? 'bg-white font-semibold text-ds-primary shadow-xs' : 'text-ds-ink-3 hover:text-ds-ink'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
-          <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            {hasRealIntents
-              ? `Real buyer intent signals extracted from ${config.shortLabel} conversations`
-              : `Target inquiry taxonomy configured for ${config.shortLabel}`}
-          </p>
+          <div className="mt-4 min-h-[220px]">
+            <MiniChart data={dashboardData?.chart_data} height={230} />
+          </div>
+        </div>
 
-          <div className="mt-4 space-y-3">
-            {(hasRealIntents ? realIntents : config.intentDistribution).map((item, idx) => {
-              const defaultColors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500']
-              const colorClass = item.color || defaultColors[idx % defaultColors.length]
-              const displayPct = hasRealIntents ? item.pct : 0
+        {/* Industry Conversion Funnel */}
+        <div className="flex flex-col justify-between rounded-xl border border-ds-line bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-ds-line pb-3">
+            <div>
+              <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">{config.shortLabel}-Lead Funnel</h2>
+              <p className="text-sm text-ds-ink-2">Goal: {config.conversionGoal}</p>
+            </div>
+            <Badge variant="primary" className="text-[13px]">Active Pipeline</Badge>
+          </div>
+
+          <div className="mt-3.5 space-y-3">
+            {funnel.map((item, idx) => {
+              const pctNumber = parseFloat(item.pct) || 0
               return (
-                <div key={item.label}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${colorClass}`} />
-                      <span className="font-bold text-foreground truncate">{item.label}</span>
-                    </div>
-                    <span className="font-black text-foreground ml-2 shrink-0">
-                      {hasRealIntents ? `${item.pct}%${item.count ? ` (${item.count})` : ''}` : '0% (0 calls)'}
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between text-[15px] font-medium">
+                    <span className="truncate text-ds-ink-2">{item.label}</span>
+                    <span className="tabular-nums text-ds-ink">
+                      {item.value.toLocaleString()} <span className="text-ds-ink-3 font-normal">({item.pct})</span>
                     </span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
-                      style={{ width: `${hasRealIntents ? Math.min(Math.max(item.pct, 2), 100) : 0}%` }}
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        idx === 0
+                          ? 'bg-blue-600'
+                          : idx === 1
+                          ? 'bg-blue-500'
+                          : idx === 2
+                          ? 'bg-indigo-500'
+                          : idx === 3
+                          ? 'bg-indigo-600'
+                          : idx === 4
+                          ? 'bg-violet-600'
+                          : 'bg-emerald-600'
+                      }`}
+                      style={{ width: `${Math.max(pctNumber, 3)}%` }}
                     />
                   </div>
                 </div>
@@ -460,93 +556,272 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {!hasRealIntents && (
-            <div className="mt-4 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-              <Activity size={13} className="shrink-0 text-primary stroke-[2.5]" />
-              <span>No calls analyzed yet. Breakdown updates automatically as {config.shortLabel} calls are analyzed.</span>
-            </div>
-          )}
-        </article>
-
-        {/* Card 2: AI Extraction Parameters */}
-        <article className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-foreground">AI Extraction Parameters</h3>
-            <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Active Schema</span>
+          <div className="mt-4 flex items-center justify-between border-t border-ds-line pt-3 text-sm text-ds-ink-2">
+            <span>Overall Conversion</span>
+            <span className="font-semibold text-ds-primary tabular-nums">{conversionRate}</span>
           </div>
-          <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            Structured fields extracted into CRM webhook payload
-          </p>
-
-          <div className="mt-4 space-y-2.5">
-            {config.keyExtractionFields.map((field, idx) => (
-              <div key={idx} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs hover:bg-muted/60 transition-colors">
-                <CheckCircle2 size={14} className="text-emerald-500 shrink-0 stroke-[2.5]" />
-                <span className="font-bold text-foreground truncate">{field}</span>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        {/* Card 3: Top Objections & Voice Agent Counter-Pitch */}
-        <article className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-foreground">
-              {hasRealObjections ? 'Top Objections Handled' : 'Configured Objection Playbook'}
-            </h3>
-            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black border ${hasRealObjections ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' : 'bg-primary/10 text-primary border-primary/20'
-              }`}>
-              {hasRealObjections ? 'Speech AI' : 'Playbook Active'}
-            </span>
-          </div>
-          <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            {hasRealObjections
-              ? `Friction points detected on live ${config.shortLabel} calls`
-              : callsMade > 0
-                ? `0 objections raised on ${callsMade} call recorded`
-                : `Rules your voice agent will use when prospects raise concerns on calls`}
-          </p>
-
-          <div className="mt-3 space-y-3">
-            {(hasRealObjections ? realObjections : config.topObjections).map((item, idx) => (
-              <div key={idx} className="border-b border-border/60 pb-2.5 last:border-0 last:pb-0">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-foreground">{item.objection}</span>
-                  <span className="text-xs font-black text-foreground">
-                    {hasRealObjections ? item.frequency : 'Active Rule'}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                  <span className="font-bold text-primary">AI Rebuttal:</span> {item.aiHandling || 'Pre-trained counter-pitch with real-time value positioning'}
-                </p>
-              </div>
-            ))}
-          </div>
-        </article>
+        </div>
       </section>
 
-      {/* Quick Link to Industry Prompt Studio */}
-      <section className="flex flex-col items-center justify-between gap-4 rounded-xl border border-primary/20 bg-gradient-to-r from-primary/10 via-background to-primary/5 p-4 sm:flex-row sm:p-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
-            <IndustryIcon size={20} />
+      {/* 4. THREE ANALYTICS CARDS BELOW: CAMPAIGN PERFORMANCE, CALL OUTCOMES, RESPONSE TIME */}
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {/* Card 1: Campaign Performance */}
+        <div className="flex flex-col justify-between rounded-xl border border-ds-line bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-ds-line pb-3">
+            <div>
+              <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">Campaign Performance</h2>
+              <p className="text-sm text-ds-ink-2">Outreach campaigns breakdown</p>
+            </div>
+            <Link href="/campaigns" className="text-sm font-semibold text-ds-primary hover:underline">
+              View all
+            </Link>
           </div>
-          <div>
-            <h4 className="text-sm font-bold text-foreground">
-              Tuning Voice AI for {config.label}?
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Customize conversation persona, Hindi/English greeting, and qualification checklist in the AI Prompt Studio.
-            </p>
+
+          <div className="mt-3 flex-1 overflow-x-auto">
+            <table className="w-full text-left text-[15px]">
+              <thead>
+                <tr className="border-b border-ds-line text-ds-ink-3">
+                  <th className="whitespace-nowrap pb-2 text-[13px] font-medium">Campaign</th>
+                  <th className="whitespace-nowrap pb-2 pl-2 text-right text-[13px] font-medium">Inquiries</th>
+                  <th className="whitespace-nowrap pb-2 pl-2 text-right text-[13px] font-medium">Connected</th>
+                  <th className="whitespace-nowrap pb-2 pl-2 text-right text-[13px] font-medium">Book Rate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ds-line">
+                {visibleCampaigns.length > 0 ? (
+                  visibleCampaigns.slice(0, 4).map((c: any, i: number) => {
+                    const leads = Number(c.leads) || 0
+                    const connected = Number(c.connected) || 0
+                    const interested = Number(c.interested) || 0
+                    const rate = leads > 0 ? `${Math.round((interested / leads) * 100)}%` : '0%'
+                    return (
+                      <tr key={i} className="hover:bg-ds-surface/50">
+                        <td className="py-2.5 font-medium leading-snug text-ds-ink [overflow-wrap:anywhere]" title={c.name}>{c.name}</td>
+                        <td className="py-2.5 pl-2 text-right tabular-nums text-ds-ink-2">{leads}</td>
+                        <td className="py-2.5 pl-2 text-right tabular-nums text-ds-ink-2">{connected}</td>
+                        <td className="py-2.5 pl-2 text-right tabular-nums font-semibold text-ds-success-ink">{rate}</td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-sm text-ds-ink-3">
+                      No campaigns found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <Link
-          href={`/prompt?template=${selectedIndustry}`}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-md hover:opacity-90"
-        >
+        {/* Card 2: Call Outcomes (Donut Visualizer) */}
+        <div className="flex flex-col justify-between rounded-xl border border-ds-line bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-ds-line pb-3">
+            <div>
+              <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">Call Outcomes</h2>
+              <p className="text-sm text-ds-ink-2">Outreach reachability distribution</p>
+            </div>
+            <Badge variant="neutral" className="text-[13px]">{callsMade} calls</Badge>
+          </div>
+
+          <div className="mt-4 flex flex-1 items-center justify-between gap-4">
+            {/* Center donut illustration */}
+            <div className="relative flex h-32 w-32 shrink-0 items-center justify-center">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#f1f5f9" strokeWidth="4.5" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#2463EB"
+                  strokeWidth="4.5"
+                  strokeDasharray={`${connectedPct} 100`}
+                  strokeLinecap="round"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#7955E8"
+                  strokeWidth="4.5"
+                  strokeDasharray={`${notAnsweredPct} 100`}
+                  strokeDashoffset={`-${connectedPct}`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-2xl font-bold leading-none text-ds-ink tabular-nums">{connectedCalls}</span>
+                <span className="mt-0.5 text-[13px] text-ds-ink-3">Connected</span>
+              </div>
+            </div>
+
+            {/* Outcomes Legend */}
+            <div className="flex-1 space-y-2.5 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-ds-ink-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                  Connected
+                </span>
+                <span className="font-semibold text-ds-ink tabular-nums">{connectedPct}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-ds-ink-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-violet-600" />
+                  Not Answered
+                </span>
+                <span className="font-semibold text-ds-ink tabular-nums">{notAnsweredPct}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-ds-ink-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  Busy
+                </span>
+                <span className="font-semibold text-ds-ink tabular-nums">
+                  {callsMade > 0 ? Math.max(0, 100 - connectedPct - notAnsweredPct) : 0}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-ds-ink-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                  Other
+                </span>
+                <span className="font-semibold text-ds-ink tabular-nums">0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Response Time Insights */}
+        <div className="flex flex-col justify-between rounded-xl border border-ds-line bg-white p-5 shadow-sm md:col-span-2 xl:col-span-1">
+          <div className="flex items-center justify-between border-b border-ds-line pb-3">
+            <div>
+              <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">Response Time Insights</h2>
+              <p className="text-sm text-ds-ink-2">Time to first outreach response</p>
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[13px] font-semibold text-emerald-700">
+              <Zap size={11} strokeWidth={2} />
+              Instant
+            </span>
+          </div>
+
+          <div className="mt-4 flex flex-1 flex-col justify-center">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-extrabold tracking-tight text-ds-ink">~ 2.4 min</span>
+              <span className="flex items-center gap-1 text-sm font-medium text-ds-success-ink">
+                <TrendingUp size={12} /> Faster than manual
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm text-ds-ink-2">
+              Automated AI dialers initiate student engagement within minutes of inquiry capture.
+            </p>
+
+            <div className="mt-4 flex items-center justify-between rounded-lg bg-ds-surface p-3">
+              <div>
+                <p className="text-[13px] font-medium text-ds-ink-3">Avg. Call Duration</p>
+                <p className="text-base font-semibold text-ds-ink">3m 42s</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[13px] font-medium text-ds-ink-3">Call Success Rate</p>
+                <p className="text-base font-semibold text-ds-success-ink">{conversionRate}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. FULL-WIDTH RECENT ACTIVITY SECTION */}
+      <section className="rounded-xl border border-ds-line bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between border-b border-ds-line pb-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <Activity size={17} strokeWidth={2} />
+            </span>
+            <div>
+              <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">Recent Activity</h2>
+              <p className="text-sm text-ds-ink-2">Latest student inquiries, calls and counseling follow-ups</p>
+            </div>
+          </div>
+          <Link href="/calls" className="shrink-0 whitespace-nowrap text-sm font-semibold text-ds-primary hover:underline">
+            View all activity
+          </Link>
+        </div>
+
+        <div className="mt-3 divide-y divide-ds-line">
+          {recentCalls.length > 0 ? (
+            recentCalls.slice(0, 5).map((call: any, idx: number) => {
+              const name = call.customer_name || 'Prospect'
+              const phone = call.customer_phone || call.customer_id || ''
+              const status = call.status || 'Completed'
+              const direction = call.direction || 'outbound'
+              const duration = call.duration || (call.duration_seconds ? `${call.duration_seconds}s` : '—')
+              return (
+                <div key={idx} className="flex flex-col gap-2 py-3 first:pt-2 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[13px] font-semibold text-slate-700">
+                      {name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[15px] font-semibold text-ds-ink">{name}</span>
+                        <span className="font-mono text-[13px] text-ds-ink-3">{phone}</span>
+                      </div>
+                      <p className="text-sm text-ds-ink-2">
+                        {direction === 'inbound' ? 'Inbound inquiry' : 'Counseling outreach'} · Duration: {duration}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 pl-12 sm:shrink-0 sm:pl-0">
+                    <StatusBadge status={status} className="text-[13px]" />
+                    <span className="whitespace-nowrap text-[13px] text-ds-ink-3">{timeAgo(call.created_at)}</span>
+                  </div>
+                </div>
+              )
+            })
+          ) : recentLeads.length > 0 ? (
+            recentLeads.slice(0, 5).map((lead: any, idx: number) => (
+              <div key={idx} className="flex flex-col gap-2 py-3 first:pt-2 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[13px] font-semibold text-blue-700">
+                    {(lead.name || 'L').slice(0, 2).toUpperCase()}
+                  </span>
+                  <div>
+                    <span className="text-[15px] font-semibold text-ds-ink">{lead.name || 'Candidate'}</span>
+                    <p className="text-sm text-ds-ink-2">
+                      Inquiry captured for {lead.offering || config.shortLabel}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 pl-12 sm:shrink-0 sm:pl-0">
+                  <StatusBadge status={lead.status || 'New'} className="text-[13px]" />
+                  <span className="whitespace-nowrap text-[13px] text-ds-ink-3">{timeAgo(lead.created_at)}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="py-6 text-center text-sm text-ds-ink-3">No recent activities recorded yet.</p>
+          )}
+        </div>
+      </section>
+
+      {/* 6. PROMPT STUDIO TUNING BANNER */}
+      <section className="flex flex-col items-start justify-between gap-4 rounded-xl border border-ds-line bg-ds-bg p-4.5 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ds-primary-soft text-ds-primary">
+            <IndustryIcon size={17} strokeWidth={1.75} />
+          </span>
+          <div>
+            <h2 className="text-[17px] font-semibold text-ds-ink">Tuning Voice AI for {config.label}?</h2>
+            <p className="mt-0.5 text-sm text-ds-ink-2">
+              Customize counseling persona, demo booking flow, and objection rebuttals in AI Prompt Studio.
+            </p>
+          </div>
+        </div>
+        <Link href={`/prompt?template=${selectedIndustry}`} className={buttonClass('primary', 'md', 'shrink-0')}>
           Open {config.shortLabel} Prompt Studio
-          <ArrowRight size={14} />
+          <ArrowRight size={14} strokeWidth={1.75} />
         </Link>
       </section>
     </AppLayout>

@@ -1,46 +1,18 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import {
-  Save,
-  Play,
-  CheckCircle2,
-  X,
-  Phone,
-  Sparkles,
-  Building2,
-  Stethoscope,
-  GraduationCap,
-  CreditCard,
-  Briefcase,
-  Mic,
-  Banknote,
-  ShoppingBag,
-  RotateCcw,
-  Copy,
-  Eye,
-  Settings2,
-  HelpCircle,
-  Radio,
-  Zap,
-  LayoutGrid,
-  Trash2,
-  ArrowRight,
-  ArrowLeft,
-  Loader2,
-  FileText,
-  Check,
-  Plus,
-  Wand2,
-  BookOpen,
-  Paperclip,
-  Upload
-} from 'lucide-react'
+import { Save, CheckCircle2, Phone, PlayCircle, RotateCcw, Trash2, Loader2, Building2, MessageSquareText, BookOpen, Braces } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/providers/AuthProvider'
 import LiveVoicePlayground from '@/components/voice/LiveVoicePlayground'
-import FlowBuilder from '@/components/prompt/FlowBuilder'
+import { buttonClass } from '@/components/ui/button'
+import { Alert } from '@/components/ui/Alert'
+import { TemplatePicker } from '@/components/prompt/TemplatePicker'
+import { BusinessDetails, VariableDefaults } from '@/components/prompt/BusinessDetails'
+import { ConversationFlowPanel, KnowledgePanel } from '@/components/prompt/PromptEditor'
+import { VariableReference } from '@/components/prompt/VariableReference'
+import { TestCallDialog, StartChoiceDialog, AutoBuildWizard } from '@/components/prompt/PromptDialogs'
 
 interface IndustryTemplate {
   id: string
@@ -402,6 +374,9 @@ export default function PromptPage() {
   const [publishing, setPublishing] = useState(false)
   const [promptStatus, setPromptStatus] = useState<string>('Draft')
   const [loadingIndustry, setLoadingIndustry] = useState(false)
+  // Presentation-only: when the saved prompt could not be loaded the editor shows the stock template, which
+  // must not be mistaken for the saved prompt (and must not be saved over it).
+  const [promptLoadFailed, setPromptLoadFailed] = useState(false)
 
   const [showTestModal, setShowTestModal] = useState(false)
   const [showLiveVoicePlayground, setShowLiveVoicePlayground] = useState(false)
@@ -532,6 +507,7 @@ export default function PromptPage() {
   const loadIndustryPrompt = async (industryKey: string) => {
     setLoadingIndustry(true)
     setSelectedIndustry(industryKey)
+    setPromptLoadFailed(false)
     try {
       const data = await fetchApi(`/api/v1/prompt?industry=${industryKey}`)
       if (data) {
@@ -559,6 +535,7 @@ export default function PromptPage() {
       }
     } catch (e) {
       console.error("Failed to load prompt for industry:", industryKey, e)
+      setPromptLoadFailed(true)
       const customDef = customTemplates.find((ct: any) => ct.id === industryKey)
       const fallbackTmpl = customDef || CLIENT_TEMPLATES[industryKey]
       if (fallbackTmpl) {
@@ -603,7 +580,7 @@ export default function PromptPage() {
 
       const payload = {
         agent_name: wizardAgentName.trim() || 'Saanvi',
-        company_name: wizardCompanyName.trim() || user?.company_name || 'Voice AI',
+        company_name: wizardCompanyName.trim() || user?.company_name || 'Talkly',
         industry: wizardIndustry.trim() || 'Custom Business',
         agent_designation: wizardAgentDesignation.trim() || 'Consultation Specialist',
         language: wizardLanguage,
@@ -810,7 +787,7 @@ export default function PromptPage() {
   }
 
   // Live preview helpers
-  const sampleCompanyName = user?.company_name || 'Voice AI'
+  const sampleCompanyName = user?.company_name || 'Talkly'
   const sampleCustomerName = 'Rahul Sharma'
   const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'ecommerce' ? 'Wireless Earbuds' : selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
   const sampleLocation = location.trim() || 'Connaught Place, New Delhi'
@@ -849,697 +826,221 @@ export default function PromptPage() {
     return out
   }
 
+  // ---------------------------------------------------------------------------
+  // Presentation. Everything above this line (state, handlers, templates, and
+  // the greeting preview) is unchanged; the UI is composed from
+  // components/prompt/* which only receive values and call these handlers.
+  // ---------------------------------------------------------------------------
+  const openAutoBuild = () => {
+    setBuilderStep(1)
+    setShowAutoBuildWizard(true)
+  }
+  const isLive = activeLiveIndustry === selectedIndustry
+  const statusBadge = isLive
+    ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[14px] font-semibold text-emerald-700"><CheckCircle2 size={15} strokeWidth={2} aria-hidden="true" />Live on calls</span>
+    : promptStatus === 'Published'
+      ? <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-[14px] font-semibold text-blue-700">Published</span>
+      : <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[14px] font-semibold text-amber-800">Draft</span>
+
+  // Which part of the prompt the workspace is showing. Panels stay mounted (just hidden) so nothing is lost when switching.
+  const [activeTab, setActiveTab] = useState<'business' | 'flow' | 'knowledge' | 'variables'>('flow')
+  const TABS = [
+    { key: 'business', label: 'Business Details', Icon: Building2 },
+    { key: 'flow', label: 'Conversation Flow', Icon: MessageSquareText },
+    { key: 'knowledge', label: 'Knowledge Base', Icon: BookOpen },
+    { key: 'variables', label: 'Variables', Icon: Braces },
+  ] as const
+  const onTabKey = (e: React.KeyboardEvent, i: number) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    const next = TABS[(i + step + TABS.length) % TABS.length]
+    setActiveTab(next.key)
+    document.getElementById(`prompt-tab-${next.key}`)?.focus()
+  }
+  const headBtn =
+    'inline-flex h-11 items-center gap-2 rounded-xl border border-ds-line bg-ds-bg px-4 text-[15px] font-semibold text-ds-ink shadow-sm transition-colors hover:bg-ds-surface disabled:cursor-not-allowed disabled:opacity-50'
+  const toolBtn =
+    'inline-flex h-11 items-center gap-2 rounded-xl border border-ds-line bg-ds-bg px-3.5 text-[15px] font-semibold text-ds-ink shadow-sm transition-colors hover:bg-ds-surface disabled:cursor-not-allowed disabled:opacity-50'
+
   return (
     <AppLayout title="AI Prompt">
-      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div>
-          <p className="eyebrow text-primary">Workspace / AI Prompt</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">Prompt Studio</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Setup, customize, and publish dynamic AI prompts for all 6 industry verticals.</p>
+      {/* Page header */}
+      <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+        <div className="min-w-0">
+          <h1 className="text-[30px] font-bold leading-tight tracking-tight text-ds-ink sm:text-[32px]">Prompt Studio</h1>
+          <p className="mt-1.5 text-[16px] text-ds-ink-2 sm:text-[17px]">Configure, test, and publish the prompt your AI agent uses on live calls.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowLiveVoicePlayground(true)}
-            className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-bold shadow-md hover:opacity-90 transition-all cursor-pointer bg-emerald-600 text-white"
-          >
-            <Mic size={15} /> Test in Browser (LiveKit)
+        <div className="flex flex-wrap items-center gap-3 lg:shrink-0">
+          <button onClick={() => setShowLiveVoicePlayground(true)} className={headBtn}>
+            <PlayCircle size={18} strokeWidth={1.75} className="text-ds-primary" />Test in Browser
           </button>
-          <button onClick={handleOpenTestModal} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted transition-all">
-            <Play size={15} /> Test on Phone
+          <button onClick={handleOpenTestModal} className={headBtn}>
+            <Phone size={18} strokeWidth={1.75} className="text-ds-primary" />Test on Phone
           </button>
-          <button onClick={handleResetToTemplate} className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-all" title="Reset this vertical to factory template">
-            <RotateCcw size={14} /> Reset
-          </button>
-          {selectedIndustry.startsWith('custom_') && (
-            <button
-              onClick={(e) => handleDeleteCustomTemplate(selectedIndustry, currentTemplate?.name || 'Custom Agent', e)}
-              className="flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 hover:border-red-500/60 shadow-xs transition-all cursor-pointer"
-              title="Delete this custom agent prompt"
-            >
-              <Trash2 size={15} /> Delete Custom Agent
+        </div>
+      </header>
+
+      <TemplatePicker
+        presets={CLIENT_TEMPLATES}
+        customTemplates={customTemplates}
+        selectedIndustry={selectedIndustry}
+        activeLiveIndustry={activeLiveIndustry}
+        industrySummary={industrySummary}
+        onSelect={handleSelectIndustry}
+        onDeleteCustom={handleDeleteCustomTemplate}
+        onAutoBuild={openAutoBuild}
+        onHowItWorks={() => setShowStartChoiceModal(true)}
+      />
+
+      {promptLoadFailed && !loadingIndustry && (
+        <Alert
+          tone="error"
+          urgent
+          title="Your saved prompt couldn’t be loaded"
+          action={
+            <button type="button" onClick={() => loadIndustryPrompt(selectedIndustry)} className={buttonClass('outline', 'sm')}>
+              Try again
             </button>
-          )}
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-50 transition-all">
-            <Save size={15} />{saving ? "Saving..." : "Save Draft"}
-          </button>
-          <button onClick={handlePublish} disabled={publishing} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 disabled:opacity-50 transition-all">
-            <CheckCircle2 size={15} />{publishing ? "Publishing..." : "Publish for Live Calls"}
-          </button>
-        </div>
-      </section>
-
-      {/* Auto Build vs Start from Template Hero Banner (Bolna-inspired) */}
-      <section className="mt-6 rounded-2xl border-2 border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-card p-5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
-              <Zap size={22} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-foreground">Custom AI Agent Builder (Auto Build)</h2>
-                <span className="rounded-full bg-primary/20 px-2.5 py-0.5 text-[10px] font-black text-primary uppercase tracking-wider">
-                  RECOMMENDED
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground max-w-2xl leading-relaxed">
-                Have a unique business or SOP? Answer a few quick questions or paste your company brief, and Voice AI will automatically generate a tailored voice agent with anti-repetition rules, dynamic variables, and custom greetings.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setBuilderStep(1)
-                setShowAutoBuildWizard(true)
-              }}
-              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-md hover:opacity-90 transition-all cursor-pointer"
-            >
-              <Sparkles size={14} /> Auto Build Custom Agent &rarr;
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowStartChoiceModal(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2.5 text-xs font-semibold text-foreground hover:bg-muted transition-all cursor-pointer"
-            >
-              How it works
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Industry Selector & Custom Agents Cards */}
-      <section className="mt-5 rounded-2xl border-2 border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-border">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
-              <Sparkles size={16} />
-            </div>
-            <div>
-              <h2 className="text-sm font-extrabold uppercase tracking-wider text-foreground">
-                SELECT INDUSTRY PRESET OR YOUR CUSTOM AGENTS
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Each vertical maintains its own independent prompt, greeting, and dynamic variables.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setBuilderStep(1)
-                setShowAutoBuildWizard(true)
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 hover:bg-primary/20 px-3 py-1 text-xs font-bold text-primary transition-all cursor-pointer"
-            >
-              <Plus size={13} /> New Custom Agent
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-          {Object.entries(CLIENT_TEMPLATES).map(([key, t]) => {
-            const isSelected = selectedIndustry === key
-            const isLiveActive = activeLiveIndustry === key
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => handleSelectIndustry(key)}
-                className={`w-full min-w-0 overflow-hidden flex flex-col justify-between p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${isSelected
-                  ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/20 z-10'
-                  : 'border-border/80 bg-background hover:bg-muted/40 hover:border-primary/50'
-                  }`}
-              >
-                <div className="w-full min-w-0">
-                  <div className="flex w-full items-center justify-between gap-1 mb-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
-                      {key === 'real_estate' && <Building2 size={16} className="text-primary" />}
-                      {key === 'healthcare' && <Stethoscope size={16} className="text-emerald-500" />}
-                      {key === 'edtech' && <GraduationCap size={16} className="text-blue-500" />}
-                      {key === 'bfsi' && <CreditCard size={16} className="text-amber-500" />}
-                      {key === 'general_sales' && <Briefcase size={16} className="text-purple-500" />}
-                      {key === 'collections' && <Banknote size={16} className="text-rose-500" />}
-                      {key === 'ecommerce' && <ShoppingBag size={16} className="text-orange-500" />}
-                    </div>
-                    <div className="flex flex-wrap gap-1 justify-end min-w-0">
-                      {isLiveActive && (
-                        <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-xs">
-                          Live
-                        </span>
-                      )}
-                      {industrySummary[key]?.status === 'Published' && !isLiveActive && (
-                        <span className="shrink-0 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
-                          Published
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <h3 className="font-extrabold text-xs sm:text-[13px] tracking-tight text-foreground leading-snug line-clamp-2 break-words">
-                    {t.name}
-                  </h3>
-                  <p className="mt-1 text-[11px] font-medium text-muted-foreground line-clamp-2 leading-relaxed">
-                    {t.description}
-                  </p>
-                </div>
-                <div className="mt-3 pt-2 w-full border-t border-border/50 flex items-center justify-between text-[11px] font-extrabold">
-                  <span className={isSelected ? 'text-primary' : 'text-muted-foreground'}>
-                    {isSelected ? '✓ Editing Now' : 'Edit Prompt →'}
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-
-          {/* User's Self-Made Custom Agent Templates */}
-          {customTemplates.map((ct) => {
-            const isSelected = selectedIndustry === ct.id
-            const isLiveActive = activeLiveIndustry === ct.id
-            return (
-              <div
-                key={ct.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleSelectIndustry(ct.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    handleSelectIndustry(ct.id)
-                  }
-                }}
-                className={`group relative w-full min-w-0 overflow-hidden flex flex-col justify-between p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${isSelected
-                  ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/20 z-10'
-                  : 'border-border/80 bg-background hover:bg-muted/40 hover:border-primary/50'
-                  }`}
-              >
-                <div className="w-full min-w-0">
-                  <div className="flex w-full items-center justify-between gap-1 mb-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary shrink-0">
-                      <Sparkles size={16} />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="shrink-0 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
-                        Custom
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteCustomTemplate(ct.id, ct.name, e)
-                        }}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-500/10 p-1 rounded-md transition-colors cursor-pointer"
-                        title="Delete this custom template"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                  <h3 className="font-extrabold text-xs sm:text-[13px] tracking-tight text-foreground leading-snug line-clamp-2 break-words" title={ct.name}>
-                    {ct.name}
-                  </h3>
-                  <p className="mt-1 text-[11px] font-medium text-muted-foreground line-clamp-2 leading-relaxed">
-                    {ct.description || 'Custom company agent prompt'}
-                  </p>
-                </div>
-                <div className="mt-3 pt-2 w-full border-t border-border/50 flex items-center justify-between text-[11px] font-extrabold">
-                  <span className={isSelected ? 'text-primary' : 'text-muted-foreground'}>
-                    {isSelected ? '✓ Editing Now' : 'Edit Prompt →'}
-                  </span>
-                </div>
-              </div>
-            )
-          })}
-
-          {/* "+ Auto Build Custom Agent" Action Card in Grid */}
-          <button
-            type="button"
-            onClick={() => {
-              setBuilderStep(1)
-              setShowAutoBuildWizard(true)
-            }}
-            className="w-full min-w-0 flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary text-center transition-all cursor-pointer group min-h-[140px]"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary group-hover:scale-110 transition-transform mb-2">
-              <Plus size={18} />
-            </div>
-            <span className="font-extrabold text-xs tracking-tight text-foreground">
-              + Auto Build Agent
-            </span>
-            <p className="mt-1 text-[10px] text-muted-foreground leading-tight">
-              Create custom agent for your business
-            </p>
-          </button>
-        </div>
-      </section>
-
-      {/* Main Workspace Layout */}
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-5">
-
-          {/* Dynamic Offering & Variables Quick-Config Card */}
-          <section className="rounded-xl border-2 border-primary/30 bg-card p-5 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
-              <div className="flex items-center gap-2">
-                <Settings2 size={18} className="text-primary" />
-                <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">
-                  {currentTemplate.name} — Dynamic Variables Defaults
-                </h2>
-              </div>
-              <span className="text-[11px] font-medium text-muted-foreground">
-                Injected into <code className="text-primary font-mono">&#123;&#123;offering&#125;&#125;</code> and placeholders
-              </span>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-foreground mb-1">
-                  {currentTemplate.default_offering_label} <span className="text-primary font-mono text-[11px]">(&#123;&#123;offering&#125;&#125;)</span>
-                </label>
-                <input
-                  type="text"
-                  value={offering}
-                  onChange={(e) => setOffering(e.target.value)}
-                  placeholder={currentTemplate.offering_placeholder}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  The primary product, property, course, or service your agent speaks about.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-foreground mb-1">
-                  Default Location / Branch <span className="text-primary font-mono text-[11px]">(&#123;&#123;location&#125;&#125;)</span>
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Connaught Place, New Delhi / Sector 62, Noida"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Default office, clinic, or site visit location used if lead has no location.
-                </p>
-              </div>
-            </div>
-
-            {/* Vertical-Specific Extra Variables */}
-            {currentTemplate.specific_variables && currentTemplate.specific_variables.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-border/60 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {currentTemplate.specific_variables
-                  .filter((sv, i, arr) => arr.findIndex(x => x.key === sv.key) === i)
-                  .map((sv, idx) => (
-                    <div key={`${sv.key}-${idx}`}>
-                      <label className="block text-xs font-bold text-foreground mb-1">
-                        {sv.label} <span className="text-primary font-mono text-[11px]">(&#123;&#123;{sv.key}&#125;&#125;)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={industryVariables[sv.key] || ''}
-                        onChange={(e) => setIndustryVariables({ ...industryVariables, [sv.key]: e.target.value })}
-                        placeholder={sv.placeholder}
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                  ))}
-              </div>
-            )}
-          </section>
-
-          {/* Prompt & Greeting Editor Card */}
-          <section className="rounded-xl border border-border bg-card p-5">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="text-lg font-bold flex items-center gap-2">
-                  <span>{currentTemplate.name} Prompt Instructions</span>
-                  {loadingIndustry && <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>}
-                </h2>
-                <p className="mt-1 text-xs text-muted-foreground">Setup the welcome message and system persona for this vertical.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${promptStatus === 'Published' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}`}>
-                  <CheckCircle2 size={12} />
-                  {activeLiveIndustry === selectedIndustry ? 'Active for Live Calls' : promptStatus === 'Published' ? 'Published' : 'Draft'}
-                </span>
-                {selectedIndustry.startsWith('custom_') && (
-                  <button
-                    onClick={(e) => handleDeleteCustomTemplate(selectedIndustry, currentTemplate?.name || 'Custom Agent', e)}
-                    className="flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
-                    title="Delete this custom agent prompt"
-                  >
-                    <Trash2 size={12} /> Delete Agent
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Outbound / Inbound Direction Tabs */}
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
-              <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveDirection('outbound')}
-                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all cursor-pointer ${activeDirection === 'outbound' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  Outbound Calls (You call them)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveDirection('inbound')}
-                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all cursor-pointer ${activeDirection === 'inbound' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  Inbound Calls (They call you)
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowLivePreview(!showLivePreview)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${showLivePreview ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-foreground hover:bg-muted'}`}
-              >
-                <Eye size={14} /> {showLivePreview ? 'Hide Live Preview' : 'Show Live Preview'}
-              </button>
-            </div>
-
-            {/* Live Preview Box if enabled */}
-            {showLivePreview && (
-              <div className="mt-4 p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-2">
-                <div className="flex items-center justify-between text-xs font-bold text-primary">
-                  <span className="flex items-center gap-1.5">
-                    <Radio size={14} className="animate-pulse text-primary" /> Live Call Simulation (What your prospect will hear)
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">Sample: {sampleCustomerName} • {sampleCompanyName}</span>
-                </div>
-                <div className="p-3 rounded-lg bg-card border border-border text-sm font-medium leading-relaxed">
-                  <p className="text-xs font-bold text-muted-foreground mb-1 uppercase tracking-wider">AI Agent Speaks:</p>
-                  <p className="text-foreground">
-                    &ldquo;{computeSimulatedGreeting(activeDirection === 'outbound' ? welcomeMessage : inboundWelcomeMessage)}&rdquo;
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Dynamic Insertion Pills */}
-            <div className="mt-4 pt-2">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-bold text-muted-foreground">Insert Variable:</span>
-                <span className="text-[11px] text-muted-foreground">(Click to append to greeting)</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(() => {
-                  const tagList: string[] = ['{{company_name}}', '{{customer_name}}', '{{offering}}', '{{location}}']
-                  const rawVars = currentTemplate?.variables
-                  if (Array.isArray(rawVars)) {
-                    rawVars.forEach((v: any) => {
-                      if (typeof v === 'string') tagList.push(v)
-                    })
-                  } else if (rawVars && typeof rawVars === 'object') {
-                    Object.keys(rawVars).forEach((k: string) => {
-                      const clean = k.replace(/^\{\{|\}\}$/g, '')
-                      tagList.push(`{{${clean}}}`)
-                    })
-                  }
-                  if (Array.isArray(currentTemplate?.specific_variables)) {
-                    currentTemplate.specific_variables.forEach((sv: any) => {
-                      if (sv?.key) {
-                        const clean = sv.key.replace(/^\{\{|\}\}$/g, '')
-                        tagList.push(`{{${clean}}}`)
-                      }
-                    })
-                  }
-                  return Array.from(new Set(tagList))
-                })().map((tag, idx) => (
-                  <button
-                    key={`${tag}-${idx}`}
-                    type="button"
-                    onClick={() => handleInsertVariable(tag)}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-mono font-medium text-foreground hover:bg-primary hover:text-primary-foreground transition-all cursor-pointer border border-border/50"
-                  >
-                    <span>+</span> {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5 space-y-6">
-              {/* Welcome Message Section */}
-              <div>
-                <h2 className="text-sm font-bold text-foreground">
-                  {activeDirection === 'outbound' ? 'Agent Welcome Message' : 'Inbound Greeting'}
-                </h2>
-                <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
-                  {activeDirection === 'outbound'
-                    ? 'The very first sentence your AI agent speaks when the prospect answers.'
-                    : 'The opening greeting spoken when a prospect calls your inbound number.'}
-                </p>
-                <textarea
-                  ref={activeTextareaRef}
-                  value={activeDirection === 'outbound' ? welcomeMessage : inboundWelcomeMessage}
-                  onChange={(e) => activeDirection === 'outbound' ? setWelcomeMessage(e.target.value) : setInboundWelcomeMessage(e.target.value)}
-                  className="w-full resize-y rounded-xl border border-border bg-background p-4 text-sm font-mono leading-relaxed outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 min-h-[90px]"
-                  placeholder="e.g. नमस्ते {{customer_name}}, मैं {{company_name}} की तरफ से बोल रहा हूँ..."
-                />
-              </div>
-
-              {/* System Prompt Section */}
-              <div className="border-t border-border pt-6">
-                <h2 className="text-sm font-bold text-foreground">
-                  {activeDirection === 'outbound' ? 'System Prompt Persona & Rules' : 'Inbound System Persona & Rules'}
-                </h2>
-                <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
-                  Master conversation structure, identity checks, and qualification steps for this vertical.
-                </p>
-                <FlowBuilder
-                  key={`${selectedIndustry}-${activeDirection}`}
-                  value={activeDirection === 'outbound' ? promptText : inboundPromptText}
-                  onChange={(next) => activeDirection === 'outbound' ? setPromptText(next) : setInboundPromptText(next)}
-                  placeholderRole={`You are a professional representative for {{company_name}}, handling ${activeDirection === 'outbound' ? 'outbound' : 'inbound'} calls.`}
-                />
-              </div>
-
-              {/* Agent Knowledge Base Section */}
-              <div className="border-t border-border pt-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
-                  <div>
-                    <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                      <BookOpen size={16} className="text-primary" /> Agent Knowledge Base & Verified FAQs
-                    </h2>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Company FAQs, pricing, policies, and product details. The AI agent references this during calls to answer caller questions accurately without hallucinating.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="file"
-                      ref={knowledgeFileInputRef}
-                      onChange={(e) => handleUploadKnowledgeFile(e, 'studio')}
-                      accept=".pdf,.xlsx,.xls,.csv,.txt"
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => knowledgeFileInputRef.current?.click()}
-                      disabled={uploadingKnowledgeFile}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 hover:bg-muted px-2.5 py-1 text-xs font-semibold text-foreground transition-all cursor-pointer shadow-sm hover:border-primary/50"
-                      title="Upload PDF brochure, Excel pricing/FAQ sheet, or CSV"
-                    >
-                      {uploadingKnowledgeFile ? (
-                        <>
-                          <Loader2 size={13} className="animate-spin text-primary" />
-                          <span>Extracting...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Paperclip size={13} className="text-primary" />
-                          <span>Upload PDF / Excel</span>
-                        </>
-                      )}
-                    </button>
-                    <span className="self-start sm:self-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                      Active for Live Calls
-                    </span>
-                  </div>
-                </div>
-                <textarea
-                  value={knowledgeBase}
-                  onChange={(e) => setKnowledgeBase(e.target.value)}
-                  className="w-full resize-y rounded-xl border border-border bg-background p-4 text-xs font-mono leading-relaxed outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 min-h-[120px]"
-                  placeholder={`e.g.\nQ: What is the refund or cancellation policy?\nA: We offer a 100% full refund within 7 days of purchase.\n\nQ: What are the office or store timings?\nA: Monday to Saturday from 9:30 AM to 7:00 PM. Sunday closed.\n\nQ: Are there any hidden fees or charges?\nA: No, all pricing is completely transparent with zero hidden costs.\n\nQ: What documents are required for application?\nA: Only Aadhaar card and latest utility bill.`}
-                />
-                <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>Write simple Q&A pairs, bullet points, or policies. The agent will speak answers naturally in the call language.</span>
-                  <span className="font-mono text-[10px] opacity-75">{knowledgeBase.length} characters</span>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Right Sidebar: Dynamic Variables Reference & How It Works */}
-        <div className="space-y-5">
-          <section className="rounded-xl border border-border bg-card p-5 h-fit shadow-sm">
-            <h2 className="text-base font-bold flex items-center gap-2">
-              <Sparkles size={16} className="text-primary" /> Supported Dynamic Tags
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground mb-4">
-              Auto-substituted from your uploaded CSV, lead record, or company defaults.
-            </p>
-
-            <div className="space-y-2.5">
-              {(() => {
-                const standardKeys = new Set(['{{customer_name}}', '{{company_name}}', '{{offering}}', '{{location}}'])
-                const extraTags = (currentTemplate.specific_variables || [])
-                  .map(sv => {
-                    const cleanKey = sv.key.replace(/^\{\{|\}\}$/g, '')
-                    return {
-                      tag: `{{${cleanKey}}}`,
-                      desc: sv.label
-                    }
-                  })
-                  .filter(item => !standardKeys.has(item.tag))
-
-                const rawList = [
-                  { tag: '{{customer_name}}', desc: 'Contact / Lead name' },
-                  { tag: '{{company_name}}', desc: 'Your company name' },
-                  { tag: '{{offering}}', desc: currentTemplate.default_offering_label },
-                  { tag: '{{location}}', desc: 'City, branch, or property location' },
-                  ...extraTags,
-                  { tag: '{{any_csv_column}}', desc: 'Any extra CSV column (e.g. doctor, date)' }
-                ]
-
-                const seen = new Set<string>()
-                const uniqueList = rawList.filter(item => {
-                  if (seen.has(item.tag)) return false
-                  seen.add(item.tag)
-                  return true
-                })
-
-                return uniqueList.map((v, idx) => (
-                  <div key={`${v.tag}-${idx}`} className="flex flex-col gap-0.5 rounded-lg bg-muted/40 p-2.5 border border-border/40">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold text-primary">{v.tag}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleInsertVariable(v.tag)}
-                        className="text-[10px] text-muted-foreground hover:text-primary font-bold cursor-pointer"
-                      >
-                        + Insert
-                      </button>
-                    </div>
-                    <span className="text-[11px] text-muted-foreground">{v.desc}</span>
-                  </div>
-                ))
-              })()}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-5 h-fit shadow-sm">
-            <h2 className="text-sm font-bold flex items-center gap-1.5 text-foreground">
-              <HelpCircle size={15} className="text-primary" /> How Dynamic Variables Work
-            </h2>
-            <ol className="mt-2.5 space-y-2 text-xs text-muted-foreground list-decimal pl-4 leading-relaxed">
-              <li><strong className="text-foreground">Lead / CSV Value:</strong> If an uploaded CSV has an <code className="text-primary">offering</code> or custom column, Voice AI uses it first.</li>
-              <li><strong className="text-foreground">Vertical Default:</strong> If the lead has no offering, Voice AI injects your configured default offering from above.</li>
-              <li><strong className="text-foreground">No Cross-Industry Leaks:</strong> Voice AI automatically prevents an old EdTech or loan offering from ever appearing in a Real Estate call.</li>
-            </ol>
-          </section>
-        </div>
-      </div>
-
-      {/* Test Call Modal with Realistic Dynamic Fields */}
-      {showTestModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl border border-border">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-border">
-              <div>
-                <h2 className="text-lg font-bold">Test {currentTemplate.name} Agent</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Dispatches a live phone call with dynamic variables</p>
-              </div>
-              <button onClick={() => setShowTestModal(false)} className="text-muted-foreground hover:text-foreground cursor-pointer">
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleTestCall} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-bold text-foreground">Your Phone Number</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-2.5 text-muted-foreground" size={14} />
-                  <input
-                    required
-                    type="text"
-                    value={testPhone}
-                    onChange={(e) => setTestPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    className="w-full rounded-lg border border-border bg-background p-2.5 pl-9 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-foreground">Test Lead Name (Spoken to You)</label>
-                <input
-                  type="text"
-                  value={testCustomerName}
-                  onChange={(e) => setTestCustomerName(e.target.value)}
-                  placeholder="e.g. Rahul"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-foreground">
-                  Test Offering <span className="text-primary font-mono text-[11px]">(&#123;&#123;offering&#125;&#125;)</span>
-                </label>
-                <input
-                  type="text"
-                  value={testOffering}
-                  onChange={(e) => setTestOffering(e.target.value)}
-                  placeholder={currentTemplate.offering_placeholder}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-foreground">
-                  Test Location <span className="text-primary font-mono text-[11px]">(&#123;&#123;location&#125;&#125;)</span>
-                </label>
-                <input
-                  type="text"
-                  value={testLocation}
-                  onChange={(e) => setTestLocation(e.target.value)}
-                  placeholder="e.g. Gurgaon / Delhi"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-foreground">Call Voice Language</label>
-                <select
-                  value={testLanguage}
-                  onChange={(e) => setTestLanguage(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary font-medium"
-                >
-                  <option value="Hindi">Hindi (Urban Indian Accent)</option>
-                  <option value="Hinglish">Hinglish (Code-mixed Hindi + English)</option>
-                  <option value="English">Indian English</option>
-                </select>
-              </div>
-
-              <div className="pt-2">
-                <button type="submit" className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20 transition-all cursor-pointer">
-                  Call Me Now
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          }
+        >
+          The editor below shows this template’s factory text, not what you saved. Saving and publishing are disabled so it can’t overwrite your saved prompt.
+        </Alert>
       )}
 
-      {/* In-Browser LiveKit Voice Playground Modal */}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section aria-label="Prompt editor" className="min-w-0 rounded-2xl border border-ds-line bg-ds-bg shadow-sm">
+          {/* Editing toolbar: stays reachable while a long prompt is edited */}
+          <div role="region" aria-label="Save and publish" className="sticky top-14 z-10 flex flex-wrap items-center justify-between gap-3 rounded-t-2xl border-b border-ds-line bg-ds-bg/95 px-4 py-3.5 backdrop-blur sm:px-6">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+              <p className="min-w-0 truncate text-[16px] text-ds-ink-2">
+                Editing: <span className="text-[18px] font-semibold text-ds-ink" title={currentTemplate.name}>{currentTemplate.name}</span>
+              </p>
+              {statusBadge}
+              {loadingIndustry && <span className="flex items-center gap-1 text-[14px] text-ds-ink-2"><Loader2 size={14} className="animate-spin" />Loading…</span>}
+            </div>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button onClick={handleResetToTemplate} className={toolBtn} title="Reset this template to its factory prompt">
+                <RotateCcw size={17} strokeWidth={1.75} />Reset
+              </button>
+              {selectedIndustry.startsWith('custom_') && (
+                <button
+                  onClick={(e) => handleDeleteCustomTemplate(selectedIndustry, currentTemplate?.name || 'Custom Agent', e)}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-ds-error/30 bg-ds-bg px-4 text-[15px] font-semibold text-ds-error-ink hover:bg-ds-error-soft"
+                  title="Delete this custom agent prompt"
+                >
+                  <Trash2 size={17} strokeWidth={1.75} /><span className="hidden sm:inline">Delete agent</span>
+                </button>
+              )}
+              <button onClick={handleSave} disabled={saving || promptLoadFailed} className={toolBtn}>
+                {saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} strokeWidth={1.75} />}
+                {saving ? 'Saving…' : 'Save Draft'}
+              </button>
+              <button
+                onClick={handlePublish}
+                disabled={publishing || promptLoadFailed}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-ds-primary px-4 text-[15px] font-semibold text-white shadow-md shadow-blue-600/20 transition-colors hover:bg-ds-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {publishing ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} strokeWidth={1.75} />}
+                {publishing ? 'Publishing…' : 'Publish'}
+              </button>
+            </div>
+          </div>
+
+          {/* Section navigation */}
+          <div role="tablist" aria-label="Prompt sections" className="grid grid-cols-2 gap-2 border-b border-ds-line px-3 py-3 sm:grid-cols-4 sm:px-6">
+            {TABS.map(({ key, label, Icon }, i) => {
+              const active = activeTab === key
+              return (
+                <button
+                  key={key}
+                  id={`prompt-tab-${key}`}
+                  role="tab"
+                  type="button"
+                  aria-selected={active}
+                  aria-controls={`prompt-panel-${key}`}
+                  tabIndex={active ? 0 : -1}
+                  onClick={() => setActiveTab(key)}
+                  onKeyDown={(e) => onTabKey(e, i)}
+                  className={`flex min-h-[68px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[15px] font-semibold leading-tight transition-colors ${
+                    active ? 'bg-blue-50 text-ds-primary ring-1 ring-ds-primary/30' : 'text-ds-ink-2 hover:bg-ds-surface hover:text-ds-ink'
+                  }`}
+                >
+                  <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div role="tabpanel" id="prompt-panel-business" aria-labelledby="prompt-tab-business" hidden={activeTab !== 'business'} className="p-4 sm:p-6">
+            <BusinessDetails template={currentTemplate} offering={offering} setOffering={setOffering} location={location} setLocation={setLocation} />
+          </div>
+          <div role="tabpanel" id="prompt-panel-flow" aria-labelledby="prompt-tab-flow" hidden={activeTab !== 'flow'} className="p-4 sm:p-6">
+            <ConversationFlowPanel
+              selectedIndustry={selectedIndustry}
+              activeDirection={activeDirection}
+              setActiveDirection={setActiveDirection}
+              showLivePreview={showLivePreview}
+              setShowLivePreview={setShowLivePreview}
+              previewText={computeSimulatedGreeting(activeDirection === 'outbound' ? welcomeMessage : inboundWelcomeMessage)}
+              sampleCustomerName={sampleCustomerName}
+              sampleCompanyName={sampleCompanyName}
+              welcomeMessage={welcomeMessage}
+              setWelcomeMessage={setWelcomeMessage}
+              inboundWelcomeMessage={inboundWelcomeMessage}
+              setInboundWelcomeMessage={setInboundWelcomeMessage}
+              promptText={promptText}
+              setPromptText={setPromptText}
+              inboundPromptText={inboundPromptText}
+              setInboundPromptText={setInboundPromptText}
+              activeTextareaRef={activeTextareaRef}
+            />
+          </div>
+          <div role="tabpanel" id="prompt-panel-knowledge" aria-labelledby="prompt-tab-knowledge" hidden={activeTab !== 'knowledge'} className="p-4 sm:p-6">
+            <KnowledgePanel
+              knowledgeBase={knowledgeBase}
+              setKnowledgeBase={setKnowledgeBase}
+              knowledgeFileInputRef={knowledgeFileInputRef}
+              onKnowledgeFile={(e) => handleUploadKnowledgeFile(e, 'studio')}
+              uploadingKnowledgeFile={uploadingKnowledgeFile}
+            />
+          </div>
+          <div role="tabpanel" id="prompt-panel-variables" aria-labelledby="prompt-tab-variables" hidden={activeTab !== 'variables'} className="p-4 sm:p-6">
+            <VariableDefaults template={currentTemplate} industryVariables={industryVariables} setIndustryVariables={setIndustryVariables} />
+          </div>
+        </section>
+
+        <aside aria-label="Dynamic variables" className="min-w-0 xl:sticky xl:top-[4.5rem] xl:self-start">
+          <VariableReference
+            template={currentTemplate}
+            onInsert={(tag) => {
+              handleInsertVariable(tag)
+              setActiveTab('flow')
+            }}
+          />
+        </aside>
+      </div>
+
+      <TestCallDialog
+        open={showTestModal}
+        onClose={() => setShowTestModal(false)}
+        templateName={currentTemplate.name}
+        offeringPlaceholder={currentTemplate.offering_placeholder}
+        onSubmit={handleTestCall}
+        testPhone={testPhone}
+        setTestPhone={setTestPhone}
+        testCustomerName={testCustomerName}
+        setTestCustomerName={setTestCustomerName}
+        testOffering={testOffering}
+        setTestOffering={setTestOffering}
+        testLocation={testLocation}
+        setTestLocation={setTestLocation}
+        testLanguage={testLanguage}
+        setTestLanguage={setTestLanguage}
+      />
+
+      {/* In-browser LiveKit voice playground (unchanged component) */}
       <LiveVoicePlayground
         isOpen={showLiveVoicePlayground}
         onClose={() => setShowLiveVoicePlayground(false)}
@@ -1548,525 +1049,50 @@ export default function PromptPage() {
         industry={selectedIndustry}
       />
 
-      {/* 1. "How do you want to start?" Choice Modal (Bolna Image 1) */}
-      {showStartChoiceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <button
-              onClick={() => setShowStartChoiceModal(false)}
-              className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
-            >
-              <X size={18} />
-            </button>
+      <StartChoiceDialog
+        open={showStartChoiceModal}
+        onClose={() => setShowStartChoiceModal(false)}
+        onAutoBuild={() => {
+          setShowStartChoiceModal(false)
+          setBuilderStep(1)
+          setShowAutoBuildWizard(true)
+        }}
+        onBrowseTemplates={() => {
+          setShowStartChoiceModal(false)
+          window.scrollTo({ top: 120, behavior: 'smooth' })
+        }}
+      />
 
-            <div className="text-center pt-2 pb-6">
-              <span className="text-[11px] font-extrabold uppercase tracking-widest text-primary flex items-center justify-center gap-1.5 mb-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" /> NEW AGENT
-              </span>
-              <h2 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl">
-                How do you want to start?
-              </h2>
-              <p className="mt-2 text-xs text-muted-foreground max-w-md mx-auto">
-                You can change everything later. This just decides where we begin.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-2">
-              {/* Option A: Auto Build */}
-              <div
-                onClick={() => {
-                  setShowStartChoiceModal(false)
-                  setBuilderStep(1)
-                  setShowAutoBuildWizard(true)
-                }}
-                className="group relative flex flex-col justify-between p-5 rounded-2xl border-2 border-primary/40 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all cursor-pointer shadow-sm hover:shadow-md"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm group-hover:scale-105 transition-transform">
-                      <Zap size={20} />
-                    </div>
-                    <span className="rounded-full bg-primary px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary-foreground">
-                      RECOMMENDED
-                    </span>
-                  </div>
-                  <h3 className="text-base font-extrabold text-foreground group-hover:text-primary transition-colors">
-                    Auto Build
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                    Answer a few quick questions or upload a brief, and we'll generate the voice agent for you.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground font-mono">⏱ ~3 min • 📄 Upload optional</span>
-                  <span className="font-bold text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                    Start building &rarr;
-                  </span>
-                </div>
-              </div>
-
-              {/* Option B: Start from Template */}
-              <div
-                onClick={() => {
-                  setShowStartChoiceModal(false)
-                  window.scrollTo({ top: 120, behavior: 'smooth' })
-                }}
-                className="group relative flex flex-col justify-between p-5 rounded-2xl border-2 border-border/80 bg-background hover:border-primary/50 hover:bg-muted/30 transition-all cursor-pointer shadow-sm hover:shadow-md"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-foreground group-hover:scale-105 transition-transform">
-                      <LayoutGrid size={20} />
-                    </div>
-                  </div>
-                  <h3 className="text-base font-extrabold text-foreground group-hover:text-primary transition-colors">
-                    Start from Template
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                    Choose a ready-made template tailored to your workflow and business vertical.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground font-mono">⏱ ~1 min • 📄 6 templates</span>
-                  <span className="font-bold text-foreground group-hover:text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                    Browse templates &rarr;
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => setShowStartChoiceModal(false)}
-                className="text-xs text-muted-foreground hover:text-foreground underline transition-colors cursor-pointer"
-              >
-                No thanks, I'd like to start from scratch
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Auto Build Multi-Step Wizard Modal (Bolna Image 2) */}
-      {showAutoBuildWizard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <button
-              onClick={() => {
-                if (!generatingAgent) setShowAutoBuildWizard(false)
-              }}
-              disabled={generatingAgent}
-              className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-
-            {/* Stepper Header */}
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                <span className="text-[11px] font-black uppercase tracking-wider text-primary">NEW AGENT • AUTO BUILD</span>
-              </div>
-
-              {/* Progress Steps */}
-              <div className="flex items-center gap-3 text-xs font-bold text-muted-foreground mb-2">
-                <span className={builderStep === 1 ? 'text-primary font-black' : builderStep > 1 ? 'text-foreground' : ''}>
-                  (1) Identity
-                </span>
-                <span className="opacity-40">&gt;</span>
-                <span className={builderStep === 2 ? 'text-primary font-black' : builderStep > 2 ? 'text-foreground' : ''}>
-                  (2) Conversation
-                </span>
-                <span className="opacity-40">&gt;</span>
-                <span className={builderStep === 3 ? 'text-primary font-black' : ''}>
-                  (3) Closing
-                </span>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: builderStep === 1 ? '33%' : builderStep === 2 ? '66%' : '100%' }}
-                />
-              </div>
-
-              <div className="mt-4">
-                <h2 className="text-xl font-black text-foreground">
-                  {builderStep === 1 && "Who is your agent?"}
-                  {builderStep === 2 && "What is your agent's conversation flow?"}
-                  {builderStep === 3 && "Closing & call wrap-up"}
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {builderStep === 1 && "Tell us about the agent, its voice, and tone. Or upload a brief and we'll fill it in."}
-                  {builderStep === 2 && "Define the key qualification questions, offerings, and common objections."}
-                  {builderStep === 3 && "Set the call-to-action, first greeting style, and generate your production voice agent."}
-                </p>
-              </div>
-            </div>
-
-            {generatingAgent ? (
-              <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
-                <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <Sparkles size={32} className="animate-spin" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-foreground">Generating Your Custom Voice Agent</h3>
-                  <p className="mt-1 text-xs text-muted-foreground font-mono animate-pulse">
-                    {generationProgress || 'Crafting prompt architecture...'}
-                  </p>
-                </div>
-                <div className="max-w-xs text-[11px] text-muted-foreground/80">
-                  Applying Voice AI's anti-repetition rules, one-question pacing, and dynamic lead variable bindings.
-                </div>
-              </div>
-            ) : (
-              <div>
-                {/* STEP 1: IDENTITY */}
-                {builderStep === 1 && (
-                  <div className="space-y-4">
-                    {/* Quick-Fill Blueprint Presets */}
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-black text-primary uppercase tracking-wider flex items-center gap-1.5">
-                          <Sparkles size={12} className="text-primary" /> 1-Click Blueprints (Quick Fill):
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-semibold">Click to auto-fill all 3 steps</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWizardAgentName('Priya')
-                            setWizardCompanyName('Apollo Clinic')
-                            setWizardIndustry('Healthcare & Clinic')
-                            setWizardAgentDesignation('Appointment Coordinator')
-                            setWizardLanguage('Hindi / Hinglish')
-                            setWizardVoiceTone('Empathetic, calm, respectful')
-                            setWizardSopText('Doctor Appointment Reminder Call: Call patient to confirm their scheduled doctor appointment tomorrow at 11 AM with Dr. Mehta. If patient says "हाँ, पर थोड़ा लेट हो सकता हूँ" (Yes, but might be a little late), politely acknowledge and reassure that clinic will hold the slot for 15 minutes. If they confirm on time, advise reaching 15 mins early with previous prescription/reports. If reschedule, ask for alternate day. If cancel, politely cancel without pressure.')
-                            setWizardPrimaryObjective('कल के डॉक्टर अपॉइंटमेंट की पुष्टि करना, संभावित देरी (लेट होना) को नोट करना, और आवश्यक होने पर रीशेड्यूल करना।')
-                            setWizardMustAskQuestions('1. क्या आप कल सुबह 11 बजे डॉ. मेहता के अपॉइंटमेंट के लिए आ रहे हैं?\n2. क्या आपको क्लीनिक की लोकेशन या पते की जानकारी चाहिए?')
-                            setWizardOfferingsUsps('डॉ. मेहता (सीनियर फिजिशियन), आधुनिक क्लीनिक सुविधाएं, ऑन-टाइम कंसल्टेशन।')
-                            setWizardObjections('यदि मरीज कहे कि थोड़ा लेट हो जाएगा -> विनम्रता से आश्वस्त करें कि 15 मिनट स्लॉट होल्ड रहेगा।\nयदि रीशेड्यूल करना चाहे -> परसों या वीकेंड का समय पूछें।\nयदि कैंसल करना चाहे -> विनम्रता से कैंसल करें और डॉक्टर का स्लॉट फ्री करें।')
-                            setWizardClosingCta('समय की पुष्टि करें, 15 मिनट पहले रिपोर्ट्स के साथ आने की सलाह दें, धन्यवाद कहें और कॉल समाप्त करें।')
-                          }}
-                          className="rounded-lg border border-primary/50 bg-primary/20 px-3 py-1.5 text-xs font-extrabold text-primary hover:bg-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                        >
-                          🩺 Doctor Appointment Reminder
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWizardAgentName('Kavya')
-                            setWizardCompanyName('Snapdeal Fashion')
-                            setWizardIndustry('E-commerce & D2C')
-                            setWizardAgentDesignation('Order Verification Executive')
-                            setWizardLanguage('Hindi / Hinglish')
-                            setWizardVoiceTone('Warm, consultative, professional')
-                            setWizardSopText('E-commerce Cash-on-Delivery (COD) Order Confirmation: Confirm customer order for ₹2,199, verify delivery address and landmark, remind about 3-4 day delivery with cash/UPI readiness, and cancel immediately if customer ordered by mistake.')
-                            setWizardPrimaryObjective('COD ऑर्डर की पुष्टि करना, डिलीवरी एड्रेस वेरिफाई करना, और RTO रोकना।')
-                            setWizardMustAskQuestions('1. क्या मैं आपका ₹2,199 का COD ऑर्डर कन्फर्म कर दूँ?\n2. क्या आपका डिलीवरी एड्रेस और पिनकोड सही है?')
-                            setWizardOfferingsUsps('फास्ट 3-4 दिन डिलीवरी, फ्री शिपिंग, आसान कैश व UPI पेमेंट।')
-                            setWizardObjections('यदि कैंसल करना चाहे -> तुरंत बिना बहस के कैंसल करें ताकि पार्सल डिस्पैच न हो।\nयदि डिलीवरी समय पूछे -> बताएं 3-4 दिनों में कूरियर पहुंचेगा।')
-                            setWizardClosingCta('ऑर्डर डिस्पैच की पुष्टि करें, कैश/UPI तैयार रखने का आग्रह करें, धन्यवाद कहें और कॉल समाप्त करें।')
-                          }}
-                          className="rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer"
-                        >
-                          📦 COD Confirmation
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* SOP / Brief paste card */}
-                    <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <FileText size={16} className="text-primary" />
-                        <span className="text-xs font-bold text-foreground">Have a brief, brochure, or SOP?</span>
-                        <span className="text-[10px] text-muted-foreground font-semibold">(Optional)</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mb-2">
-                        Paste any text, product catalog, sales pitch, or training instructions. Our AI will extract all details automatically.
-                      </p>
-                      <textarea
-                        value={wizardSopText}
-                        onChange={(e) => setWizardSopText(e.target.value)}
-                        placeholder="e.g. We are Tata Solar. We offer 3kW-10kW residential solar panel installations across Pune & Mumbai with 40% PM Surya Ghar subsidy. Need to confirm homeowner status and monthly electricity bill > ₹2,500..."
-                        rows={3}
-                        className="w-full rounded-lg border border-border bg-background p-3 text-xs outline-none focus:border-primary font-mono"
-                      />
-                    </div>
-
-                    <div className="relative flex py-1 items-center">
-                      <div className="flex-grow border-t border-border"></div>
-                      <span className="flex-shrink mx-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                        OR FILL IN MANUALLY
-                      </span>
-                      <div className="flex-grow border-t border-border"></div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">Agent Spoken Name *</label>
-                        <input
-                          type="text"
-                          value={wizardAgentName}
-                          onChange={(e) => setWizardAgentName(e.target.value)}
-                          placeholder="e.g. Saanvi / Priya / Rahul"
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">Company / Brand Name *</label>
-                        <input
-                          type="text"
-                          value={wizardCompanyName}
-                          onChange={(e) => setWizardCompanyName(e.target.value)}
-                          placeholder="e.g. Tata Power Solar / My Clinic"
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">Industry / Vertical *</label>
-                        <input
-                          type="text"
-                          value={wizardIndustry}
-                          onChange={(e) => setWizardIndustry(e.target.value)}
-                          placeholder="e.g. Renewable Solar Energy, Logistics, Clinic, Car Dealership"
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">Agent Designation / Role *</label>
-                        <input
-                          type="text"
-                          value={wizardAgentDesignation}
-                          onChange={(e) => setWizardAgentDesignation(e.target.value)}
-                          placeholder="e.g. Solar Consultation Specialist, Admissions Advisor"
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">Spoken Language</label>
-                        <select
-                          value={wizardLanguage}
-                          onChange={(e) => setWizardLanguage(e.target.value)}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                        >
-                          <option value="Hindi / Hinglish">Hindi / Hinglish (Code-mixed Natural Indian)</option>
-                          <option value="Indian English">Indian English (Professional & Fluent)</option>
-                          <option value="Pure Hindi">Pure Hindi (Polite & Traditional)</option>
-                          <option value="Tamil">Tamil (Urban Native)</option>
-                          <option value="Telugu">Telugu (Urban Native)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">Voice Personality & Tone</label>
-                        <select
-                          value={wizardVoiceTone}
-                          onChange={(e) => setWizardVoiceTone(e.target.value)}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                        >
-                          <option value="Warm, consultative, professional">Warm, Consultative & Professional</option>
-                          <option value="Confident, persuasive, energetic">Confident, Persuasive & Energetic (Sales)</option>
-                          <option value="Empathetic, calm, respectful">Empathetic, Calm & Respectful (Support/Clinic)</option>
-                          <option value="Direct, concise, firm">Direct & Polite (Finance / Collections)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 2: CONVERSATION & GOALS */}
-                {builderStep === 2 && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-foreground mb-1">
-                        Primary Call Objective *
-                      </label>
-                      <input
-                        type="text"
-                        value={wizardPrimaryObjective}
-                        onChange={(e) => setWizardPrimaryObjective(e.target.value)}
-                        placeholder="e.g. Qualify roof ownership and electricity bill, then book a free site survey."
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                      />
-                      <p className="mt-1 text-[11px] text-muted-foreground">What must this call achieve before concluding?</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-foreground mb-1">
-                        Must-Ask Qualification Questions *
-                      </label>
-                      <textarea
-                        value={wizardMustAskQuestions}
-                        onChange={(e) => setWizardMustAskQuestions(e.target.value)}
-                        placeholder="e.g.&#10;1. Do you own an independent house or rooftop?&#10;2. What is your average monthly electricity bill?&#10;3. Which city/area is the property located in?"
-                        rows={3}
-                        className="w-full rounded-lg border border-border bg-background p-3 text-xs outline-none focus:border-primary font-mono"
-                      />
-                      <p className="mt-1 text-[11px] text-muted-foreground">The AI agent will ask these questions one-by-one to qualify the lead.</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">
-                          Key Offerings, Pricing & USPs
-                        </label>
-                        <textarea
-                          value={wizardOfferingsUsps}
-                          onChange={(e) => setWizardOfferingsUsps(e.target.value)}
-                          placeholder="e.g. 40% government subsidy, ₹0 upfront financing, 25-year warranty, saves 90% bills."
-                          rows={3}
-                          className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-foreground mb-1">
-                          Common Objections & Playbook
-                        </label>
-                        <textarea
-                          value={wizardObjections}
-                          onChange={(e) => setWizardObjections(e.target.value)}
-                          placeholder="e.g. If customer says too expensive -> explain ₹0 down payment EMI is lower than electricity bill. If busy -> offer callback tomorrow."
-                          rows={3}
-                          className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-bold text-foreground">
-                          Knowledge Base & Verified FAQs (Optional)
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="file"
-                            ref={wizardKnowledgeFileInputRef}
-                            onChange={(e) => handleUploadKnowledgeFile(e, 'wizard')}
-                            accept=".pdf,.xlsx,.xls,.csv,.txt"
-                            className="hidden"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => wizardKnowledgeFileInputRef.current?.click()}
-                            disabled={uploadingKnowledgeFile}
-                            className="inline-flex items-center gap-1 rounded border border-border bg-background hover:bg-muted px-2 py-0.5 text-[11px] font-semibold text-primary transition-all cursor-pointer"
-                            title="Upload PDF or Excel document"
-                          >
-                            {uploadingKnowledgeFile ? (
-                              <>
-                                <Loader2 size={11} className="animate-spin" />
-                                <span>Reading...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Paperclip size={11} />
-                                <span>Upload PDF / Excel</span>
-                              </>
-                            )}
-                          </button>
-                          <span className="text-[10px] text-primary font-semibold hidden sm:flex items-center gap-1">
-                            <Sparkles size={11} /> Grounded facts & policies
-                          </span>
-                        </div>
-                      </div>
-                      <textarea
-                        value={wizardKnowledgeBase}
-                        onChange={(e) => setWizardKnowledgeBase(e.target.value)}
-                        placeholder="Paste FAQs, product specs, pricing, warranties, or refund policies. The agent will use this knowledge to answer customer questions factually during live calls.&#10;&#10;e.g.&#10;Q: What is the refund policy? A: Full refund within 7 days.&#10;Q: How much is the installation fee? A: Zero installation charges with subsidy.&#10;Q: What documents are required? A: Electricity bill and property ID."
-                        rows={3}
-                        className="w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary font-mono"
-                      />
-                      <p className="mt-1 text-[11px] text-muted-foreground">The AI will use these verified facts to answer caller questions without hallucinating.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 3: CLOSING & NEXT STEPS */}
-                {builderStep === 3 && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-foreground mb-1">
-                        Closing Call-to-Action & Agreement *
-                      </label>
-                      <input
-                        type="text"
-                        value={wizardClosingCta}
-                        onChange={(e) => setWizardClosingCta(e.target.value)}
-                        placeholder="e.g. Propose two timeslots for a free site visit this weekend, confirm time, say goodbye, and invoke end_call."
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-medium"
-                      />
-                    </div>
-
-                    {/* Agent Architecture Summary Card */}
-                    <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-2">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-primary">AGENT BLUEPRINT SUMMARY</span>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div><span className="text-muted-foreground font-semibold">Agent:</span> <span className="font-bold">{wizardAgentName} ({wizardAgentDesignation})</span></div>
-                        <div><span className="text-muted-foreground font-semibold">Company:</span> <span className="font-bold">{wizardCompanyName || user?.company_name || 'Voice AI'}</span></div>
-                        <div><span className="text-muted-foreground font-semibold">Industry:</span> <span className="font-bold">{wizardIndustry || 'Custom'}</span></div>
-                        <div><span className="text-muted-foreground font-semibold">Language:</span> <span className="font-bold">{wizardLanguage}</span></div>
-                      </div>
-                      <div className="text-xs pt-1 border-t border-border/50">
-                        <span className="text-muted-foreground font-semibold">Goal:</span> <span className="font-bold">{wizardPrimaryObjective || 'Consultative qualification'}</span>
-                      </div>
-                      {wizardKnowledgeBase.trim() && (
-                        <div className="text-xs pt-1 border-t border-border/50 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
-                          <CheckCircle2 size={13} />
-                          <span>Knowledge Base attached ({wizardKnowledgeBase.trim().split('\n').filter(Boolean).length} entries)</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-2">
-                      <CheckCircle2 size={16} className="shrink-0" />
-                      <span>Ready to generate! Voice AI will formulate your outbound greeting, anti-repetition rules, dynamic variables, and system prompt.</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Navigation Footer */}
-                <div className="mt-6 pt-4 border-t border-border flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setBuilderStep(prev => Math.max(1, prev - 1))}
-                    disabled={builderStep === 1}
-                    className="flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-                  >
-                    <ArrowLeft size={14} /> Back
-                  </button>
-
-                  {builderStep < 3 ? (
-                    <button
-                      type="button"
-                      onClick={() => setBuilderStep(prev => Math.min(3, prev + 1))}
-                      className="flex items-center gap-1.5 rounded-lg bg-foreground text-background px-4 py-2 text-xs font-bold hover:opacity-90 transition-all cursor-pointer shadow-sm"
-                    >
-                      Continue <ArrowRight size={14} />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleGenerateAutoBuild}
-                      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/25 transition-all cursor-pointer"
-                    >
-                      <Sparkles size={15} /> Generate Custom Voice Agent
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <AutoBuildWizard
+        open={showAutoBuildWizard}
+        onClose={() => {
+          if (!generatingAgent) setShowAutoBuildWizard(false)
+        }}
+        step={builderStep}
+        setStep={setBuilderStep}
+        generating={generatingAgent}
+        progress={generationProgress}
+        onGenerate={handleGenerateAutoBuild}
+        fallbackCompanyName={user?.company_name || ''}
+        knowledgeFileInputRef={wizardKnowledgeFileInputRef}
+        onKnowledgeFile={(e) => handleUploadKnowledgeFile(e, 'wizard')}
+        uploadingKnowledgeFile={uploadingKnowledgeFile}
+        f={{
+          agentName: wizardAgentName, setAgentName: setWizardAgentName,
+          companyName: wizardCompanyName, setCompanyName: setWizardCompanyName,
+          industry: wizardIndustry, setIndustry: setWizardIndustry,
+          designation: wizardAgentDesignation, setDesignation: setWizardAgentDesignation,
+          language: wizardLanguage, setLanguage: setWizardLanguage,
+          voiceTone: wizardVoiceTone, setVoiceTone: setWizardVoiceTone,
+          sopText: wizardSopText, setSopText: setWizardSopText,
+          primaryObjective: wizardPrimaryObjective, setPrimaryObjective: setWizardPrimaryObjective,
+          mustAskQuestions: wizardMustAskQuestions, setMustAskQuestions: setWizardMustAskQuestions,
+          offeringsUsps: wizardOfferingsUsps, setOfferingsUsps: setWizardOfferingsUsps,
+          objections: wizardObjections, setObjections: setWizardObjections,
+          knowledgeBase: wizardKnowledgeBase, setKnowledgeBase: setWizardKnowledgeBase,
+          closingCta: wizardClosingCta, setClosingCta: setWizardClosingCta,
+        }}
+      />
     </AppLayout>
   )
 }

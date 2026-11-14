@@ -14,7 +14,7 @@ export interface DemoFormValues {
 
 // Posts to the configured endpoint. With no endpoint set, opens a pre-filled email.
 export async function submitDemoRequest(values: DemoFormValues): Promise<{ via: 'email' | 'endpoint' }> {
-  const subject = `Voice AI: ${values.topic} request from ${values.company}`
+  const subject = `TalklyAI: ${values.topic} request from ${values.company}`
 
   if (!endpoint) {
     const body = [

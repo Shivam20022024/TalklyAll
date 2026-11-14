@@ -12,8 +12,8 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 OPENAI_MODEL = os.environ.get("BUILDER_OPENAI_MODEL", "gpt-4o-mini")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 
-SYSTEM_BUILDER_INSTRUCTIONS = """You are Voice AI's Principal AI Voice Agent Architect.
-Voice AI is an enterprise AI Voice Agent platform built specifically for high-conversion conversational phone calls across India and global markets.
+SYSTEM_BUILDER_INSTRUCTIONS = """You are Talkly's Principal AI Voice Agent Architect.
+Talkly is an enterprise AI Voice Agent platform built specifically for high-conversion conversational phone calls across India and global markets.
 
 Your task is to take a business's requirements, brief, or SOP and generate a production-ready, ultra-effective Voice Agent configuration.
 
@@ -101,7 +101,7 @@ Closing Call-to-Action:
   "template_name": "Short Display Name (e.g. Solar Consultation Advisor)",
   "description": "1 concise sentence explaining what this voice agent does",
   "welcome_message": "The exact first spoken sentence when customer answers. If Language is English: 'Hello {{customer_name}}, this is {agent_name} with {{company_name}} regarding {{offering}}. Do you have a brief moment to chat?' If Language is Hindi: 'नमस्ते {{customer_name}}, मैं {agent_name} हूँ {{company_name}} से। क्या अभी 2 मिनट बात करना convenient है?'",
-  "prompt": "Full outbound system prompt following Voice AI's standard structure (Role, Goal, IMPORTANT RULE 1, IMPORTANT RULE 2, IMPORTANT RULE 3 [language lock matching Primary Language], Key Objectives 1 to 6/7, Objections Playbook, Tone Guidelines, Wrap-up & end_call tool).",
+  "prompt": "Full outbound system prompt following Talkly's standard structure (Role, Goal, IMPORTANT RULE 1, IMPORTANT RULE 2, IMPORTANT RULE 3 [language lock matching Primary Language], Key Objectives 1 to 6/7, Objections Playbook, Tone Guidelines, Wrap-up & end_call tool).",
   "inbound_welcome_message": "First greeting when customer calls company helpline (in matching language).",
   "inbound_prompt": "Full inbound system prompt matching company's offerings and helpline workflow (in matching language).",
   "default_offering_label": "Label for the offering field (e.g. Solar System Capacity, Vehicle Model, Course Track)",
@@ -120,7 +120,7 @@ class PromptBuilderService:
         Generates a customized voice agent prompt and greeting using OpenAI / Gemini.
         """
         agent_name = brief.get("agent_name", "Saanvi").strip() or "Saanvi"
-        company_name = brief.get("company_name", "Voice AI").strip() or "Voice AI"
+        company_name = brief.get("company_name", "Talkly").strip() or "Talkly"
         industry = brief.get("industry", "Custom Sales").strip() or "Custom Sales"
         agent_designation = brief.get("agent_designation", "Consultation Specialist").strip() or "Consultation Specialist"
         language = brief.get("language", "Hindi / Hinglish").strip() or "Hindi / Hinglish"

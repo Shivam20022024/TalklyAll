@@ -59,14 +59,14 @@ class NotificationService:
         if not to_email:
             return
 
-        subject = f"Voice AI Alert: {title}"
+        subject = f"Talkly Alert: {title}"
         body = (
             f"{title}\n\n"
             f"Phone: {lead_phone}\n"
             f"AI Score: {ai_score}\n"
             f"Status: {lead_status}\n\n"
             f"Summary: {message}\n\n"
-            f"Open the Leads page in Voice AI to view the full call details."
+            f"Open the Leads page in Talkly to view the full call details."
         )
 
         smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")

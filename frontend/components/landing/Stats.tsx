@@ -65,7 +65,7 @@ function StatValue({ stat }: { stat: (typeof stats)[number] }) {
 export default function Stats() {
   const hasPlaceholders = stats.some((stat) => stat.value === null)
   return (
-    <section aria-label="Voice AI in numbers" className="wrap relative pb-4">
+    <section aria-label="TalklyAI in numbers" className="wrap relative pb-4">
       <Reveal>
         <dl className="card grid grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, index) => {

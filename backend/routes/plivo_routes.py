@@ -428,7 +428,7 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         if not prompt_doc:
             prompt_doc = await db.prompts.find_one({"company_id": company_id})
 
-    company_name = (company.get("name") if company else "") or "Voice AI"
+    company_name = (company.get("name") if company else "") or "Talkly"
 
     customer_name = ""
     if call_doc and call_doc.get("customer_name"):

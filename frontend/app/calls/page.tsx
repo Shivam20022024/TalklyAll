@@ -1,26 +1,26 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  Download,
-  Phone,
-  Search,
-  MoreHorizontal,
-  X,
-  User,
-  Sparkles,
-  MessageSquare,
-  Clock,
-  Activity,
-  Trash2,
-  CircleDollarSign
-} from 'lucide-react'
+import { Download, Phone, Sparkles, MessageSquare, Trash2, CircleDollarSign, PhoneIncoming, PhoneOutgoing, PanelRightOpen, Clock, User, Search, ChevronDown } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi, fetchBlob, downloadBlob } from '@/lib/api'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui/States'
+import { Alert } from '@/components/ui/Alert'
+import { LoadMore } from '@/components/ui/Pagination'
+import { Sheet, DetailGrid, SheetSection } from '@/components/ui/Dialog'
+import { Transcript } from '@/components/ui/Transcript'
+import { buttonClass } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/Field'
+import { formatDateTime, formatDuration, parseApiDate } from '@/lib/format'
+
+type DirectionTab = 'all' | 'outbound' | 'inbound'
 
 export default function CallsPage() {
   const [calls, setCalls] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  // Presentation-only: true while the latest load (or "load more") failed, so it is never shown as "no calls".
+  const [loadFailed, setLoadFailed] = useState(false)
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [filterStatus, setFilterStatus] = useState<string | null>(null)
@@ -28,6 +28,9 @@ export default function CallsPage() {
   const [hasMore, setHasMore] = useState(true)
   const [selectedCalls, setSelectedCalls] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
+  // Presentation-only filters applied to the calls already loaded (no extra request).
+  const [directionFilter, setDirectionFilter] = useState<DirectionTab>('all')
+  const [languageFilter, setLanguageFilter] = useState<string>('all')
   const LIMIT = 20
 
   const loadCalls = async (pageNum: number) => {
@@ -45,8 +48,10 @@ export default function CallsPage() {
         if (pageNum === 0) setCalls([])
         setHasMore(false)
       }
+      setLoadFailed(false)
     } catch (e) {
       console.error(e)
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -88,8 +93,12 @@ export default function CallsPage() {
   const visibleCalls = calls
     .filter((c) => 
       (c.customer_name || '').toLowerCase().includes(query.toLowerCase()) || 
-      String(c.customer_phone || '').includes(query)
+      // Phone numbers are stored in customer_id; customer_phone is not set by the backend.
+      String(c.customer_phone || c.customer_id || '').includes(query) ||
+      String(c.call_id || '').toLowerCase().includes(query.toLowerCase())
     )
+    .filter((c) => directionFilter === 'all' || c.direction === directionFilter)
+    .filter((c) => languageFilter === 'all' || c.language === languageFilter)
     .filter((c) => {
       if (!filterStatus || filterStatus === 'All Statuses') return true;
       if (filterStatus === 'Qualified') return c.analysis?.lead_temperature === 'Hot';
@@ -98,280 +107,393 @@ export default function CallsPage() {
       return c.status === filterStatus;
     })
 
+  // Per-row display values. The "Not Received" rule and duration fallback are the
+  // page's existing logic, moved here unchanged from the previous table markup.
+  const callView = (call: any) => {
+    const durationSecs = call.duration_seconds || 0
+    const hasDuration = !!call.duration || durationSecs > 0
+    // Missing duration alone doesn't mean the call wasn't
+    // received - Plivo's hangup webhook isn't wired for every
+    // call path, so older records may have a real
+    // transcript/analysis but no duration. Only call it
+    // "Not Received" when there's no other evidence it connected.
+    const explicitZero = call.duration === '00:00' || call.duration === '0'
+    const wasReceived = !explicitZero && (hasDuration || !!call.transcript || ['Analyzed', 'Completed', 'In Progress'].includes(call.status))
+    const isNotReceived = !wasReceived
+    const displayStatus = isNotReceived ? 'Not Received' : call.status
+    const durationDisplay = isNotReceived ? null : (call.duration || formatDuration(durationSecs))
+    return { displayStatus, durationDisplay }
+  }
+  // Summary figures, derived from the calls loaded so far (no extra request or invented metric).
+  const outboundCount = calls.filter((c) => c.direction === 'outbound').length
+  const inboundCount = calls.filter((c) => c.direction === 'inbound').length
+  const languageOptions = Array.from(new Set(calls.map((c) => c.language as string).filter(Boolean)))
+  const durationOf = (c: any): number => {
+    if (c.duration_seconds > 0) return c.duration_seconds
+    const parts = String(c.duration || '').split(':').map(Number)
+    return parts.length >= 2 && parts.every(Number.isFinite) ? parts.reduce((a, n) => a * 60 + n, 0) : 0
+  }
+  const timed = calls.map(durationOf).filter((s) => s > 0)
+  const avgDuration = timed.length > 0 ? formatDuration(Math.round(timed.reduce((a, s) => a + s, 0) / timed.length)) : null
+  const visibleIds = visibleCalls.map((c: any) => c.call_id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id: string) => selectedCalls.includes(id))
+  const toggleCall = (id: string, checked: boolean) => setSelectedCalls(checked ? [...selectedCalls, id] : selectedCalls.filter((x) => x !== id))
+  const knownName = (call: any) => call.customer_name && !['Not Provided', 'Unknown'].includes(call.customer_name)
+
+  // ── presentation-only state and helpers (no request, payload or handler is changed) ──
+  const CALL_TABS: { key: DirectionTab; label: string; count: number }[] = [
+    { key: 'all', label: 'All Calls', count: calls.length },
+    { key: 'outbound', label: 'Outbound', count: outboundCount },
+    { key: 'inbound', label: 'Inbound', count: inboundCount },
+  ]
+  const filtersActive = Boolean(query || filterStatus || directionFilter !== 'all' || languageFilter !== 'all')
+  const clearFilters = () => { setQuery(''); setFilterStatus(null); setDirectionFilter('all'); setLanguageFilter('all') }
+
+  // Never keep a selection the user can no longer see: bulk delete must only touch what is on screen.
+  const visibleKey = visibleIds.join('|')
+  useEffect(() => {
+    const ids = new Set(visibleIds)
+    setSelectedCalls((prev) => (prev.every((id) => ids.has(id)) ? prev : prev.filter((id) => ids.has(id))))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleKey])
+
+  const kpiReady = !loading && !(loadFailed && calls.length === 0)
+  const loadedNote = hasMore ? 'Loaded so far' : undefined
+  const KPI_CARDS = [
+    { label: 'Total Calls', value: calls.length.toLocaleString(), Icon: Phone, tile: 'bg-blue-50 text-ds-primary' },
+    { label: 'Outbound Calls', value: outboundCount.toLocaleString(), Icon: PhoneOutgoing, tile: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Inbound Calls', value: inboundCount.toLocaleString(), Icon: PhoneIncoming, tile: 'bg-violet-50 text-ds-accent' },
+    { label: 'Average Duration', value: avgDuration || '—', Icon: Clock, tile: 'bg-orange-50 text-orange-500' },
+  ]
+
+  const controlCls =
+    'h-10 rounded-lg border border-ds-line bg-ds-bg text-[15px] text-ds-ink outline-none transition focus-visible:border-ds-primary focus-visible:ring-2 focus-visible:ring-ds-primary/20'
+  const headBtn =
+    'inline-flex h-11 items-center gap-2 rounded-xl border border-ds-line bg-ds-bg px-4 text-[15px] font-semibold text-ds-ink shadow-sm transition-colors hover:bg-ds-surface disabled:cursor-not-allowed disabled:opacity-50'
+  const rowAction =
+    'inline-flex h-9 w-9 items-center justify-center rounded-lg text-ds-ink-2 transition-colors hover:bg-ds-surface hover:text-ds-primary disabled:opacity-50'
+  const th = 'px-3 py-3 text-[13px] font-semibold uppercase tracking-wider text-ds-ink-2'
+
+  const AVATAR_TONES = ['bg-blue-100 text-blue-700', 'bg-emerald-100 text-emerald-700', 'bg-violet-100 text-violet-700', 'bg-orange-100 text-orange-700', 'bg-rose-100 text-rose-700', 'bg-cyan-100 text-cyan-700']
+  const avatar = (call: any, size = 'h-10 w-10') => {
+    if (!knownName(call)) {
+      return <span className={`flex ${size} shrink-0 items-center justify-center rounded-full bg-ds-surface text-ds-ink-3`} aria-hidden="true"><User size={18} strokeWidth={1.75} /></span>
+    }
+    const name = String(call.customer_name).trim()
+    const initials = name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('')
+    const tone = AVATAR_TONES[[...name].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_TONES.length]
+    return <span className={`flex ${size} shrink-0 items-center justify-center rounded-full text-[14px] font-semibold ${tone}`} aria-hidden="true">{initials}</span>
+  }
+  const directionBadge = (call: any) =>
+    call.direction === 'inbound' ? (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-[14px] font-medium text-violet-700"><PhoneIncoming size={14} strokeWidth={1.75} aria-hidden="true" />Inbound</span>
+    ) : call.direction === 'outbound' ? (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[14px] font-medium text-emerald-700"><PhoneOutgoing size={14} strokeWidth={1.75} aria-hidden="true" />Outbound</span>
+    ) : null
+  const callDate = (value: unknown) => {
+    const d = parseApiDate(value)
+    if (!d) return { day: '—', time: '' }
+    return { day: d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }), time: d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) }
+  }
+  const viewButton = (call: any) => (
+    <button onClick={() => setSelectedCall(call)} aria-label={`View call with ${call.customer_name || 'contact'}`} title="View call details" className={rowAction}>
+      <PanelRightOpen size={18} strokeWidth={1.75} />
+    </button>
+  )
+
   return (
     <AppLayout title="Calls">
-      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div>
-          <p className="eyebrow text-primary">Workspace / Calls</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">Call History</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Review transcripts and analytics for completed calls.</p>
+      {/* Page header */}
+      <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-ds-primary-soft px-3 py-1.5 text-[14px] font-semibold text-ds-primary">
+            <Phone size={15} strokeWidth={2} aria-hidden="true" />
+            Calls
+          </span>
+          <h1 className="mt-2 text-[28px] font-bold leading-tight tracking-tight text-ds-ink sm:text-[30px]">Call Management</h1>
+          <p className="mt-1 text-[16px] text-ds-ink-2">Every outbound and inbound call, with transcripts and AI analysis.</p>
         </div>
-      </section>
+        <div className="flex flex-wrap items-center gap-3 lg:shrink-0">
+          <button onClick={() => handleDownload('outbound')} disabled={exporting} title="Export outbound calls to Excel" className={headBtn}>
+            <Download size={17} strokeWidth={1.75} />Outbound .xlsx
+          </button>
+          <button onClick={() => handleDownload('inbound')} disabled={exporting} title="Export inbound calls to Excel" className={headBtn}>
+            <Download size={17} strokeWidth={1.75} />Inbound .xlsx
+          </button>
+        </div>
+      </header>
 
-      <section className="rounded-xl border border-border bg-card p-5">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="flex gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-primary" size={14} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search calls" className="h-9 w-64 rounded-lg border border-primary ring-1 ring-primary/20 bg-background pl-9 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary/50" />
+      {/* Summary stat cards (computed from the calls loaded so far) */}
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Call summary">
+        {KPI_CARDS.map(({ label, value, Icon, tile }) => (
+          <div key={label} className="flex items-center gap-3.5 rounded-[14px] border border-ds-line bg-ds-bg px-4 py-4 shadow-sm sm:gap-4 sm:px-5">
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl sm:h-14 sm:w-14 ${tile}`} aria-hidden="true">
+              <Icon size={24} strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[15px] font-medium leading-snug text-ds-ink-2 sm:text-[16px]">{label}</p>
+              <p className="mt-0.5 text-[28px] font-bold leading-none tracking-tight text-ds-ink tabular-nums sm:text-[32px]">{kpiReady ? value : '—'}</p>
+              {kpiReady && loadedNote && label !== 'Average Duration' && <p className="mt-1 text-[13px] text-ds-ink-3">{loadedNote}</p>}
             </div>
           </div>
-          <div className="flex gap-2">
+        ))}
+      </section>
+
+      {/* Main panel */}
+      <div className="rounded-[14px] border border-ds-line bg-ds-bg shadow-sm">
+        {/* Direction tabs (same filter as the call type dropdown) */}
+        <div role="tablist" aria-label="Call direction" className="flex items-end gap-1 overflow-x-auto border-b border-ds-line px-3 sm:px-5">
+          {CALL_TABS.map(({ key, label, count }) => {
+            const isActive = directionFilter === key
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setDirectionFilter(key)}
+                className={`relative -mb-px flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-[15px] font-semibold transition-colors sm:px-4 sm:text-[16px] ${
+                  isActive ? 'border-ds-primary text-ds-primary' : 'border-transparent text-ds-ink-2 hover:text-ds-ink'
+                }`}
+              >
+                {label}
+                <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[13px] font-semibold tabular-nums ${isActive ? 'bg-ds-primary text-white' : 'bg-ds-surface text-ds-ink-2'}`}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2.5 px-3 py-3.5 sm:px-5">
+          <div className="relative w-full sm:min-w-[240px] sm:max-w-[400px] sm:flex-1">
+            <Search size={17} strokeWidth={1.75} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ds-ink-3" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name, phone or call ID…"
+              aria-label="Search calls"
+              className={`${controlCls} w-full pl-10 pr-3 placeholder:text-ds-ink-3 [&::-webkit-search-cancel-button]:hidden`}
+            />
+          </div>
+          <div className="relative min-w-[140px] flex-1 sm:min-w-[165px] sm:flex-none">
+            <select value={directionFilter} onChange={(e) => setDirectionFilter(e.target.value as DirectionTab)} aria-label="Filter by call type" className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium`}>
+              <option value="all">All Types</option>
+              <option value="outbound">Outbound</option>
+              <option value="inbound">Inbound</option>
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
+          </div>
+          <div className="relative min-w-[140px] flex-1 sm:min-w-[165px] sm:flex-none">
             <select
+              aria-label="Filter by status"
               value={filterStatus || 'All Statuses'}
               onChange={(e) => setFilterStatus(e.target.value === 'All Statuses' ? null : e.target.value)}
-              className="h-9 rounded-lg border border-border bg-card px-3 text-xs font-bold text-foreground outline-none focus:ring-2 focus:ring-ring"
+              className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium`}
             >
-              <option value="All Statuses">All Statuses</option>
+              <option value="All Statuses">All Status</option>
               <option value="Qualified">Qualified (Hot)</option>
               <option value="Interested">Interested (Warm)</option>
               <option value="Not Interested">Not Interested (Cold)</option>
               <option value="Completed">Completed</option>
             </select>
-            <button onClick={handleDeleteSelected} disabled={selectedCalls.length === 0} className={`flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-semibold transition-colors ${selectedCalls.length > 0 ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90' : 'border border-border bg-card text-foreground/70 disabled:opacity-60'}`}><Trash2 size={15} />Delete Selected</button>
-            <button
-              onClick={() => handleDownload('outbound')}
-              disabled={exporting}
-              title="Export outbound calls to Excel"
-              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-            >
-              <Download size={14} />Outbound (.xlsx)
-            </button>
-            <button
-              onClick={() => handleDownload('inbound')}
-              disabled={exporting}
-              title="Export inbound calls to Excel"
-              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-            >
-              <Download size={14} />Inbound (.xlsx)
-            </button>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
           </div>
+          {languageOptions.length > 0 && (
+            <div className="relative min-w-[140px] flex-1 sm:min-w-[165px] sm:flex-none">
+              <select value={languageFilter} onChange={(e) => setLanguageFilter(e.target.value)} aria-label="Filter by language" className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium`}>
+                <option value="all">All Languages</option>
+                {languageOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
+            </div>
+          )}
+          {selectedCalls.length > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-ds-line bg-ds-surface px-3 py-1 sm:ml-auto">
+              <span className="text-[14px] font-medium text-ds-ink">{selectedCalls.length} selected</span>
+              <button onClick={handleDeleteSelected} className={buttonClass('danger', 'sm')}><Trash2 size={14} strokeWidth={1.75} />Delete</button>
+              <button onClick={() => setSelectedCalls([])} className={buttonClass('ghost', 'sm')}>Clear</button>
+            </div>
+          )}
         </div>
-        
-        <div className="mt-5 overflow-x-auto">
-          {loading ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">Loading calls...</div>
-          ) : visibleCalls.length === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">No calls found.</div>
-          ) : (
-            <table className="w-full min-w-[780px] text-left">
-              <thead>
-                <tr className="border-b border-border h-12 text-sm font-bold uppercase tracking-wider text-foreground">
-                  <th className="pb-3 pl-4 font-semibold w-[4%]">
-                    <input 
-                      type="checkbox" 
-                      checked={visibleCalls.length > 0 && selectedCalls.length === visibleCalls.length}
-                      onChange={(e) => setSelectedCalls(e.target.checked ? visibleCalls.map((c: any) => c.call_id) : [])}
-                      className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
-                    />
-                  </th>
-                  <th className="pb-3 px-2 text-left font-semibold w-[24%]">Lead</th>
-                  <th className="pb-3 px-2 text-left font-semibold w-[17%]">Phone</th>
-                  <th className="pb-3 px-2 font-semibold text-center w-[11%]">Language</th>
-                  <th className="pb-3 px-2 font-semibold text-center w-[11%]">Duration</th>
-                  <th className="pb-3 px-2 text-left font-semibold w-[13%]">Status</th>
-                  <th className="pb-3 px-2 text-left font-semibold w-[17%]">Date</th>
-                  <th className="pb-3 pr-4 text-right font-semibold w-[7%]">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleCalls.map((call, idx) => {
-                  const durationSecs = call.duration_seconds || 0;
-                  const hasDuration = !!call.duration || durationSecs > 0;
-                  // Missing duration alone doesn't mean the call wasn't
-                  // received - Plivo's hangup webhook isn't wired for every
-                  // call path, so older records may have a real
-                  // transcript/analysis but no duration. Only call it
-                  // "Not Received" when there's no other evidence it connected.
-                  const explicitZero = call.duration === '00:00' || call.duration === '0';
-                  const wasReceived = !explicitZero && (hasDuration || !!call.transcript || ['Analyzed', 'Completed', 'In Progress'].includes(call.status));
-                  const isNotReceived = !wasReceived;
-                  const displayStatus = isNotReceived ? 'Not Received' : call.status;
-                  
-                  const formatDuration = (secs: number) => {
-                    const m = Math.floor(secs / 60);
-                    const s = secs % 60;
-                    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-                  };
-                  const durationDisplay = isNotReceived ? '--:--' : (call.duration || formatDuration(durationSecs));
-                  
-                  return (
-                  <tr key={`${call._id || call.call_id || 'call'}-${idx}`} className="border-b border-border/50 h-16 last:border-0 hover:bg-muted/30">
-                    <td className="pl-4">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedCalls.includes(call.call_id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedCalls([...selectedCalls, call.call_id])
-                          else setSelectedCalls(selectedCalls.filter(id => id !== call.call_id))
-                        }}
-                        className="rounded border-border accent-primary cursor-pointer w-3.5 h-3.5"
-                      />
-                    </td>
-                    <td className="px-2">
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted/60 text-muted-foreground"><Phone size={13} /></span>
-                        <p className={`text-sm truncate max-w-[200px] ${(!call.customer_name || call.customer_name === 'Not Provided' || call.customer_name === 'Unknown') ? 'text-muted-foreground font-medium' : 'text-foreground font-semibold'}`}>{call.customer_name || 'Not Provided'}</p>
-                      </div>
-                    </td>
-                    <td className="px-2">
-                      <div className="truncate text-xs font-medium text-muted-foreground" title={call.customer_phone || call.customer_id}>{call.customer_phone || call.customer_id}</div>
-                    </td>
-                    <td className="px-2 text-center text-xs font-medium text-foreground">{call.language || 'English'}</td>
-                    <td className="px-2 text-center text-xs font-medium text-foreground">{durationDisplay}</td>
-                    <td className="px-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`h-1.5 w-1.5 rounded-full shrink-0
-                          ${displayStatus === 'Completed' || displayStatus === 'completed' ? 'bg-emerald-500' : ''}
-                          ${displayStatus === 'Failed' || displayStatus === 'failed' ? 'bg-destructive' : ''}
-                          ${displayStatus === 'Initiating' ? 'bg-blue-500' : ''}
-                          ${displayStatus === 'Not Received' ? 'bg-orange-400' : ''}
-                          ${displayStatus === 'Analyzed' ? 'bg-purple-500' : 'bg-muted-foreground'}
-                        `} />
-                        <span className="text-[11px] font-medium text-foreground">{displayStatus}</span>
-                      </div>
-                    </td>
-                    <td className="px-2 text-[11px] font-medium text-muted-foreground">
-                      {new Date(call.created_at).toLocaleString('en-US', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: true
-                      })}
-                    </td>
-                    <td className="pr-4 text-right">
-                      <button onClick={() => setSelectedCall(call)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
-                        <MoreHorizontal size={15} />
-                      </button>
-                    </td>
+
+        {/* Stale data warning */}
+        {loadFailed && calls.length > 0 && (
+          <div className="border-t border-ds-line px-3 py-2.5 sm:px-5">
+            <Alert tone="warning" title="Couldn’t load calls">
+              The calls below were loaded earlier and may be out of date. Try "Load more" again or reload the page.
+            </Alert>
+          </div>
+        )}
+
+        {/* Table content */}
+        {loading ? (
+          <div className="border-t border-ds-line p-6">
+            <LoadingState label="Loading calls…">
+              <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+            </LoadingState>
+          </div>
+        ) : loadFailed && calls.length === 0 ? (
+          <div className="border-t border-ds-line p-6">
+            <ErrorState title="Calls couldn’t be loaded" description="The request failed, so no list is shown rather than an empty one. Reload the page to try again." />
+          </div>
+        ) : visibleCalls.length === 0 ? (
+          <div className="border-t border-ds-line p-6">
+            <EmptyState
+              icon={<Phone size={18} strokeWidth={1.75} />}
+              title={calls.length === 0 ? 'No calls yet' : 'No calls match these filters'}
+              description={calls.length === 0 ? 'Calls appear here as soon as your agent places or receives one.' : 'Try a different search or filter. Only loaded calls are searched.'}
+              action={calls.length > 0 && filtersActive ? <button onClick={clearFilters} className={buttonClass('outline', 'md')}>Clear filters</button> : undefined}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div role="region" aria-label="Calls table" tabIndex={0} className="hidden overflow-x-auto border-t border-ds-line outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ds-primary xl:block">
+              <table className="w-full min-w-[980px] border-collapse text-[15px]">
+                <thead>
+                  <tr className="border-b border-ds-line bg-ds-surface">
+                    <th scope="col" className="w-12 py-3 pl-5 pr-1 text-left">
+                      <Checkbox className="scale-125" aria-label="Select all listed calls" checked={allVisibleSelected} onChange={(e) => setSelectedCalls(e.target.checked ? visibleCalls.map((c: any) => c.call_id) : [])} />
+                    </th>
+                    <th scope="col" className={`${th} text-left`}>Contact</th>
+                    <th scope="col" className={`${th} text-left`}>Phone</th>
+                    <th scope="col" className={`${th} text-left`}>Direction</th>
+                    <th scope="col" className={`${th} text-left`}>Language</th>
+                    <th scope="col" className={`${th} text-right`}>Duration</th>
+                    <th scope="col" className={`${th} text-left`}>Status</th>
+                    <th scope="col" className={`${th} text-left`}>Date &amp; Time</th>
+                    <th scope="col" className={`${th} pr-5 text-right`}>Actions</th>
                   </tr>
-                )})}
-              </tbody>
-            </table>
-          )}
-          
-          {calls.length > 0 && hasMore && (
-            <div className="mt-6 flex justify-center pb-4">
-              <button 
-                onClick={() => setPage(p => p + 1)} 
-                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
-              >
-                Load More
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {selectedCall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-2xl rounded-2xl border border-border/50 bg-background/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
-            <div className="relative border-b border-border/50 bg-muted/30 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary ring-1 ring-primary/20 shadow-sm">
-                  <User size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight text-foreground">{selectedCall.customer_name || 'Phone Lead'}</h2>
-                  <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                    <Phone size={14} />
-                    <span className="font-medium">{selectedCall.customer_phone || selectedCall.customer_id}</span>
-                  </div>
-                </div>
-              </div>
-              <button 
-                onClick={() => setSelectedCall(null)} 
-                className="absolute right-4 top-4 rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <X size={20} />
-              </button>
+                </thead>
+                <tbody>
+                  {visibleCalls.map((call, idx) => {
+                    const v = callView(call)
+                    const dt = callDate(call.created_at)
+                    const isSelected = selectedCalls.includes(call.call_id)
+                    return (
+                      <tr key={`${call._id || call.call_id || 'call'}-${idx}`} className={`border-b border-ds-line transition-colors last:border-b-0 ${isSelected ? 'bg-ds-primary-soft/60' : 'hover:bg-ds-surface/70'}`}>
+                        <td className="w-12 py-3 pl-5 pr-1 align-middle">
+                          <Checkbox className="scale-125" aria-label={`Select call with ${call.customer_name || 'contact'}`} checked={isSelected} onChange={(e) => toggleCall(call.call_id, e.target.checked)} />
+                        </td>
+                        <td className="max-w-[220px] px-3 py-3 align-middle">
+                          <div className="flex min-w-0 items-center gap-3">
+                            {avatar(call)}
+                            <button onClick={() => setSelectedCall(call)} className={`truncate text-left text-[16px] hover:text-ds-primary ${knownName(call) ? 'font-semibold text-ds-ink' : 'text-ds-ink-3'}`} title={call.customer_name || 'Not provided'}>
+                              {call.customer_name || 'Not provided'}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 align-middle tabular-nums text-ds-ink-2" title={call.customer_phone || call.customer_id}>{call.customer_phone || call.customer_id || '—'}</td>
+                        <td className="px-3 py-3 align-middle">{directionBadge(call) || <span className="text-ds-ink-3">—</span>}</td>
+                        <td className="px-3 py-3 align-middle text-ds-ink-2">{call.language || '—'}</td>
+                        <td className="px-3 py-3 text-right align-middle tabular-nums text-ds-ink">{v.durationDisplay || <span className="text-ds-ink-3">—</span>}</td>
+                        <td className="px-3 py-3 align-middle"><StatusBadge status={v.displayStatus} className="px-3 py-1 text-[14px]" /></td>
+                        <td className="whitespace-nowrap px-3 py-3 align-middle">
+                          <p className="text-[15px] text-ds-ink">{dt.day}</p>
+                          {dt.time && <p className="text-[14px] tabular-nums text-ds-ink-2">{dt.time}</p>}
+                        </td>
+                        <td className="py-3 pl-3 pr-4 align-middle">
+                          <div className="flex items-center justify-end">{viewButton(call)}</div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    <Clock size={14} className="text-primary" /> Duration
-                  </div>
-                  <div className="text-sm font-medium line-clamp-2">{selectedCall.duration_seconds ? `${Math.floor(selectedCall.duration_seconds / 60)}:${(selectedCall.duration_seconds % 60).toString().padStart(2, '0')}` : '--:--'}</div>
-                </div>
-                
-                <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    <MessageSquare size={14} className="text-primary" /> Language
-                  </div>
-                  <div className="text-sm font-medium line-clamp-2">{selectedCall.language || 'English'}</div>
-                </div>
-                
-                <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    <Activity size={14} className="text-blue-500" /> Status
-                  </div>
-                  <div className="text-sm font-bold text-foreground capitalize">
-                    {selectedCall.status}
-                  </div>
-                </div>
-                
-                <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm transition-all hover:shadow-md">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    <Sparkles size={14} className="text-amber-500" /> AI Intent
-                  </div>
-                  <div className="text-sm font-bold text-foreground">
-                    {selectedCall.analysis?.lead_temperature || '-'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {selectedCall.industry === 'collections' && selectedCall.analysis?.promise_to_pay?.promised && (
-                  <div>
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-bold tracking-tight text-foreground">
-                      <CircleDollarSign size={16} className="text-emerald-500" /> Promise to Pay
-                    </h3>
-                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-sm">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Amount</div>
-                          <div className="text-sm font-bold text-foreground">{selectedCall.analysis.promise_to_pay.amount || '-'}</div>
+            {/* Cards: phones and tablets */}
+            <div className="space-y-2.5 border-t border-ds-line p-3 xl:hidden">
+              <label className="flex items-center gap-2.5 px-1 text-[15px] text-ds-ink-2">
+                <Checkbox aria-label="Select all listed calls" checked={allVisibleSelected} onChange={(e) => setSelectedCalls(e.target.checked ? visibleCalls.map((c: any) => c.call_id) : [])} />
+                Select all listed
+              </label>
+              {visibleCalls.map((call, idx) => {
+                const v = callView(call)
+                const dt = callDate(call.created_at)
+                const isSelected = selectedCalls.includes(call.call_id)
+                return (
+                  <article key={`${call._id || call.call_id || 'call'}-m-${idx}`} className={`rounded-xl border p-3.5 ${isSelected ? 'border-ds-primary/40 bg-ds-primary-soft/50' : 'border-ds-line bg-ds-bg'}`}>
+                    <div className="flex items-start gap-3">
+                      <Checkbox className="mt-2.5" aria-label={`Select call with ${call.customer_name || 'contact'}`} checked={isSelected} onChange={(e) => toggleCall(call.call_id, e.target.checked)} />
+                      {avatar(call)}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className={`truncate text-[16px] ${knownName(call) ? 'font-semibold text-ds-ink' : 'text-ds-ink-3'}`}>{call.customer_name || 'Not provided'}</p>
+                            <p className="text-[14px] tabular-nums text-ds-ink-2">{call.customer_phone || call.customer_id || '—'}</p>
+                          </div>
+                          <StatusBadge status={v.displayStatus} className="shrink-0 px-2.5 py-0.5 text-[14px]" />
                         </div>
-                        <div>
-                          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Date</div>
-                          <div className="text-sm font-bold text-foreground">{selectedCall.analysis.promise_to_pay.date || '-'}</div>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[14px] text-ds-ink-2">
+                          {directionBadge(call)}
+                          <span className="tabular-nums">{v.durationDisplay || '—'}</span>
+                          {call.language && <span>{call.language}</span>}
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className="text-[14px] text-ds-ink-2">{dt.day}{dt.time ? ` · ${dt.time}` : ''}</span>
+                          {viewButton(call)}
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
-
-                <div>
-                  <h3 className="mb-3 flex items-center gap-2 text-sm font-bold tracking-tight text-foreground">
-                    <Sparkles size={16} className="text-primary" /> Call Summary
-                  </h3>
-                  <div className="rounded-xl border border-border/50 bg-card p-4 text-sm leading-relaxed text-muted-foreground shadow-sm">
-                    {selectedCall.summary || selectedCall.analysis?.summary || 'No summary available.'}
-                  </div>
-                </div>
-                
-                {selectedCall.transcript && (
-                  <div>
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-bold tracking-tight text-foreground">
-                      <MessageSquare size={16} className="text-primary" /> Transcript
-                    </h3>
-                    <div className="rounded-xl border border-border/50 bg-card p-4 text-sm leading-relaxed text-muted-foreground shadow-sm max-h-[250px] overflow-y-auto whitespace-pre-wrap">
-                      {selectedCall.transcript}
-                    </div>
-                  </div>
-                )}
-              </div>
+                  </article>
+                )
+              })}
             </div>
+          </>
+        )}
+
+        {/* Footer: loaded count + existing "Load more" */}
+        {!loading && calls.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-ds-line px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p className="text-[15px] text-ds-ink-2 tabular-nums">
+              Showing <span className="font-medium text-ds-ink">{visibleCalls.length}</span> of <span className="font-medium text-ds-ink">{calls.length}</span> loaded calls{hasMore ? ' · more available' : ''}
+            </p>
+            {hasMore && <LoadMore onClick={() => setPage(p => p + 1)} label="Load more calls" />}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      <Sheet
+        open={Boolean(selectedCall)}
+        onClose={() => setSelectedCall(null)}
+        title={selectedCall?.customer_name || 'Phone lead'}
+        description={<span className="tabular-nums">{selectedCall?.customer_phone || selectedCall?.customer_id}</span>}
+        headerExtra={selectedCall ? <div className="mt-2 flex flex-wrap gap-2"><StatusBadge status={selectedCall.status} />{directionBadge(selectedCall)}</div> : null}
+      >
+        {selectedCall && (
+          <>
+            <DetailGrid
+              items={[
+                { label: 'Duration', value: <span className="tabular-nums">{selectedCall.duration_seconds ? `${Math.floor(selectedCall.duration_seconds / 60)}:${(selectedCall.duration_seconds % 60).toString().padStart(2, '0')}` : '—'}</span> },
+                { label: 'Language', value: selectedCall.language || '—' },
+                { label: 'AI intent', value: selectedCall.analysis?.lead_temperature || '—' },
+                { label: 'Date', value: formatDateTime(selectedCall.created_at) },
+              ]}
+            />
+
+            {selectedCall.industry === 'collections' && selectedCall.analysis?.promise_to_pay?.promised && (
+              <SheetSection title="Promise to pay" icon={<CircleDollarSign size={14} />}>
+                <DetailGrid items={[{ label: 'Amount', value: selectedCall.analysis.promise_to_pay.amount || '—' }, { label: 'Date', value: selectedCall.analysis.promise_to_pay.date || '—' }]} />
+              </SheetSection>
+            )}
+
+            <SheetSection title="Call summary" icon={<Sparkles size={14} />}>
+              <p className="rounded-lg border border-ds-line bg-ds-surface p-3.5 text-[13px] leading-relaxed text-ds-ink-2">
+                {selectedCall.summary || selectedCall.analysis?.summary || 'No summary available.'}
+              </p>
+            </SheetSection>
+
+            {selectedCall.transcript && (
+              <SheetSection title="Transcript" icon={<MessageSquare size={14} />}>
+                <Transcript text={selectedCall.transcript} />
+              </SheetSection>
+            )}
+          </>
+        )}
+      </Sheet>
     </AppLayout>
   )
 }

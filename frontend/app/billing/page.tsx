@@ -1,28 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { BarChart3, Clock, Coins, CreditCard, Crown, Info, Layers, PhoneCall, Plus, RefreshCw, Search, Wallet } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi } from '@/lib/api'
-import { 
-  Wallet, 
-  CreditCard, 
-  PhoneCall, 
-  Clock, 
-  TrendingUp, 
-  Plus, 
-  RefreshCw, 
-  CheckCircle2, 
-  ArrowDownLeft,
-  ArrowUpRight,
-  PhoneIncoming,
-  PhoneOutgoing,
-  X,
-  Loader2, 
-  Sparkles,
-  ShieldCheck,
-  Zap,
-  Info
-} from 'lucide-react'
+import { InlineNote } from '@/components/ui/Panel'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { Alert } from '@/components/ui/Alert'
+import { Dialog } from '@/components/ui/Dialog'
+import { Field, Input } from '@/components/ui/Field'
+import { buttonClass } from '@/components/ui/button'
+import { EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui/States'
+import { formatDateTime } from '@/lib/format'
 
 interface DashboardData {
   balance: number
@@ -70,12 +59,37 @@ interface Transaction {
   created_at: string
 }
 
+/** Donut of outbound vs inbound minutes (SVG, no chart library). Display only. */
+function UsageDonut({ outbound, inbound }: { outbound: number; inbound: number }) {
+  const total = outbound + inbound
+  const r = 62
+  const c = 2 * Math.PI * r
+  const outLen = total > 0 ? (outbound / total) * c : 0
+  const inLen = total > 0 ? (inbound / total) * c : 0
+  const label = Number.isInteger(total) ? String(total) : total.toFixed(1)
+  return (
+    <div className="relative h-44 w-44 shrink-0" role="img" aria-label={`${label} minutes: ${outbound} outbound, ${inbound} inbound`}>
+      <svg viewBox="0 0 160 160" className="h-full w-full -rotate-90">
+        <circle cx="80" cy="80" r={r} fill="none" strokeWidth="18" className="stroke-slate-100" />
+        {outLen > 0 && <circle cx="80" cy="80" r={r} fill="none" strokeWidth="18" strokeDasharray={`${outLen} ${c - outLen}`} className="stroke-ds-primary" />}
+        {inLen > 0 && <circle cx="80" cy="80" r={r} fill="none" strokeWidth="18" strokeDasharray={`${inLen} ${c - inLen}`} strokeDashoffset={-outLen} className="stroke-ds-accent" />}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="text-[28px] font-bold leading-none tabular-nums text-ds-ink">{label}</span>
+        <span className="mt-1 text-[14px] text-ds-ink-2">Minutes</span>
+      </div>
+    </div>
+  )
+}
+
 export default function BillingPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [usage, setUsage] = useState<UsageRecord[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  // Presentation-only: true while the latest load attempt failed.
+  const [loadFailed, setLoadFailed] = useState(false)
   const [activeTab, setActiveTab] = useState<'usage' | 'transactions'>('usage')
   
   // Top-Up Modal State
@@ -107,8 +121,10 @@ export default function BillingPage() {
       setDashboard(dashRes)
       setUsage(usageRes || [])
       setTransactions(txRes || [])
+      setLoadFailed(false)
     } catch (err) {
       console.error('Failed to load billing data', err)
+      setLoadFailed(true)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -144,7 +160,7 @@ export default function BillingPage() {
         order_id: order.id,
         amount: order.amount,
         currency: order.currency,
-        name: 'Voice AI',
+        name: 'TalklyAI',
         description: 'Wallet Recharge',
         prefill: dashboard?.company_name ? { name: dashboard.company_name } : undefined,
         theme: { color: '#000000' },
@@ -158,7 +174,7 @@ export default function BillingPage() {
                 razorpay_signature: response.razorpay_signature
               })
             })
-            alert(`₹${amountToCharge.toFixed(2)} credited successfully to your Voice AI wallet!`)
+            alert(`₹${amountToCharge.toFixed(2)} credited successfully to your TalklyAI wallet!`)
             setShowTopupModal(false)
             setCustomAmount('')
             loadData(true)
@@ -192,475 +208,440 @@ export default function BillingPage() {
     ? Math.min(100, Math.round((minutesUsed / minutesIncluded) * 100)) 
     : 100
 
+  // ---- Presentation helpers (display only) ----
+  const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const hasLimit = !!dashboard && dashboard.minutes_included > 0
+  const LATEST = 50 // the API returns at most this many usage rows / transactions per request
+  const tabLabels = [`Call usage (${usage.length})`, `Wallet transactions (${transactions.length})`]
+  const activeTabLabel = activeTab === 'usage' ? tabLabels[0] : tabLabels[1]
+  const activeCount = activeTab === 'usage' ? usage.length : transactions.length
+  const topupEffective = customAmount ? parseFloat(customAmount) || 0 : topupAmount
+
+  const closeTopup = () => setShowTopupModal(false)
+
+  // ── presentation-only helpers (no request, calculation or handler is changed) ──
+  const [historyQuery, setHistoryQuery] = useState('')
+  const q = historyQuery.trim().toLowerCase()
+  const usageShown = usage.filter((u) => !q || [u.customer_name, u.phone, u.call_id].some((v) => String(v || '').toLowerCase().includes(q)))
+  const txShown = transactions.filter((t) => !q || [t.description, t.payment_provider, t.type, t.status].some((v) => String(v || '').toLowerCase().includes(q)))
+  const outMin = dashboard?.breakdown?.outbound?.minutes ?? 0
+  const inMin = dashboard?.breakdown?.inbound?.minutes ?? 0
+  const outCost = dashboard?.breakdown?.outbound?.spending ?? 0
+  const inCost = dashboard?.breakdown?.inbound?.spending ?? 0
+  const card = 'rounded-2xl border border-ds-line bg-ds-bg p-5 shadow-sm sm:p-6'
+  const headBtn =
+    'inline-flex h-11 items-center gap-2 rounded-xl border border-ds-line bg-ds-bg px-4 text-[15px] font-semibold text-ds-ink shadow-sm transition-colors hover:bg-ds-surface disabled:cursor-not-allowed disabled:opacity-60'
+  const initialsOf = (name?: string) => (name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || '—'
+  const AVATAR_TONES = ['bg-blue-100 text-blue-700', 'bg-violet-100 text-violet-700', 'bg-emerald-100 text-emerald-700', 'bg-orange-100 text-orange-700']
+  const avatarTone = (name?: string) => AVATAR_TONES[[...String(name || '')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_TONES.length]
+  const dirBadge = (d: string) =>
+    d ? (
+      <span className={`inline-flex items-center rounded-full px-3 py-1 text-[14px] font-semibold capitalize ${d === 'inbound' ? 'bg-blue-50 text-blue-700' : d === 'outbound' ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-700'}`}>{d}</span>
+    ) : (
+      <span className="text-ds-ink-3">—</span>
+    )
+  const durationText = (secs?: number) => (typeof secs === 'number' ? (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`) : '—')
+  const th = 'px-3 py-3 text-[13px] font-semibold tracking-wide text-ds-ink-2'
+  const kpi = (label: string, value: string, hint: string, Icon: any, wrap: string, tile: string) => (
+    <article key={label} className={`rounded-2xl border p-4 shadow-sm sm:p-5 ${wrap}`}>
+      <div className="flex items-center gap-3.5">
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tile}`} aria-hidden="true"><Icon size={23} strokeWidth={1.75} /></span>
+        <p className="min-w-0 text-[15px] font-medium leading-snug text-ds-ink-2">{label}</p>
+      </div>
+      <p className={`mt-3 font-bold leading-tight tracking-tight text-ds-ink tabular-nums ${value.length > 12 ? 'text-[24px] sm:text-[26px]' : 'text-[28px] sm:text-[30px]'}`}>{value}</p>
+      <p className="mt-2 text-[14px] leading-snug text-ds-ink-2">{hint}</p>
+    </article>
+  )
+  const tabBtn = (active: boolean) =>
+    `inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-[15px] font-semibold transition-colors ${active ? 'border-ds-primary bg-ds-primary text-white shadow-md shadow-blue-600/20' : 'border-ds-line bg-ds-bg text-ds-ink hover:bg-ds-surface'}`
+
   return (
     <AppLayout title="Billing & Usage">
-      {/* Page Header */}
-      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div>
-          <p className="eyebrow text-primary">Management / Billing & Usage</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">Billing & Usage</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Monitor real-time voice AI minute consumption, live account balance, and transaction history.
-          </p>
+      {/* Page header */}
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-700 shadow-sm" aria-hidden="true"><Wallet size={26} strokeWidth={1.75} /></span>
+          <div className="min-w-0">
+            <h1 className="text-[28px] font-bold leading-tight tracking-tight text-ds-ink sm:text-[32px]">Billing &amp; Usage</h1>
+            <p className="mt-1 text-[16px] text-ds-ink-2">Your wallet balance, plan, minute usage and payment history.</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-            <span>Refresh</span>
+        <div className="flex flex-wrap items-center gap-3 sm:shrink-0">
+          <button type="button" onClick={() => loadData(true)} disabled={refreshing} className={headBtn}>
+            <RefreshCw size={17} strokeWidth={1.75} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           <button
+            type="button"
             onClick={() => setShowTopupModal(true)}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-95 transition-all"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-ds-primary px-5 text-[15px] font-semibold text-white shadow-md shadow-blue-600/20 transition-colors hover:bg-ds-primary-hover active:scale-[0.98]"
           >
-            <Plus size={15} />
-            <span>Add Credits</span>
+            <Plus size={18} strokeWidth={2} />
+            Add Credits
           </button>
         </div>
-      </section>
+      </header>
 
-      {/* Trial Alert Banner if in Trial Mode */}
-      {dashboard?.is_trial && (
-        <div className="mt-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-foreground">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Sparkles size={18} />
+      {loading && !dashboard ? (
+        <LoadingState label="Loading billing…">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-[132px] animate-pulse rounded-2xl border border-ds-line bg-ds-bg" />
+              ))}
             </div>
-            <div>
-              <p className="font-semibold text-foreground">
-                Free Trial Active • {dashboard.minutes_included} Free Minutes Included
-              </p>
-              <p className="text-xs text-muted-foreground">
-                You get {dashboard.minutes_included} minutes of free AI calling (any mix of inbound/outbound) to test things out — {dashboard.minutes_remaining} remaining.
-              </p>
-            </div>
+            <Skeleton className="h-64 w-full rounded-2xl" />
           </div>
-          <button
-            onClick={() => setShowTopupModal(true)}
-            className="rounded-lg border border-primary bg-background px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 transition-colors whitespace-nowrap"
-          >
-            Recharge Wallet
-          </button>
-        </div>
-      )}
-
-      {/* Main KPI Cards Grid */}
-      <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Card 1: Available Wallet Balance */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/40 transition-colors relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-              Wallet Balance
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <Wallet size={16} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className={`text-3xl font-extrabold tracking-tight ${balance <= 0 ? 'text-amber-500' : 'text-foreground'}`}>
-              ₹{balance.toFixed(2)}
-            </span>
-            <span className="text-xs font-medium text-muted-foreground">INR</span>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
-            <Zap size={13} className="text-primary" />
-            <span>~<strong>{estimatedMinsLeft} mins</strong> call time remaining</span>
-          </p>
-        </div>
-
-        {/* Card 2: Current Subscription Plan */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/40 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-              Current Plan
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <ShieldCheck size={16} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-foreground">
-              {dashboard?.plan_name || 'Free Trial Starter'}
-            </span>
-            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-              Active
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Per-Second Rate: <strong>₹{(ratePerMin / 60).toFixed(2)}/sec</strong> (₹{ratePerMin.toFixed(2)}/min)
-          </p>
-        </div>
-
-        {/* Card 3: Minute Consumption */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/40 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-              Minutes Consumed
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
-              <Clock size={16} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold tracking-tight text-foreground">
-              {minutesUsed}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              / {minutesIncluded > 0 ? `${minutesIncluded} mins` : 'Unlimited'}
-            </span>
-          </div>
-          {/* Progress Bar */}
-          <div className="mt-3 h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div 
-              className={`h-full rounded-full transition-all duration-500 ${
-                usagePercentage > 90 ? 'bg-amber-500' : 'bg-primary'
-              }`}
-              style={{ width: `${Math.max(5, usagePercentage)}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Card 4: Total Calls & Spending */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:border-primary/40 transition-colors">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-              Call Volume
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-              <PhoneCall size={16} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold tracking-tight text-foreground">
-              {dashboard?.total_calls ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground font-medium">
-              calls ({dashboard?.completed_calls ?? 0} completed)
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Connected Calls: <strong>{dashboard?.completed_calls ?? 0} answered</strong>
-          </p>
-        </div>
-      </section>
-
-      {/* Inbound vs Outbound Breakdown */}
-      {dashboard?.breakdown && (
-        <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-                Outbound Calls
-              </span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <PhoneOutgoing size={16} />
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold tracking-tight text-foreground">
-                {dashboard.breakdown.outbound?.minutes ?? 0}
-              </span>
-              <span className="text-xs text-muted-foreground">mins used</span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              ₹{(dashboard.breakdown.outbound?.spending ?? 0).toFixed(2)} spent • calls you placed
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
-                Inbound Calls
-              </span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
-                <PhoneIncoming size={16} />
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold tracking-tight text-foreground">
-                {dashboard.breakdown.inbound?.minutes ?? 0}
-              </span>
-              <span className="text-xs text-muted-foreground">mins used</span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              ₹{(dashboard.breakdown.inbound?.spending ?? 0).toFixed(2)} spent • calls customers placed to you
-            </p>
-          </div>
-        </section>
-      )}
-
-      {/* Tabs & Detailed Tables Section */}
-      <section className="mt-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        {/* Tab Headers */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-muted/20">
-          <div className="flex items-center gap-6">
-            <button
-              onClick={() => setActiveTab('usage')}
-              className={`pb-1 text-sm font-bold border-b-2 transition-all ${
-                activeTab === 'usage'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Call Usage & Consumption ({usage.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('transactions')}
-              className={`pb-1 text-sm font-bold border-b-2 transition-all ${
-                activeTab === 'transactions'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Wallet Transactions ({transactions.length})
-            </button>
-          </div>
-          <span className="text-xs text-muted-foreground hidden sm:inline">
-            Billing Period: {dashboard?.billing_period}
-          </span>
-        </div>
-
-        {/* Content Tab 1: Call Usage */}
-        {activeTab === 'usage' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border/70 bg-muted/40 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="py-3 pl-6 pr-4">Recipient / Customer</th>
-                  <th className="py-3 px-4">Direction</th>
-                  <th className="py-3 px-4">Duration</th>
-                  <th className="py-3 px-4">Billed Minutes</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 pr-6 text-right">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                      <div className="flex items-center justify-center gap-2">
-                        <Loader2 size={18} className="animate-spin text-primary" />
-                        <span>Loading usage records...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : usage.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                      No calls billed yet. Trigger a call from the Leads or Quick Call modal to see minute logs.
-                    </td>
-                  </tr>
-                ) : (
-                  usage.map((item, idx) => (
-                    <tr key={item.id || item.call_id || idx} className="hover:bg-muted/30 transition-colors">
-                      <td className="py-3.5 pl-6 pr-4">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-foreground">
-                            {item.customer_name || 'Valued Customer'}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {item.phone || item.call_id || '-'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary capitalize">
-                          {item.service_type?.replace('_call', '') || 'outbound'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-xs font-medium">
-                        {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : '< 5s'}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-foreground">
-                            {item.duration_seconds && item.duration_seconds >= 60
-                              ? `${Math.floor(item.duration_seconds / 60)}m ${Math.round(item.duration_seconds % 60)}s`
-                              : `${Math.round(item.duration_seconds || 0)}s`}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {item.billed_minutes ? `${item.billed_minutes} min` : `${((item.duration_seconds || 0) / 60).toFixed(2)} min`}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle2 size={13} />
-                          <span>{item.status || 'Billed'}</span>
-                        </span>
-                      </td>
-                      <td className="py-3.5 pr-6 text-right text-xs text-muted-foreground">
-                        {item.created_at ? new Date(item.created_at).toLocaleString() : 'Recent'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Content Tab 2: Wallet Transactions */}
-        {activeTab === 'transactions' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border/70 bg-muted/40 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="py-3 pl-6 pr-4">Type</th>
-                  <th className="py-3 px-4">Description</th>
-                  <th className="py-3 px-4">Provider / Source</th>
-                  <th className="py-3 px-4">Amount</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 pr-6 text-right">Date & Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                      <div className="flex items-center justify-center gap-2">
-                        <Loader2 size={18} className="animate-spin text-primary" />
-                        <span>Loading transactions...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                      No wallet transactions recorded yet.
-                    </td>
-                  </tr>
-                ) : (
-                  transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="py-3.5 pl-6 pr-4">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            tx.type === 'CREDIT'
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                          }`}
-                        >
-                          {tx.type === 'CREDIT' ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
-                          {tx.type}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-medium text-foreground">
-                        {tx.description || (tx.type === 'CREDIT' ? 'Wallet Top-up' : 'Call Minute Deduction')}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-muted-foreground capitalize">
-                        {tx.payment_provider?.replace('_', ' ') || 'Wallet'}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-sm">
-                        <span className={tx.type === 'CREDIT' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}>
-                          {tx.type === 'CREDIT' ? '+' : '-'}₹{Math.abs(tx.amount).toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground capitalize">
-                          {tx.status?.toLowerCase() || 'completed'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 pr-6 text-right text-xs text-muted-foreground">
-                        {new Date(tx.created_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Top-Up Recharge Modal */}
-      {showTopupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
-            <div className="flex items-center justify-between pb-4 border-b border-border">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <CreditCard size={20} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-foreground">Recharge Wallet</h2>
-                  <p className="text-xs text-muted-foreground">Add credits for uninterrupted AI calling</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowTopupModal(false)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X size={18} />
+        </LoadingState>
+      ) : !dashboard ? (
+        <div className={card}>
+          <ErrorState
+            title="Billing details couldn’t be loaded"
+            description="The request for your wallet and plan failed. Nothing is shown rather than guessing your balance."
+            action={
+              <button type="button" onClick={() => loadData()} className={headBtn}>
+                <RefreshCw size={16} strokeWidth={1.75} />
+                Try again
               </button>
-            </div>
+            }
+          />
+        </div>
+      ) : (
+        <>
+          {loadFailed && (
+            <Alert tone="warning" title="Couldn’t refresh billing data">
+              The figures below are from the last successful load and may be out of date.
+            </Alert>
+          )}
 
-            <form onSubmit={handleTopup} className="mt-5 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  Select Recharge Amount
-                </label>
-                <div className="grid grid-cols-4 gap-2 mt-2">
-                  {[250, 500, 1000, 2500].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => {
-                        setTopupAmount(amt)
-                        setCustomAmount('')
-                      }}
-                      className={`rounded-lg py-2.5 text-xs font-bold border transition-all ${
-                        topupAmount === amt && !customAmount
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-background text-foreground hover:bg-muted'
-                      }`}
-                    >
-                      ₹{amt}
-                    </button>
-                  ))}
+          {dashboard.is_trial && (
+            <Alert
+              tone="info"
+              title={`Free trial · ${dashboard.minutes_included} free minutes included`}
+              action={
+                <button type="button" onClick={() => setShowTopupModal(true)} className={buttonClass('outline', 'sm')}>
+                  Recharge wallet
+                </button>
+              }
+            >
+              {dashboard.minutes_remaining} {dashboard.minutes_remaining === 1 ? 'minute' : 'minutes'} remaining. Inbound and outbound calls both count towards the allowance.
+            </Alert>
+          )}
+
+          {/* KPI cards */}
+          <section aria-label="Billing summary" className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+            {kpi('Wallet Balance', inr(balance), balance > 0 ? `About ${estimatedMinsLeft} min of calling left at ${inr(ratePerMin)}/min` : 'Add credits to keep calling', Wallet, 'border-blue-100 bg-gradient-to-br from-blue-50 via-white to-white', 'bg-blue-100 text-ds-primary')}
+            {kpi('Current Plan', dashboard.plan_name || '—', `${inr(ratePerMin)}/min (${inr(ratePerMin / 60)}/sec)`, Crown, 'border-violet-100 bg-gradient-to-br from-violet-50 via-white to-white', 'bg-violet-100 text-violet-700')}
+            {kpi('Minutes Used', String(minutesUsed), hasLimit ? `of ${minutesIncluded} included` : 'No included minutes on this plan', Clock, 'border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white', 'bg-emerald-100 text-emerald-600')}
+            {kpi('Total Calls', String(dashboard.total_calls ?? 0), `${dashboard.completed_calls ?? 0} completed`, PhoneCall, 'border-orange-100 bg-gradient-to-br from-orange-50 via-white to-white', 'bg-orange-100 text-orange-500')}
+          </section>
+
+          {/* Usage overview + included minutes */}
+          <div className="grid items-stretch gap-5 xl:grid-cols-2">
+            <section className={card} aria-labelledby="usage-overview-title">
+              <div className="flex items-start gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-ds-primary" aria-hidden="true"><BarChart3 size={21} strokeWidth={1.75} /></span>
+                <div className="min-w-0">
+                  <h2 id="usage-overview-title" className="text-[19px] font-semibold leading-tight text-ds-ink">Usage Overview</h2>
+                  <p className="mt-1 text-[15px] leading-snug text-ds-ink-2">Call minutes and cost by direction.{dashboard.billing_period ? ` ${dashboard.billing_period}` : ''}</p>
                 </div>
               </div>
+              {dashboard.breakdown ? (
+                <div className="mt-5 flex flex-col items-center gap-6 sm:flex-row">
+                  <UsageDonut outbound={outMin} inbound={inMin} />
+                  <div className="w-full min-w-0 flex-1">
+                    <dl className="divide-y divide-ds-line">
+                      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 py-3 text-[15px]">
+                        <dt className="flex items-center gap-2.5 font-medium text-ds-ink"><i className="h-3 w-3 rounded-full bg-ds-primary" />Outbound</dt>
+                        <dd className="tabular-nums text-ds-ink">{outMin} min</dd>
+                        <dd className="w-24 text-right tabular-nums text-ds-ink-2">{inr(outCost)}</dd>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 py-3 text-[15px]">
+                        <dt className="flex items-center gap-2.5 font-medium text-ds-ink"><i className="h-3 w-3 rounded-full bg-ds-accent" />Inbound</dt>
+                        <dd className="tabular-nums text-ds-ink">{inMin} min</dd>
+                        <dd className="w-24 text-right tabular-nums text-ds-ink-2">{inr(inCost)}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-blue-50 px-4 py-3.5">
+                      <span className="flex items-center gap-2.5 text-[16px] font-semibold text-ds-ink"><Coins size={19} strokeWidth={1.75} className="text-ds-primary" aria-hidden="true" />Total Spent</span>
+                      <span className="text-[20px] font-bold tabular-nums text-ds-ink">{inr(dashboard.total_spending ?? 0)}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5">
+                  <InlineNote>No usage breakdown is available yet.</InlineNote>
+                </div>
+              )}
+            </section>
 
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  Or Custom Amount (₹)
-                </label>
-                <div className="relative mt-1">
-                  <span className="absolute left-3 top-2.5 text-sm font-bold text-muted-foreground">₹</span>
+            <section className={card} aria-labelledby="included-title">
+              <div className="flex items-start gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700" aria-hidden="true"><Layers size={21} strokeWidth={1.75} /></span>
+                <div className="min-w-0">
+                  <h2 id="included-title" className="text-[19px] font-semibold leading-tight text-ds-ink">Included Minutes</h2>
+                  <p className="mt-1 text-[15px] leading-snug text-ds-ink-2">How much of your plan’s minute allowance you have used.</p>
+                </div>
+              </div>
+              {hasLimit ? (
+                <div className="mt-6">
+                  <div className="mb-2 flex items-baseline justify-between gap-3 text-[15px]">
+                    <span className="text-ds-ink">{minutesUsed} of {minutesIncluded} minutes used</span>
+                    <span className="font-semibold tabular-nums text-ds-ink">{usagePercentage}%</span>
+                  </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-ds-surface" role="presentation">
+                    <div className={`h-full rounded-full transition-[width] duration-500 ${usagePercentage > 90 ? 'bg-ds-warning' : 'bg-ds-primary'}`} style={{ width: `${usagePercentage}%` }} />
+                  </div>
+                  <p className="mt-3 text-[14px] text-ds-ink-2">{dashboard.minutes_remaining} {dashboard.minutes_remaining === 1 ? 'minute' : 'minutes'} remaining.</p>
+                </div>
+              ) : (
+                <div className="mt-6 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-4">
+                  <Info size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-ds-primary" aria-hidden="true" />
+                  <p className="text-[15px] leading-relaxed text-ds-ink">This plan has no included-minute allowance, so there is no limit to measure usage against. Calls are charged to your wallet.</p>
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* History */}
+          <section className="rounded-2xl border border-ds-line bg-ds-bg shadow-sm" aria-label="Billing history">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ds-line px-4 py-4 sm:px-6">
+              <div role="tablist" aria-label="Billing history" className="flex flex-wrap gap-2.5">
+                <button role="tab" type="button" aria-selected={activeTab === 'usage'} onClick={() => setActiveTab('usage')} className={tabBtn(activeTab === 'usage')}>
+                  <PhoneCall size={17} strokeWidth={1.75} aria-hidden="true" />Call Usage ({usage.length})
+                </button>
+                <button role="tab" type="button" aria-selected={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} className={tabBtn(activeTab === 'transactions')}>
+                  <CreditCard size={17} strokeWidth={1.75} aria-hidden="true" />Wallet Transactions ({transactions.length})
+                </button>
+              </div>
+              {activeCount >= LATEST && <span className="inline-flex items-center rounded-full bg-ds-surface px-3 py-1 text-[14px] font-semibold text-ds-ink-2">Latest {LATEST} shown</span>}
+            </div>
+
+            <div className="px-4 pb-5 pt-4 sm:px-6">
+              {(usage.length > 0 || transactions.length > 0) && (
+                <div className="relative mb-4 w-full sm:max-w-md">
+                  <Search size={17} strokeWidth={1.75} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ds-ink-3" aria-hidden="true" />
                   <input
-                    type="number"
-                    min="50"
-                    step="50"
-                    placeholder="Enter custom amount"
-                    value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background pl-8 pr-3 py-2 text-sm outline-none focus:border-primary"
+                    type="search"
+                    value={historyQuery}
+                    onChange={(e) => setHistoryQuery(e.target.value)}
+                    placeholder={activeTab === 'usage' ? 'Search by customer or phone number…' : 'Search by description or provider…'}
+                    aria-label={activeTab === 'usage' ? 'Search call usage' : 'Search wallet transactions'}
+                    className="h-11 w-full rounded-xl border border-ds-line bg-ds-bg pl-10 pr-3 text-[15px] text-ds-ink outline-none transition placeholder:text-ds-ink-3 focus-visible:border-ds-primary focus-visible:ring-2 focus-visible:ring-ds-primary/20 [&::-webkit-search-cancel-button]:hidden"
                   />
                 </div>
-              </div>
+              )}
 
-              <div className="rounded-xl bg-muted/40 p-3.5 text-xs text-muted-foreground flex items-center justify-between">
-                <span>Estimated Voice AI Minutes:</span>
-                <span className="font-bold text-foreground">
-                  ~{Math.floor((customAmount ? parseFloat(customAmount) || 0 : topupAmount) / ratePerMin)} Minutes
-                </span>
-              </div>
+              {activeTab === 'usage' ? (
+                usage.length === 0 ? (
+                  <EmptyState
+                    icon={<PhoneCall size={18} strokeWidth={1.75} />}
+                    title="No billed calls yet"
+                    description="Minutes appear here once calls are made. Start a call from Leads or a campaign."
+                  />
+                ) : usageShown.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-ds-line-strong px-4 py-8 text-center text-[15px] text-ds-ink-2">No call usage matches “{historyQuery}”.</p>
+                ) : (
+                  <>
+                    <div role="region" aria-label="Call usage table" tabIndex={0} className="hidden overflow-x-auto outline-none focus-visible:outline-2 focus-visible:outline-ds-primary xl:block">
+                      <table className="w-full border-collapse text-[15px]">
+                        <thead>
+                          <tr className="bg-slate-50 [&>th:first-child]:rounded-l-xl [&>th:last-child]:rounded-r-xl">
+                            <th scope="col" className={`${th} pl-4 text-left`}>Customer</th>
+                            <th scope="col" className={`${th} text-left`}>Direction</th>
+                            <th scope="col" className={`${th} text-right`}>Duration</th>
+                            <th scope="col" className={`${th} text-right`}>Billed Minutes</th>
+                            <th scope="col" className={`${th} text-right`}>Cost</th>
+                            <th scope="col" className={`${th} text-left`}>Status</th>
+                            <th scope="col" className={`${th} pr-4 text-left`}>Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {usageShown.map((item, idx) => {
+                            const direction = item.service_type ? item.service_type.replace('_call', '') : ''
+                            return (
+                              <tr key={item.id || item.call_id || idx} className="border-b border-slate-100 last:border-b-0 hover:bg-ds-surface/60">
+                                <td className="py-3 pl-4 pr-3">
+                                  <div className="flex items-center gap-3">
+                                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold ${avatarTone(item.customer_name)}`} aria-hidden="true">{initialsOf(item.customer_name)}</span>
+                                    <div className="min-w-0">
+                                      <span className="block truncate text-[16px] font-semibold text-ds-ink">{item.customer_name || '—'}</span>
+                                      <span className="block text-[14px] tabular-nums text-ds-ink-2">{item.phone || item.call_id || '—'}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3">{dirBadge(direction)}</td>
+                                <td className="px-3 py-3 text-right tabular-nums text-ds-ink">{durationText(item.duration_seconds)}</td>
+                                <td className="px-3 py-3 text-right tabular-nums text-ds-ink">{typeof item.billed_minutes === 'number' ? item.billed_minutes : '—'}</td>
+                                <td className="px-3 py-3 text-right font-medium tabular-nums text-ds-ink">{typeof item.customer_cost === 'number' ? inr(item.customer_cost) : '—'}</td>
+                                <td className="px-3 py-3"><StatusBadge status={item.status} className="px-3 py-1 text-[14px]" /></td>
+                                <td className="whitespace-nowrap py-3 pl-3 pr-4 text-ds-ink-2">{formatDateTime(item.created_at)}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
 
-              <button
-                type="submit"
-                disabled={toppingUp}
-                className="w-full mt-4 flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 hover:opacity-95 disabled:opacity-50 transition-all"
-              >
-                {toppingUp ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Recharge'}
-              </button>
-            </form>
-          </div>
-        </div>
+                    <ul className="space-y-3 xl:hidden" aria-label="Call usage">
+                      {usageShown.map((item, idx) => {
+                        const direction = item.service_type ? item.service_type.replace('_call', '') : ''
+                        return (
+                          <li key={item.id || item.call_id || idx} className="rounded-xl border border-ds-line p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold ${avatarTone(item.customer_name)}`} aria-hidden="true">{initialsOf(item.customer_name)}</span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-[16px] font-semibold text-ds-ink">{item.customer_name || '—'}</p>
+                                  <p className="text-[14px] tabular-nums text-ds-ink-2">{item.phone || item.call_id || '—'}</p>
+                                </div>
+                              </div>
+                              <StatusBadge status={item.status} className="shrink-0 px-2.5 py-0.5 text-[14px]" />
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">{dirBadge(direction)}<span className="text-[14px] text-ds-ink-2">{formatDateTime(item.created_at)}</span></div>
+                            <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+                              {[
+                                ['Duration', durationText(item.duration_seconds)],
+                                ['Billed min', typeof item.billed_minutes === 'number' ? String(item.billed_minutes) : '—'],
+                                ['Cost', typeof item.customer_cost === 'number' ? inr(item.customer_cost) : '—'],
+                              ].map(([k, v]) => (
+                                <div key={k} className="rounded-lg bg-ds-surface px-1 py-2">
+                                  <dt className="text-[13px] text-ds-ink-2">{k}</dt>
+                                  <dd className="text-[15px] font-semibold tabular-nums text-ds-ink">{v}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </>
+                )
+              ) : transactions.length === 0 ? (
+                <EmptyState
+                  icon={<Wallet size={18} strokeWidth={1.75} />}
+                  title="No wallet transactions yet"
+                  description="Top-ups and call deductions will be listed here."
+                  action={
+                    <button type="button" onClick={() => setShowTopupModal(true)} className={buttonClass('outline', 'sm')}>
+                      Add credits
+                    </button>
+                  }
+                />
+              ) : txShown.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-ds-line-strong px-4 py-8 text-center text-[15px] text-ds-ink-2">No transactions match “{historyQuery}”.</p>
+              ) : (
+                <>
+                  <div role="region" aria-label="Wallet transactions table" tabIndex={0} className="hidden overflow-x-auto outline-none focus-visible:outline-2 focus-visible:outline-ds-primary xl:block">
+                    <table className="w-full border-collapse text-[15px]">
+                      <thead>
+                        <tr className="bg-slate-50 [&>th:first-child]:rounded-l-xl [&>th:last-child]:rounded-r-xl">
+                          <th scope="col" className={`${th} pl-4 text-left`}>Type</th>
+                          <th scope="col" className={`${th} text-left`}>Description</th>
+                          <th scope="col" className={`${th} text-left`}>Provider</th>
+                          <th scope="col" className={`${th} text-right`}>Amount</th>
+                          <th scope="col" className={`${th} text-left`}>Status</th>
+                          <th scope="col" className={`${th} pr-4 text-left`}>Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {txShown.map((tx) => (
+                          <tr key={tx.id} className="border-b border-slate-100 last:border-b-0 hover:bg-ds-surface/60">
+                            <td className="py-3.5 pl-4 pr-3">
+                              <span className={`inline-flex items-center rounded-full px-3 py-1 text-[14px] font-semibold ${tx.type === 'CREDIT' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>{tx.type === 'CREDIT' ? 'Credit' : 'Debit'}</span>
+                            </td>
+                            <td className="px-3 py-3.5 text-ds-ink">{tx.description || '—'}</td>
+                            <td className="px-3 py-3.5 capitalize text-ds-ink-2">{tx.payment_provider ? tx.payment_provider.replace('_', ' ') : '—'}</td>
+                            <td className={`whitespace-nowrap px-3 py-3.5 text-right font-semibold tabular-nums ${tx.type === 'CREDIT' ? 'text-emerald-700' : 'text-ds-ink'}`}>
+                              {tx.type === 'CREDIT' ? '+' : '−'}
+                              {inr(Math.abs(tx.amount))}
+                            </td>
+                            <td className="px-3 py-3.5"><StatusBadge status={tx.status} className="px-3 py-1 text-[14px]" /></td>
+                            <td className="whitespace-nowrap py-3.5 pl-3 pr-4 text-ds-ink-2">{formatDateTime(tx.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <ul className="space-y-3 xl:hidden" aria-label="Wallet transactions">
+                    {txShown.map((tx) => (
+                      <li key={tx.id} className="rounded-xl border border-ds-line p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className={`inline-flex items-center rounded-full px-3 py-1 text-[14px] font-semibold ${tx.type === 'CREDIT' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>{tx.type === 'CREDIT' ? 'Credit' : 'Debit'}</span>
+                            <p className="mt-2 text-[15px] text-ds-ink">{tx.description || '—'}</p>
+                          </div>
+                          <p className={`shrink-0 text-[17px] font-semibold tabular-nums ${tx.type === 'CREDIT' ? 'text-emerald-700' : 'text-ds-ink'}`}>{tx.type === 'CREDIT' ? '+' : '−'}{inr(Math.abs(tx.amount))}</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[14px] text-ds-ink-2">
+                          <StatusBadge status={tx.status} className="px-2.5 py-0.5 text-[14px]" />
+                          <span className="capitalize">{tx.payment_provider ? tx.payment_provider.replace('_', ' ') : '—'}</span>
+                          <span>{formatDateTime(tx.created_at)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          </section>
+        </>
       )}
+
+      {/* Top-up dialog. Submits through the same handleTopup as before. */}
+      <Dialog
+        open={showTopupModal}
+        onClose={closeTopup}
+        title="Recharge wallet"
+        description="Add credits for uninterrupted AI calling."
+        footer={
+          <>
+            <button type="button" onClick={closeTopup} className={buttonClass('outline', 'md')}>
+              Cancel
+            </button>
+            <button type="submit" form="topup-form" disabled={toppingUp} className={buttonClass('primary', 'md')}>
+              {toppingUp ? 'Opening payment…' : 'Confirm recharge'}
+            </button>
+          </>
+        }
+      >
+        <form id="topup-form" onSubmit={handleTopup} className="space-y-5">
+          <fieldset>
+            <legend className="text-[13px] font-medium text-ds-ink">Recharge amount</legend>
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              {[250, 500, 1000, 2500].map((amt) => {
+                const selected = topupAmount === amt && !customAmount
+                return (
+                  <button
+                    key={amt}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setTopupAmount(amt)
+                      setCustomAmount('')
+                    }}
+                    className={`h-9 rounded-lg border text-[13px] font-medium tabular-nums transition-colors ${
+                      selected ? 'border-ds-primary bg-ds-primary-soft text-ds-primary' : 'border-ds-line bg-ds-bg text-ds-ink hover:border-ds-line-strong hover:bg-ds-surface'
+                    }`}
+                  >
+                    ₹{amt}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          <Field label="Or enter a custom amount (₹)" hint="Minimum ₹50.">
+            <Input type="number" min="50" step="50" placeholder="Enter amount" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} />
+          </Field>
+
+          <div className="flex items-center justify-between rounded-lg bg-ds-surface px-3.5 py-3 text-[13px] text-ds-ink-2">
+            <span>Estimated calling time</span>
+            <span className="font-medium tabular-nums text-ds-ink">About {Math.floor(topupEffective / ratePerMin)} minutes</span>
+          </div>
+        </form>
+      </Dialog>
     </AppLayout>
   )
 }

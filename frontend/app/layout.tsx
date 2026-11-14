@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Voice AI | Autonomous Enterprise Voice Platform',
-  description: 'Run smarter AI voice conversations for multi-industry leads, campaigns, and conversions.',
+  title: 'TalklyAI | AI-Powered Real Estate Conversations',
+  description: 'Run smarter AI voice conversations for real-estate leads, campaigns, and conversions.',
   generator: 'v0.app',
   icons: {
     icon: [

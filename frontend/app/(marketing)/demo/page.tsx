@@ -11,7 +11,7 @@ const topics = ['Product demo', 'Getting started', 'Pricing', 'Collections', 'E-
 
 const nextSteps = [
   { icon: ClipboardList, text: 'Share your use case and the languages you call in.' },
-  { icon: PhoneCall, text: 'See how a Voice AI conversation fits your campaign.' },
+  { icon: PhoneCall, text: 'See how a TalklyAI conversation fits your campaign.' },
   { icon: CalendarCheck, text: 'Agree the next steps with the team.' },
 ]
 
@@ -80,9 +80,9 @@ function DemoForm() {
   const resultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    document.title = 'Get a Demo | Voice AI'
+    document.title = 'Get a Demo | TalklyAI'
     return () => {
-      document.title = 'Voice AI | Autonomous Enterprise Voice Platform'
+      document.title = 'TalklyAI | AI Voice Calling in Hindi, Hinglish and English'
     }
   }, [])
 
@@ -130,7 +130,7 @@ function DemoForm() {
       <div className="wrap grid gap-10 pb-20 pt-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-16 lg:pt-16">
         <div>
           <h1 className="text-[clamp(2rem,3.6vw,2.875rem)] font-semibold leading-[1.15] tracking-[-0.03em]">
-            See Voice AI on Your Own Use Case
+            See TalklyAI on Your Own Use Case
           </h1>
           <p className="mt-4 text-[1.0625rem] leading-relaxed text-pretty">
             Tell us who you call and what a good outcome looks like. The team will follow up to arrange a walkthrough.

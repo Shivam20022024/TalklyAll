@@ -1,4 +1,3 @@
-import re
 from fastapi import APIRouter, HTTPException, Depends, Body
 from datetime import datetime
 import os
@@ -164,29 +163,16 @@ async def register_company(payload: dict = Body(...)):
 
 @auth_router.post("/login")
 async def login(payload: dict = Body(...)):
-    raw_email = payload.get("email")
-    raw_password = payload.get("password")
+    email = payload.get("email")
+    password = payload.get("password")
 
-    if not raw_email or not raw_password:
+    if not all([email, password]):
         raise HTTPException(status_code=400, detail="Missing email or password")
 
-    clean_email = str(raw_email).strip().lower()
-    clean_password = str(raw_password).strip()
-
     db = mongodb.get_db()
-    # Case-insensitive and whitespace-tolerant email lookup
-    user = await db.users.find_one({"email": {"$regex": f"^{re.escape(clean_email)}$", "$options": "i"}})
-    if not user:
-        user = await db.users.find_one({"email": raw_email})
+    user = await db.users.find_one({"email": email})
 
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    email = user.get("email") or clean_email
-
-    # Verify password with clean password first, then raw password
-    p_hash = user.get("password_hash", "")
-    if not (verify_password(clean_password, p_hash) or verify_password(raw_password, p_hash)):
+    if not user or not verify_password(password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if user.get("is_active") is False or user.get("status") == "PENDING_ACTIVATION":

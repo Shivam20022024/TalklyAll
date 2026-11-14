@@ -98,7 +98,7 @@ function Dashboard({ chartsReady }: { chartsReady: boolean }) {
       <aside aria-hidden="true" className="hidden border-r border-line bg-[#fbfcff] p-4 lg:block">
         <div className="mb-5 flex items-center gap-2 px-2">
           <LogoMark className="h-5 w-5" />
-          <span translate="no" className="font-display text-[0.9375rem] font-semibold text-ink">Voice AI</span>
+          <span translate="no" className="font-display text-[0.9375rem] font-semibold text-ink">TalklyAI</span>
         </div>
         <ul className="space-y-1 text-[0.8125rem] font-medium">
           {sidebar.map(({ label, icon: Icon, active }) => (

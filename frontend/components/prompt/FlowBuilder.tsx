@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ArrowUp, ArrowDown, Trash2, Plus, Eye, EyeOff, Code2, ListChecks } from 'lucide-react'
+import { HighlightedTextarea } from './HighlightedTextarea'
 
 export interface FlowStep {
   id: string
@@ -59,9 +61,11 @@ interface FlowBuilderProps {
   value: string
   onChange: (next: string) => void
   placeholderRole?: string
+  /** Optional heading drawn to the left of the Flow Builder / Raw Text switch. */
+  heading?: ReactNode
 }
 
-export default function FlowBuilder({ value, onChange, placeholderRole }: FlowBuilderProps) {
+export default function FlowBuilder({ value, onChange, placeholderRole, heading }: FlowBuilderProps) {
   const [mode, setMode] = useState<'builder' | 'raw'>('raw')
   const [role, setRole] = useState('')
   const [steps, setSteps] = useState<FlowStep[]>([])
@@ -138,118 +142,110 @@ export default function FlowBuilder({ value, onChange, placeholderRole }: FlowBu
     emit(freshRole, freshSteps)
   }
 
+  const ctrl = 'w-full rounded-xl border border-ds-line bg-ds-bg text-[15px] text-ds-ink outline-none transition-colors placeholder:text-ds-ink-3 hover:border-ds-line-strong focus-visible:border-ds-primary focus-visible:ring-2 focus-visible:ring-ds-primary/20'
+  const tab = (active: boolean) => `flex h-10 items-center gap-2 rounded-lg px-4 text-[15px] font-semibold transition-colors ${active ? 'border border-ds-primary/50 bg-ds-bg text-ds-primary shadow-sm' : 'border border-transparent text-ds-ink-2 hover:text-ds-ink'}`
+
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
-          <button
-            type="button"
-            onClick={() => setMode('builder')}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${mode === 'builder' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            <ListChecks size={13} /> Flow Builder
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        {heading && <div className="min-w-0 flex-1 basis-[260px]">{heading}</div>}
+        <div role="group" aria-label="Editor mode" className="inline-flex shrink-0 rounded-xl border border-ds-line bg-ds-surface p-1">
+          <button type="button" aria-pressed={mode === 'builder'} onClick={() => setMode('builder')} className={tab(mode === 'builder')}>
+            <ListChecks size={16} strokeWidth={1.75} /> Flow Builder
           </button>
-          <button
-            type="button"
-            onClick={() => setMode('raw')}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${mode === 'raw' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            <Code2 size={13} /> Raw Text
+          <button type="button" aria-pressed={mode === 'raw'} onClick={() => setMode('raw')} className={tab(mode === 'raw')}>
+            <Code2 size={16} strokeWidth={1.75} /> Raw Text
           </button>
         </div>
-        {mode === 'builder' && (
-          <button
-            type="button"
-            onClick={() => setShowPreview(v => !v)}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-          >
-            {showPreview ? <EyeOff size={13} /> : <Eye size={13} />} {showPreview ? 'Hide' : 'View'} generated prompt
-          </button>
-        )}
       </div>
 
       {mode === 'raw' ? (
         <>
           {unparseable && (
-            <p className="mb-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-              This prompt doesn't match the Flow Builder's step format, so it's shown as text. You can keep editing it here, or start a fresh flow below (this replaces the current text).
+            <p className="mb-3 rounded-lg bg-ds-warning-soft px-3.5 py-2.5 text-[14px] text-ds-warning-ink">
+              This prompt doesn&apos;t match the Flow Builder&apos;s step format, so it&apos;s shown as text. You can keep editing it here, or start a fresh flow below (this replaces the current text).
             </p>
           )}
-          <textarea
+          <HighlightedTextarea
+            ariaLabel="System prompt"
             value={value}
-            onChange={(e) => { lastEmitted.current = e.target.value; onChange(e.target.value) }}
-            className="w-full h-[420px] resize-none rounded-lg border border-border bg-background p-4 text-sm font-mono outline-none focus:ring-2 focus:ring-primary leading-relaxed"
+            onChange={(next) => { lastEmitted.current = next; onChange(next) }}
             placeholder="Enter your system prompt here..."
+            minHeight={320}
+            expandable
+            showCount
           />
-          <button
-            type="button"
-            onClick={startFromScratch}
-            className="mt-2 text-xs font-semibold text-primary hover:underline"
-          >
-            Start a Flow from scratch instead →
+          <button type="button" onClick={startFromScratch} className="mt-2.5 text-[14px] font-semibold text-ds-primary hover:underline">
+            Start a flow from scratch instead →
           </button>
         </>
       ) : (
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-foreground">Agent Role / Identity</label>
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <label htmlFor="flow-role" className="text-[15px] font-semibold text-ds-ink">Agent role / identity</label>
+            <p className="text-[14px] text-ds-ink-2">Who the agent is and the rules it always follows.</p>
             <textarea
+              id="flow-role"
               value={role}
               onChange={(e) => updateRole(e.target.value)}
-              className="w-full resize-y rounded-lg border border-border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-primary leading-relaxed min-h-[70px]"
+              className={`${ctrl} min-h-[110px] resize-y p-3.5 leading-relaxed`}
               placeholder="e.g. You are a professional sales consultant representing {{company_name}}."
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-bold text-foreground">Call Steps (in order)</label>
-            <div className="space-y-2.5">
+            <p className="text-[15px] font-semibold text-ds-ink">Call steps <span className="font-normal text-ds-ink-2">(in order)</span></p>
+            <p className="mb-3 text-[14px] text-ds-ink-2">Objective, qualification questions, objection handling, and closing, one step at a time.</p>
+            <ol className="space-y-3">
               {steps.map((s, i) => (
-                <div key={s.id} className="flex gap-2 rounded-lg border border-border bg-background p-3">
-                  <div className="flex flex-col items-center gap-1 pt-1">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">{i + 1}</span>
-                    <button type="button" onClick={() => moveStep(s.id, -1)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
-                      <ArrowUp size={14} />
+                <li key={s.id} className="flex gap-3 rounded-xl border border-ds-line bg-ds-surface/70 p-3.5">
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-[14px] font-semibold text-ds-primary">{i + 1}</span>
+                    <button type="button" onClick={() => moveStep(s.id, -1)} disabled={i === 0} aria-label={`Move step ${i + 1} up`} className="flex h-7 w-7 items-center justify-center rounded text-ds-ink-3 hover:bg-ds-bg hover:text-ds-ink disabled:opacity-30">
+                      <ArrowUp size={15} />
                     </button>
-                    <button type="button" onClick={() => moveStep(s.id, 1)} disabled={i === steps.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
-                      <ArrowDown size={14} />
+                    <button type="button" onClick={() => moveStep(s.id, 1)} disabled={i === steps.length - 1} aria-label={`Move step ${i + 1} down`} className="flex h-7 w-7 items-center justify-center rounded text-ds-ink-3 hover:bg-ds-bg hover:text-ds-ink disabled:opacity-30">
+                      <ArrowDown size={15} />
                     </button>
                   </div>
-                  <div className="flex-1 space-y-1.5">
+                  <div className="min-w-0 flex-1 space-y-2">
                     <input
+                      aria-label={`Step ${i + 1} name`}
                       value={s.title}
                       onChange={(e) => updateStep(s.id, 'title', e.target.value)}
-                      placeholder="Step name (e.g. Discovery Question)"
-                      className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Step name (e.g. Discovery question)"
+                      className={`${ctrl} h-10 px-3 font-semibold`}
                     />
                     <textarea
+                      aria-label={`Step ${i + 1} instruction`}
                       value={s.instruction}
                       onChange={(e) => updateStep(s.id, 'instruction', e.target.value)}
                       placeholder="What should the agent say or ask in this step?"
-                      className="w-full resize-y rounded-md border border-border bg-card px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-primary min-h-[56px]"
+                      className={`${ctrl} min-h-[84px] resize-y px-3 py-2.5 leading-relaxed`}
                     />
                   </div>
-                  <button type="button" onClick={() => removeStep(s.id)} className="self-start text-muted-foreground hover:text-red-500">
-                    <Trash2 size={15} />
+                  <button type="button" onClick={() => removeStep(s.id)} aria-label={`Remove step ${i + 1}`} className="flex h-8 w-8 items-center justify-center self-start rounded-lg text-ds-ink-3 hover:bg-ds-error-soft hover:text-ds-error-ink">
+                    <Trash2 size={16} />
                   </button>
-                </div>
+                </li>
               ))}
-            </div>
-            <button
-              type="button"
-              onClick={addStep}
-              className="mt-2.5 flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary"
-            >
-              <Plus size={14} /> Add Step
+            </ol>
+            <button type="button" onClick={addStep} className="mt-3 flex h-10 items-center gap-1.5 rounded-xl border border-dashed border-ds-line-strong px-4 text-[15px] font-semibold text-ds-ink-2 hover:border-ds-primary hover:text-ds-primary">
+              <Plus size={16} /> Add step
             </button>
           </div>
 
-          {showPreview && (
-            <div>
-              <label className="mb-1.5 block text-xs font-bold text-foreground">Generated prompt (this is what gets saved)</label>
-              <pre className="w-full whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 text-xs font-mono leading-relaxed text-muted-foreground">{compileFlow(role, steps)}</pre>
-            </div>
-          )}
+          <div>
+            <button type="button" onClick={() => setShowPreview(v => !v)} aria-pressed={showPreview} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[14px] font-semibold text-ds-ink-2 hover:bg-ds-surface hover:text-ds-ink">
+              {showPreview ? <EyeOff size={15} /> : <Eye size={15} />} {showPreview ? 'Hide' : 'View'} generated prompt
+            </button>
+            {showPreview && (
+              <div className="mt-2">
+                <p className="mb-1.5 text-[15px] font-semibold text-ds-ink">Generated prompt <span className="font-normal text-ds-ink-2">(this is what gets saved)</span></p>
+                <pre className="w-full whitespace-pre-wrap rounded-xl border border-ds-line bg-ds-surface p-3.5 font-mono text-[13px] leading-relaxed text-ds-ink-2">{compileFlow(role, steps)}</pre>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

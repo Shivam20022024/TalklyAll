@@ -56,7 +56,7 @@ export default function LoginPage() {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
             <Bot size={20} />
           </div>
-          <span className="text-lg font-bold tracking-tight">Voice AI</span>
+          <span className="text-lg font-bold tracking-tight">TalklyAI</span>
         </div>
 
         <div className="relative max-w-md">
@@ -89,7 +89,7 @@ export default function LoginPage() {
           </ul>
         </div>
 
-        <p className="relative text-xs text-primary-foreground/60">Autonomous Enterprise Voice Platform</p>
+        <p className="relative text-xs text-primary-foreground/60">A product by Novalantis</p>
       </div>
 
       {/* Login form */}
@@ -100,7 +100,7 @@ export default function LoginPage() {
               <Bot size={24} />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Sign in to your Voice AI workspace</p>
+            <p className="mt-1 text-sm text-muted-foreground">Sign in to your TalklyAI workspace</p>
           </div>
 
           {error && (
@@ -178,7 +178,7 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-6 text-center text-sm text-muted-foreground lg:hidden">
-            Powered by <span className="font-semibold text-foreground">Voice AI</span>
+            A product by <span className="font-semibold text-foreground">Novalantis</span>
           </p>
         </div>
       </div>

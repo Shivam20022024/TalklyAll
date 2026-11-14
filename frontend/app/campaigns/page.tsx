@@ -2,28 +2,24 @@
 
 import { useEffect, useState, useRef } from 'react'
 import {
-  Check,
-  Download,
-  Plus,
-  Search,
-  Zap,
-  Loader2,
-  X,
-  Upload,
-  CreditCard,
-  Building2,
-  Stethoscope,
-  GraduationCap,
-  Briefcase,
-  Banknote,
-  ShoppingBag,
-  Layers,
-  Filter
+  Plus, Zap, Loader2, Upload, CreditCard, Building2,
+  Stethoscope, GraduationCap, Briefcase, Banknote,
+  ShoppingBag, Search, Users, Megaphone, CirclePause,
+  LayoutGrid, CheckCircle2, Download, ChevronDown
 } from 'lucide-react'
+import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi, getAuthToken, API_BASE_URL } from '@/lib/api'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { INDUSTRY_CONFIGS, IndustryKey } from '@/lib/industry'
+import { LeadsPager } from '@/components/leads/LeadsPager'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui/States'
+import { Alert } from '@/components/ui/Alert'
+import { Dialog } from '@/components/ui/Dialog'
+import { buttonClass } from '@/components/ui/button'
+import { Checkbox, Field, Input } from '@/components/ui/Field'
+import { Select } from '@/components/ui/Select'
 
 const INDUSTRY_ICONS: Record<string, any> = {
   real_estate: Building2,
@@ -41,9 +37,11 @@ export default function CampaignsPage() {
 
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [industryFilter, setIndustryFilter] = useState<string>('all') // presentation filter over the loaded campaigns
   const [selected, setSelected] = useState<string[]>([])
-  const [verticalFilter, setVerticalFilter] = useState<string>('active') // 'active', 'all', or specific key
   const [showModal, setShowModal] = useState(false)
   const [newCampaign, setNewCampaign] = useState<{ name: string; offering: string; industry: IndustryKey }>({
     name: '',
@@ -60,8 +58,10 @@ export default function CampaignsPage() {
     try {
       const data = await fetchApi('/api/v1/campaigns')
       setCampaigns(data || [])
+      setLoadFailed(false)
     } catch (e) {
       console.error(e)
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -71,29 +71,29 @@ export default function CampaignsPage() {
     loadCampaigns()
   }, [])
 
-  // Auto-sync newCampaign default industry when user loads
   useEffect(() => {
     if (user?.industry && INDUSTRY_CONFIGS[user.industry as IndustryKey]) {
       setNewCampaign((prev) => ({ ...prev, industry: user.industry as IndustryKey }))
     }
   }, [user?.industry])
 
-  // Compute counts
-  const activeCount = campaigns.filter((c) => c.industry === activeIndustry).length
-  const otherIndustries = Array.from(
-    new Set(campaigns.map((c) => c.industry).filter((ind): ind is string => Boolean(ind) && ind !== activeIndustry))
-  )
+  // Status-based counts
+  const activeCount = campaigns.filter((c) => (c.status || 'Active').toLowerCase() === 'active').length
+  const pausedCount = campaigns.filter((c) => (c.status || '').toLowerCase() === 'paused').length
+  const completedCount = campaigns.filter((c) => (c.status || '').toLowerCase() === 'completed').length
 
   // Filter campaigns
   const visibleCampaigns = campaigns
     .filter((c) => {
-      if (verticalFilter === 'active') return c.industry === activeIndustry
-      if (verticalFilter === 'all') return true
-      return c.industry === verticalFilter
+      if (statusFilter === 'all') return true
+      return (c.status || 'Active').toLowerCase() === statusFilter.toLowerCase()
     })
-    .filter((c) => c.name?.toLowerCase().includes(query.toLowerCase()) || c.offering?.toLowerCase().includes(query.toLowerCase()) || c.property?.toLowerCase().includes(query.toLowerCase()))
-
-  const toggleCampaign = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+    .filter((c) => industryFilter === 'all' || ((c.industry as string) || activeIndustry) === industryFilter)
+    .filter((c) =>
+      c.name?.toLowerCase().includes(query.toLowerCase()) ||
+      c.offering?.toLowerCase().includes(query.toLowerCase()) ||
+      c.property?.toLowerCase().includes(query.toLowerCase())
+    )
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -105,7 +105,6 @@ export default function CampaignsPage() {
       })
       setShowModal(false)
       setNewCampaign({ name: '', offering: '', industry: activeIndustry })
-      setVerticalFilter(newCampaign.industry || 'active')
       loadCampaigns()
     } catch (e) {
       alert('Failed to create campaign')
@@ -114,12 +113,8 @@ export default function CampaignsPage() {
     }
   }
 
-  const openCreateModal = (targetIndustry?: IndustryKey) => {
-    setNewCampaign({
-      name: '',
-      offering: '',
-      industry: targetIndustry || activeIndustry
-    })
+  const openCreateModal = () => {
+    setNewCampaign({ name: '', offering: '', industry: activeIndustry })
     setShowModal(true)
   }
 
@@ -131,21 +126,17 @@ export default function CampaignsPage() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !uploadingCampaignId) return
-
     try {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('campaign_id', uploadingCampaignId)
-
       const token = getAuthToken()
       const response = await fetch(`${API_BASE_URL}/api/v1/leads/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       })
-
       if (!response.ok) throw new Error('Upload failed')
-
       const result = await response.json()
       alert(`Successfully uploaded ${result.inserted_count} leads to the campaign!`)
       loadCampaigns()
@@ -161,9 +152,7 @@ export default function CampaignsPage() {
     try {
       await fetchApi('/api/v1/calls/trigger-campaigns', {
         method: 'POST',
-        body: JSON.stringify({
-          campaign_ids: selected
-        })
+        body: JSON.stringify({ campaign_ids: selected })
       })
       alert('Calls dispatched successfully!')
       setSelected([])
@@ -174,12 +163,14 @@ export default function CampaignsPage() {
 
   const handleDownload = () => {
     const csv = ['Campaign,Offering,Industry,Leads,Calls,Connected,Interested,Status']
-    visibleCampaigns.forEach((c) => csv.push(`"${c.name}","${c.offering || c.property || ''}","${c.industry || ''}",${c.leads || 0},${c.calls || 0},${c.connected || 0},${c.interested || 0},${c.status || 'Active'}`))
+    visibleCampaigns.forEach((c) =>
+      csv.push(`"${c.name}","${c.offering || c.property || ''}","${c.industry || ''}",${c.leads || 0},${c.calls || 0},${c.connected || 0},${c.interested || 0},${c.status || 'Active'}`)
+    )
     const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `campaigns_${verticalFilter}_export.csv`
+    a.download = `campaigns_export.csv`
     a.click()
   }
 
@@ -195,319 +186,435 @@ export default function CampaignsPage() {
     }
   }
 
-  const ActiveIcon = INDUSTRY_ICONS[activeIndustry] || CreditCard
+  const sectorLabel = (ind: string) => INDUSTRY_CONFIGS[ind as IndustryKey]?.shortLabel || ind
+
+  const conversionRate = (c: any) => {
+    const leads = Number(c.leads) || 0
+    const booked = Number(c.interested) || 0
+    if (!leads) return '0%'
+    return `${Math.round((booked / leads) * 100)}%`
+  }
+
+  // ── presentation-only state and helpers (no request, payload or handler is changed) ──
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 10
+
+  type CampTab = 'all' | 'active' | 'paused' | 'completed'
+  const CAMP_TABS: { key: CampTab; label: string; count: number }[] = [
+    { key: 'all', label: 'All Campaigns', count: campaigns.length },
+    { key: 'active', label: 'Active', count: activeCount },
+    { key: 'paused', label: 'Paused', count: pausedCount },
+    { key: 'completed', label: 'Completed', count: completedCount },
+  ]
+  // Industries that actually occur in the loaded campaigns (the filter only offers what the data supports).
+  const industryOptions = Array.from(new Set(campaigns.map((c) => (c.industry as string) || activeIndustry).filter(Boolean)))
+  const filtersActive = Boolean(query || statusFilter !== 'all' || industryFilter !== 'all')
+
+  // Page back to the first page whenever the visible list changes, and never keep a selection the user can no longer see.
+  const visibleKey = visibleCampaigns.map((c) => c.campaign_id).join('|')
+  useEffect(() => {
+    setPage(0)
+    const ids = new Set(visibleCampaigns.map((c) => c.campaign_id))
+    setSelected((prev) => (prev.every((id) => ids.has(id)) ? prev : prev.filter((id) => ids.has(id))))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, statusFilter, industryFilter, visibleKey])
+
+  const pageCount = Math.max(1, Math.ceil(visibleCampaigns.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageCampaigns = visibleCampaigns.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  const pageIds = pageCampaigns.map((c) => c.campaign_id)
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.includes(id))
+  const toggleCampaign = (id: string, checked: boolean) =>
+    setSelected((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
+  const togglePage = (checked: boolean) =>
+    setSelected((prev) => (checked ? Array.from(new Set([...prev, ...pageIds])) : prev.filter((id) => !pageIds.includes(id))))
+  const clearFilters = () => { setQuery(''); setStatusFilter('all'); setIndustryFilter('all') }
+
+  const kpiReady = !loading && !(loadFailed && campaigns.length === 0)
+  const KPI_CARDS = [
+    { label: 'Total Campaigns', value: campaigns.length, Icon: LayoutGrid, tile: 'bg-blue-50 text-ds-primary' },
+    { label: 'Active', value: activeCount, Icon: Zap, tile: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Paused', value: pausedCount, Icon: CirclePause, tile: 'bg-orange-50 text-orange-500' },
+    { label: 'Completed', value: completedCount, Icon: CheckCircle2, tile: 'bg-violet-50 text-ds-accent' },
+  ]
+  const controlCls =
+    'h-10 rounded-lg border border-ds-line bg-ds-bg text-[15px] text-ds-ink outline-none transition focus-visible:border-ds-primary focus-visible:ring-2 focus-visible:ring-ds-primary/20'
+  const headBtn =
+    'inline-flex h-11 items-center gap-2 rounded-xl border border-ds-line bg-ds-bg px-4 text-[15px] font-semibold text-ds-ink shadow-sm transition-colors hover:bg-ds-surface disabled:cursor-not-allowed disabled:opacity-50'
+  const rowAction =
+    'inline-flex h-9 w-9 items-center justify-center rounded-lg text-ds-ink-2 transition-colors hover:bg-ds-surface hover:text-ds-primary disabled:opacity-50'
+  const th = 'px-4 py-3 text-[13px] font-semibold uppercase tracking-wider text-ds-ink-2'
+  const industryPill = (ind: IndustryKey, Icon: any) => (
+    <span className="inline-flex items-center gap-2 rounded-full border border-ds-line bg-ds-bg px-3 py-1.5 text-[15px] font-medium text-ds-ink">
+      <Icon size={16} strokeWidth={1.75} className="text-ds-ink-2" aria-hidden="true" />
+      {sectorLabel(ind)}
+    </span>
+  )
 
   return (
     <AppLayout title="Campaigns">
-      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="eyebrow text-primary">Workspace / Campaigns</p>
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
-              <ActiveIcon size={12} />
-              {INDUSTRY_CONFIGS[activeIndustry]?.label || activeIndustry}
-            </span>
-          </div>
-          <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em] sm:text-[34px]">Campaign Management</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Manage and launch your industry-tailored AI outbound calling campaigns.</p>
+      {/* Page header */}
+      <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-ds-primary-soft px-3 py-1.5 text-[14px] font-semibold text-ds-primary">
+            <Megaphone size={15} strokeWidth={2} aria-hidden="true" />
+            Campaigns
+          </span>
+          <h1 className="mt-2 text-[28px] font-bold leading-tight tracking-tight text-ds-ink sm:text-[30px]">Campaign Management</h1>
+          <p className="mt-1 text-[16px] text-ds-ink-2">Manage and track your outreach campaigns.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-3 lg:shrink-0">
           <button
-            onClick={() => openCreateModal(activeIndustry)}
-            className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90"
+            onClick={handleStartCalling}
+            disabled={selected.length === 0}
+            title={selected.length === 0 ? 'Select one or more campaigns first' : 'Calls New and No Answer leads in the selected campaigns'}
+            className={headBtn}
           >
-            <Plus size={15} />Create {INDUSTRY_CONFIGS[activeIndustry]?.shortLabel || ''} Campaign
+            <Zap size={17} strokeWidth={1.75} />Start AI Calling
+          </button>
+          <button onClick={handleDownload} title="Export as CSV" className={headBtn}>
+            <Download size={17} strokeWidth={1.75} />Export
+          </button>
+          <button
+            onClick={openCreateModal}
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-ds-primary px-5 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-ds-primary-hover active:scale-[0.98]"
+          >
+            <Plus size={18} strokeWidth={2.25} />Create Campaign
           </button>
         </div>
+      </header>
+
+      {/* Summary stat cards */}
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Campaign summary">
+        {KPI_CARDS.map(({ label, value, Icon, tile }) => (
+          <div key={label} className="flex items-center gap-3.5 rounded-[14px] border border-ds-line bg-ds-bg px-4 py-4 shadow-sm sm:gap-4 sm:px-5">
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl sm:h-14 sm:w-14 ${tile}`} aria-hidden="true">
+              <Icon size={24} strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[15px] font-medium leading-snug text-ds-ink-2 sm:text-[16px]">{label}</p>
+              <p className="mt-0.5 text-[28px] font-bold leading-none tracking-tight text-ds-ink tabular-nums sm:text-[32px]">{kpiReady ? value.toLocaleString() : '—'}</p>
+            </div>
+          </div>
+        ))}
       </section>
 
-      <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-sm">
-        {/* Industry Sector Filter Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 mb-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mr-1">
-              <Filter size={13} className="text-primary" /> Sector Filter:
-            </span>
-
-            {/* Active Company Sector Tab */}
-            <button
-              onClick={() => setVerticalFilter('active')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${verticalFilter === 'active'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+      {/* Main panel */}
+      <div className="rounded-[14px] border border-ds-line bg-ds-bg shadow-sm">
+        {/* Status tabs (same filter as the status dropdown) */}
+        <div role="tablist" aria-label="Campaign status" className="flex items-end gap-1 overflow-x-auto border-b border-ds-line px-3 sm:px-5">
+          {CAMP_TABS.map(({ key, label, count }) => {
+            const isActive = statusFilter === key
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setStatusFilter(key)}
+                className={`relative -mb-px flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-[15px] font-semibold transition-colors sm:px-4 sm:text-[16px] ${
+                  isActive ? 'border-ds-primary text-ds-primary' : 'border-transparent text-ds-ink-2 hover:text-ds-ink'
                 }`}
-            >
-              <ActiveIcon size={13} />
-              {INDUSTRY_CONFIGS[activeIndustry]?.shortLabel || 'Active Vertical'} ({activeCount})
-              <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-extrabold uppercase ${verticalFilter === 'active' ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-primary/20 text-primary'}`}>
-                Company Default
-              </span>
-            </button>
+              >
+                {label}
+                <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[13px] font-semibold tabular-nums ${isActive ? 'bg-ds-primary text-white' : 'bg-ds-surface text-ds-ink-2'}`}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
 
-            {/* Other Industries with Existing Campaigns (e.g. Real Estate) */}
-            {otherIndustries.map((ind) => {
-              const count = campaigns.filter((c) => c.industry === ind).length
-              const label = INDUSTRY_CONFIGS[ind as IndustryKey]?.shortLabel || ind
-              const Icon = INDUSTRY_ICONS[ind] || Building2
-              return (
-                <button
-                  key={ind}
-                  onClick={() => setVerticalFilter(ind)}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${verticalFilter === ind
-                    ? 'bg-foreground text-background shadow-sm'
-                    : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                    }`}
-                >
-                  <Icon size={13} />
-                  {label} ({count})
-                </button>
-              )
-            })}
-
-            {/* View All Campaigns Tab */}
-            <button
-              onClick={() => setVerticalFilter('all')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${verticalFilter === 'all'
-                ? 'bg-foreground text-background shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-            >
-              <Layers size={13} />
-              All ({campaigns.length})
-            </button>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2.5 px-3 py-3.5 sm:px-5">
+          <div className="relative w-full sm:min-w-[260px] sm:max-w-[440px] sm:flex-1">
+            <Search size={17} strokeWidth={1.75} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ds-ink-3" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search campaigns..."
+              aria-label="Search campaigns"
+              className={`${controlCls} w-full pl-10 pr-3 placeholder:text-ds-ink-3 [&::-webkit-search-cancel-button]:hidden`}
+            />
           </div>
-
-          {/* Search & Export Controls */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-primary" size={14} />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search campaigns..."
-                className="h-9 w-48 rounded-lg border border-border bg-background pl-9 pr-3 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <button
-              onClick={handleDownload}
-              className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              title="Export CSV"
+          <div className="relative min-w-[140px] flex-1 sm:flex-none">
+            <select
+              value={industryFilter}
+              onChange={(e) => setIndustryFilter(e.target.value)}
+              aria-label="Filter by industry"
+              className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium sm:w-auto`}
             >
-              <Download size={15} />
+              <option value="all">All Industries</option>
+              {industryOptions.map((ind) => (
+                <option key={ind} value={ind}>{sectorLabel(ind)}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
+          </div>
+          <div className="relative min-w-[140px] flex-1 sm:flex-none">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filter by status"
+              className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium sm:w-auto`}
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="completed">Completed</option>
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
+          </div>
+          <div className="flex w-full justify-end sm:ml-auto sm:w-auto">
+            <button onClick={handleDownload} title="Export as CSV" className={`${controlCls} inline-flex items-center gap-2 bg-ds-surface px-3.5 font-semibold hover:bg-ds-line/40`}>
+              <Download size={16} strokeWidth={1.75} />Export
             </button>
           </div>
         </div>
 
-        {/* Content Section: Empty State or Campaigns Table */}
-        {loading ? (
-          <div className="py-16 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
-            <Loader2 size={24} className="animate-spin text-primary" />
-            Loading campaigns...
-          </div>
-        ) : verticalFilter === 'active' && activeCount === 0 ? (
-          /* Empty State for Active Industry (e.g. BFSI has no campaigns yet) */
-          <div className="my-6 rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mb-3 border border-amber-500/20">
-              <ActiveIcon size={28} />
-            </div>
-            <h3 className="text-base font-bold text-foreground">
-              No {INDUSTRY_CONFIGS[activeIndustry]?.label} Campaigns Found
-            </h3>
-            <p className="mt-1.5 text-xs text-muted-foreground max-w-lg mx-auto">
-              Your company profile is set to <strong>{INDUSTRY_CONFIGS[activeIndustry]?.label}</strong>. Your {campaigns.length} previous Real Estate campaigns are preserved under the <button onClick={() => setVerticalFilter('real_estate')} className="text-primary underline font-semibold">Real Estate ({campaigns.length}) tab</button>.
-            </p>
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-              <button
-                onClick={() => openCreateModal(activeIndustry)}
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90"
-              >
-                <Plus size={14} /> Create First {INDUSTRY_CONFIGS[activeIndustry]?.shortLabel} Campaign
-              </button>
-              <button
-                onClick={() => setVerticalFilter('all')}
-                className="rounded-lg border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
-              >
-                View Previous Campaigns ({campaigns.length})
-              </button>
-            </div>
-          </div>
-        ) : visibleCampaigns.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">
-            No campaigns match your current filters.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-border h-12 text-sm font-bold uppercase tracking-wider text-foreground">
-                  <th className="px-4 font-semibold w-[32%]">Campaign & Offering</th>
-                  <th className="px-2 text-center font-semibold w-[8%]">Leads</th>
-                  <th className="px-2 text-center font-semibold w-[8%]">Calls</th>
-                  <th className="px-2 text-center font-semibold w-[10%]">Connected</th>
-                  <th className="px-2 text-center font-semibold w-[10%]">Interested</th>
-                  <th className="px-2 text-center font-semibold w-[10%]">Conversion</th>
-                  <th className="px-2 font-semibold w-[10%]">Status</th>
-                  <th className="px-4 text-right font-semibold w-[12%]">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {visibleCampaigns.map((campaign) => {
-                  const campInd = (campaign.industry as IndustryKey) || 'real_estate'
-                  const CampIcon = INDUSTRY_ICONS[campInd] || Building2
-                  return (
-                    <tr key={campaign.campaign_id} className="group h-16 hover:bg-muted/30 transition-colors">
-                      <td className="px-4">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => toggleCampaign(campaign.campaign_id)}
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${selected.includes(campaign.campaign_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:border-primary/50 bg-background'}`}
-                          >
-                            {selected.includes(campaign.campaign_id) && <Check size={12} strokeWidth={3} />}
-                          </button>
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-foreground truncate max-w-[200px]" title={campaign.name}>
-                                {campaign.name}
-                              </span>
-                              {/* Industry Badge */}
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${campInd === 'bfsi' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                                campInd === 'healthcare' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                  campInd === 'edtech' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                                    campInd === 'real_estate' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' :
-                                      'bg-primary/10 text-primary'
-                                }`}>
-                                <CampIcon size={10} />
-                                {INDUSTRY_CONFIGS[campInd]?.shortLabel || campInd}
-                              </span>
-                            </div>
-                            <span className="text-xs font-medium text-muted-foreground truncate max-w-[220px]" title={campaign.offering || campaign.property}>
-                              {campaign.offering || campaign.property || 'General Campaign'}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-2 text-center text-sm font-medium">{campaign.leads || 0}</td>
-                      <td className="px-2 text-center text-sm font-medium">{campaign.calls || 0}</td>
-                      <td className="px-2 text-center text-sm font-medium">{campaign.connected || 0}</td>
-                      <td className="px-2 text-center text-sm font-medium">{campaign.interested || 0}</td>
-                      <td className="px-2 text-center text-sm font-bold text-primary">{campaign.conversion || '0%'}</td>
-                      <td className="px-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold tracking-wide text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          {campaign.status || 'Active'}
-                        </span>
-                      </td>
-                      <td className="px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <a
-                            href={`/leads?campaign_id=${campaign.campaign_id}`}
-                            className="inline-flex h-8 items-center justify-center whitespace-nowrap gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition-opacity"
-                          >
-                            View Leads
-                          </a>
-                          <button
-                            onClick={() => handleUploadClick(campaign.campaign_id)}
-                            disabled={uploadingCampaignId === campaign.campaign_id}
-                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
-                            title="Upload Leads"
-                          >
-                            {uploadingCampaignId === campaign.campaign_id ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {/* Stale data warning */}
+        {loadFailed && campaigns.length > 0 && (
+          <div className="border-t border-ds-line px-3 py-2.5 sm:px-5">
+            <Alert tone="warning" title="Couldn't refresh campaigns">
+              The list below is from the last successful load. Reload the page to try again.
+            </Alert>
           </div>
         )}
 
-        {/* Batch action footer */}
-        <div className="mt-4 flex flex-col items-start justify-between gap-3 border-t border-border pt-4 sm:flex-row sm:items-center">
-          <p className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">{selected.length} campaigns selected</span>
-          </p>
-          <button onClick={handleStartCalling} disabled={selected.length === 0} className="flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2.5 text-xs font-semibold text-background hover:opacity-90 disabled:opacity-50">
-            <Zap size={14} />Start AI calling
-          </button>
-        </div>
-      </section>
+        {/* Table content */}
+        {loading ? (
+          <div className="border-t border-ds-line p-6">
+            <LoadingState label="Loading campaigns…">
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            </LoadingState>
+          </div>
+        ) : loadFailed && campaigns.length === 0 ? (
+          <div className="border-t border-ds-line p-6">
+            <ErrorState
+              title="Campaigns couldn't be loaded"
+              description="The request failed. Reload the page to try again."
+            />
+          </div>
+        ) : visibleCampaigns.length === 0 ? (
+          <div className="border-t border-ds-line p-6">
+            <EmptyState
+              title={filtersActive ? 'No campaigns match these filters' : 'No campaigns yet'}
+              description={filtersActive ? undefined : 'Create your first campaign, then upload its leads.'}
+              action={
+                filtersActive ? (
+                  <button onClick={clearFilters} className={buttonClass('outline', 'md')}>Clear filters</button>
+                ) : (
+                  <button onClick={openCreateModal} className={buttonClass('primary', 'md')}>
+                    <Plus size={15} strokeWidth={1.75} />Create Campaign
+                  </button>
+                )
+              }
+            />
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div role="region" aria-label="Campaigns table" tabIndex={0} className="hidden overflow-x-auto border-t border-ds-line outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ds-primary xl:block">
+              <table className="w-full min-w-[900px] border-collapse text-[15px]">
+                <thead>
+                  <tr className="border-b border-ds-line bg-ds-surface">
+                    <th scope="col" className="w-14 py-3 pl-5 pr-2 text-left">
+                      <Checkbox className="scale-125" aria-label="Select all campaigns on this page" checked={allPageSelected} onChange={(e) => togglePage(e.target.checked)} />
+                    </th>
+                    <th scope="col" className={`${th} text-left`}>Campaign Name</th>
+                    <th scope="col" className={`${th} text-left`}>Industry / Goal</th>
+                    <th scope="col" className={`${th} text-right`}>Leads</th>
+                    <th scope="col" className={`${th} text-right`}>Connected</th>
+                    <th scope="col" className={`${th} text-right`}>Bookings</th>
+                    <th scope="col" className={`${th} text-right`}>Rate</th>
+                    <th scope="col" className={`${th} text-left`}>Status</th>
+                    <th scope="col" className={`${th} pr-5 text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageCampaigns.map((campaign) => {
+                    const campInd = (campaign.industry as IndustryKey) || activeIndustry
+                    const CampIcon = INDUSTRY_ICONS[campInd] || Building2
+                    const isSelected = selected.includes(campaign.campaign_id)
+                    return (
+                      <tr key={campaign.campaign_id} className={`group border-b border-ds-line transition-colors last:border-b-0 ${isSelected ? 'bg-ds-primary-soft/60' : 'hover:bg-ds-surface/70'}`}>
+                        <td className="w-14 py-3 pl-5 pr-2 align-middle">
+                          <Checkbox className="scale-125" aria-label={`Select ${campaign.name}`} checked={isSelected} onChange={(e) => toggleCampaign(campaign.campaign_id, e.target.checked)} />
+                        </td>
+                        <td className="max-w-[300px] px-4 py-3 align-middle">
+                          <p className="truncate text-[16px] font-semibold text-ds-ink" title={campaign.name}>{campaign.name}</p>
+                          <p className="truncate text-[14px] text-ds-ink-2" title={campaign.offering || campaign.property}>
+                            {campaign.offering || campaign.property || 'No offering set'}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 align-middle">{industryPill(campInd, CampIcon)}</td>
+                        <td className="px-4 py-3 text-right align-middle font-medium tabular-nums text-ds-ink">{campaign.leads || 0}</td>
+                        <td className="px-4 py-3 text-right align-middle tabular-nums text-ds-ink">{campaign.connected || 0}</td>
+                        <td className="px-4 py-3 text-right align-middle tabular-nums text-ds-ink">{campaign.interested || 0}</td>
+                        <td className="px-4 py-3 text-right align-middle font-medium tabular-nums text-ds-ink">{campaign.conversion || conversionRate(campaign)}</td>
+                        <td className="px-4 py-3 align-middle">
+                          <StatusBadge status={campaign.status || 'Active'} className="px-3 py-1 text-[15px]" />
+                        </td>
+                        <td className="py-3 pl-4 pr-4 align-middle">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleUploadClick(campaign.campaign_id)}
+                              disabled={uploadingCampaignId === campaign.campaign_id}
+                              title="Upload leads"
+                              aria-label={`Upload leads to ${campaign.name}`}
+                              className={rowAction}
+                            >
+                              {uploadingCampaignId === campaign.campaign_id ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} strokeWidth={1.75} />}
+                            </button>
+                            <Link
+                              href={`/leads?campaign_id=${campaign.campaign_id}`}
+                              title="View leads"
+                              aria-label={`View leads for ${campaign.name}`}
+                              className={rowAction}
+                            >
+                              <Users size={18} strokeWidth={1.75} />
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
 
+            {/* Cards: phones and tablets */}
+            <div className="space-y-2.5 border-t border-ds-line p-3 xl:hidden">
+              <label className="flex items-center gap-2.5 px-1 text-[15px] text-ds-ink-2">
+                <Checkbox aria-label="Select all campaigns on this page" checked={allPageSelected} onChange={(e) => togglePage(e.target.checked)} />
+                Select page
+              </label>
+              {pageCampaigns.map((campaign) => {
+                const campInd = (campaign.industry as IndustryKey) || activeIndustry
+                const CampIcon = INDUSTRY_ICONS[campInd] || Building2
+                const isSelected = selected.includes(campaign.campaign_id)
+                return (
+                  <article key={campaign.campaign_id} className={`rounded-xl border p-3.5 ${isSelected ? 'border-ds-primary/40 bg-ds-primary-soft/50' : 'border-ds-line bg-ds-bg'}`}>
+                    <div className="flex items-start gap-3">
+                      <Checkbox className="mt-1" aria-label={`Select ${campaign.name}`} checked={isSelected} onChange={(e) => toggleCampaign(campaign.campaign_id, e.target.checked)} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-[16px] font-semibold text-ds-ink">{campaign.name}</p>
+                            <p className="truncate text-[14px] text-ds-ink-2">{campaign.offering || campaign.property || 'No offering set'}</p>
+                          </div>
+                          <StatusBadge status={campaign.status || 'Active'} className="shrink-0 px-2.5 py-0.5 text-[14px]" />
+                        </div>
+                        <div className="mt-2.5">{industryPill(campInd, CampIcon)}</div>
+                        <dl className="mt-3 grid grid-cols-4 gap-1.5 text-center">
+                          {[
+                            ['Leads', campaign.leads || 0],
+                            ['Connected', campaign.connected || 0],
+                            ['Bookings', campaign.interested || 0],
+                            ['Rate', campaign.conversion || conversionRate(campaign)]
+                          ].map(([k, v]) => (
+                            <div key={k as string} className="rounded-lg bg-ds-surface px-1 py-2">
+                              <dt className="text-[12px] text-ds-ink-2 sm:text-[13px]">{k}</dt>
+                              <dd className="text-[15px] font-semibold tabular-nums text-ds-ink">{v}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <div className="mt-3 flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleUploadClick(campaign.campaign_id)}
+                            disabled={uploadingCampaignId === campaign.campaign_id}
+                            title="Upload leads"
+                            aria-label={`Upload leads to ${campaign.name}`}
+                            className={rowAction}
+                          >
+                            {uploadingCampaignId === campaign.campaign_id ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} strokeWidth={1.75} />}
+                          </button>
+                          <Link href={`/leads?campaign_id=${campaign.campaign_id}`} aria-label={`View leads for ${campaign.name}`} title="View leads" className={rowAction}>
+                            <Users size={18} strokeWidth={1.75} />
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Footer: bulk action + pagination */}
+        <div className="flex flex-col gap-4 border-t border-ds-line px-3 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[15px] text-ds-ink-2">
+              <span className="font-semibold text-ds-ink tabular-nums">{selected.length}</span>{' '}
+              {selected.length === 1 ? 'campaign' : 'campaigns'} selected
+              <span className="block text-[14px] text-ds-ink-3 sm:inline"> <span className="hidden sm:inline">· </span>calls New and No Answer leads in selected campaigns</span>
+            </p>
+            <button
+              onClick={handleStartCalling}
+              disabled={selected.length === 0}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-ds-primary px-4 text-[15px] font-semibold text-white transition-colors hover:bg-ds-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Zap size={16} strokeWidth={1.75} />
+              Start AI calling
+            </button>
+          </div>
+          {!loading && visibleCampaigns.length > 0 && (
+            <div className="border-t border-ds-line pt-4">
+              <LeadsPager page={safePage} pageSize={PAGE_SIZE} total={visibleCampaigns.length} onChange={setPage} noun="campaigns" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Hidden file input for CSV upload */}
       <input type="file" accept=".csv,.xlsx,.xls,.tsv,.txt" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
 
-      {/* Create Campaign Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
-            <div className="flex justify-between items-center mb-5 border-b border-border pb-3">
-              <div>
-                <h2 className="text-lg font-bold">Create Campaign</h2>
-                <p className="text-xs text-muted-foreground">Launch a targeted AI calling campaign.</p>
-              </div>
-              <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
-            </div>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Industry / Sector</label>
-                <select
-                  value={newCampaign.industry}
-                  onChange={(e) => setNewCampaign({ ...newCampaign, industry: e.target.value as IndustryKey })}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="bfsi">BFSI & Lending Advisory</option>
-                  <option value="ecommerce">E-commerce & COD Confirmation</option>
-                  <option value="healthcare">Healthcare & Clinics</option>
-                  <option value="edtech">EdTech & Academies</option>
-                  <option value="real_estate">Real Estate & Developers</option>
-                  <option value="general_sales">B2B Sales & Outreach</option>
-                  <option value="collections">Collections & EMI Recovery</option>
-                </select>
-                <p className="text-[11px] text-muted-foreground mt-1">Configures speech intelligence, AI persona, and objections.</p>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Campaign Name</label>
-                <input
-                  required
-                  value={newCampaign.name}
-                  onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-                  placeholder={newCampaign.industry === 'ecommerce' ? 'e.g. COD Confirmation - Wireless Earbuds' : newCampaign.industry === 'bfsi' ? 'e.g. Q4 Personal Loan Campaign' : 'e.g. Summer Outreach Campaign'}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Campaign Offering / Product / Service</label>
-                <input
-                  value={newCampaign.offering}
-                  onChange={(e) => setNewCampaign({ ...newCampaign, offering: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-                  placeholder={getOfferingPlaceholder(newCampaign.industry)}
-                />
-                <p className="text-[11px] text-muted-foreground mt-1">Passed to the AI agent as <code className="text-primary font-mono text-[10px]">&#123;&#123;offering&#125;&#125;</code> variable.</p>
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="rounded-lg border border-border px-3.5 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                >
-                  {creating ? <Loader2 size={14} className="animate-spin" /> : 'Create Campaign'}
-                </button>
-              </div>
-            </form>
+      {/* Create Campaign Dialog */}
+      <Dialog open={showModal} onClose={() => setShowModal(false)} title="Create campaign" description="Launch a targeted AI calling campaign.">
+        <form onSubmit={handleCreate} className="space-y-4">
+          <Field label="Industry / sector" hint="Configures speech intelligence, AI persona, and objections.">
+            <Select data-autofocus value={newCampaign.industry} onChange={(e) => setNewCampaign({ ...newCampaign, industry: e.target.value as IndustryKey })}>
+              <option value="bfsi">BFSI &amp; Lending Advisory</option>
+              <option value="ecommerce">E-commerce &amp; COD Confirmation</option>
+              <option value="healthcare">Healthcare &amp; Clinics</option>
+              <option value="edtech">EdTech &amp; Academies</option>
+              <option value="real_estate">Real Estate &amp; Developers</option>
+              <option value="general_sales">B2B Sales &amp; Outreach</option>
+              <option value="collections">Collections &amp; EMI Recovery</option>
+            </Select>
+          </Field>
+          <Field label="Campaign name" required>
+            <Input
+              value={newCampaign.name}
+              onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
+              placeholder={
+                newCampaign.industry === 'ecommerce'
+                  ? 'e.g. COD Confirmation - Wireless Earbuds'
+                  : newCampaign.industry === 'bfsi'
+                  ? 'e.g. Q4 Personal Loan Campaign'
+                  : 'e.g. Summer Outreach Campaign'
+              }
+            />
+          </Field>
+          <Field label="Offering / product / service" hint={<>Passed to the AI agent as the <code className="font-mono text-ds-primary">{'{{offering}}'}</code> variable.</>}>
+            <Input
+              value={newCampaign.offering}
+              onChange={(e) => setNewCampaign({ ...newCampaign, offering: e.target.value })}
+              placeholder={getOfferingPlaceholder(newCampaign.industry)}
+            />
+          </Field>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setShowModal(false)} className={buttonClass('outline', 'md')}>Cancel</button>
+            <button type="submit" disabled={creating} className={buttonClass('primary', 'md')}>
+              {creating && <Loader2 size={15} className="animate-spin" />}
+              {creating ? 'Creating…' : 'Create campaign'}
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Dialog>
     </AppLayout>
   )
 }

@@ -1,11 +1,22 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, Check, X } from 'lucide-react';
+import { Loader2, Check, X, UserCheck } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatTile } from '@/components/ui/MetricCard';
+import { Segmented } from '@/components/ui/Segmented';
+import { Toolbar } from '@/components/ui/Toolbar';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { EmptyState, ErrorState } from '@/components/ui/States';
+import { buttonClass } from '@/components/ui/button';
+import { DataTable } from '@/components/admin/DataTable';
 import { fetchApi } from '@/lib/api';
+import { formatDate } from '@/lib/format';
 
 const STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'ALL'];
+// Display labels for the filter; the value sent to the API is still the upper-case status above.
+const LABELS = ['Pending', 'Approved', 'Rejected', 'All'] as const;
 
 export default function AccessRequestsPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -13,6 +24,8 @@ export default function AccessRequestsPage() {
   const [status, setStatus] = useState('PENDING');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  // Presentation-only: a failed load must not look like "no requests".
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -23,6 +36,9 @@ export default function AccessRequestsPage() {
       ]);
       setItems(list.items || []);
       setStats(s);
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -46,72 +62,74 @@ export default function AccessRequestsPage() {
     }
   };
 
+  const label = LABELS[Math.max(0, STATUSES.indexOf(status))];
+
   return (
     <AppLayout title="Access Requests">
-      <section>
-        <p className="eyebrow text-primary">Platform / Access Requests</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em]">Company Access Requests</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Approve a request to provision a company + its admin login.</p>
-      </section>
+      <PageHeader title="Access requests" description="Review requests for platform access. Approving a request creates the company and its admin login." />
 
       {stats && (
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[['Pending', stats.pending], ['Approved', stats.approved], ['Rejected', stats.rejected], ['Companies', stats.total_companies]].map(([l, v]) => (
-            <div key={l as string} className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{l}</p>
-              <p className="mt-1 text-2xl font-bold">{v as number}</p>
-            </div>
-          ))}
+        <section aria-label="Request totals" className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+          <StatTile label="Pending" value={stats.pending} hint="Waiting for review" />
+          <StatTile label="Approved" value={stats.approved} />
+          <StatTile label="Rejected" value={stats.rejected} />
+          <StatTile label="Companies" value={stats.total_companies} hint="On the platform" />
         </section>
       )}
 
-      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-        {STATUSES.map((s) => (
-          <button key={s} onClick={() => setStatus(s)} className={`rounded-md px-3 py-1.5 text-xs font-bold ${status === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>{s}</button>
-        ))}
-      </div>
+      <Toolbar>
+        <Segmented label="Request status" options={LABELS} value={label} onChange={(l) => setStatus(l.toUpperCase())} />
+        <span className="ml-auto text-xs tabular-nums text-ds-ink-3" aria-live="polite">
+          {loading ? 'Loading…' : loadFailed ? '' : `${items.length} ${items.length === 1 ? 'request' : 'requests'}`}
+        </span>
+      </Toolbar>
 
-      <section className="overflow-x-auto rounded-xl border border-border bg-card">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-border text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <th className="px-3 py-2">Company</th>
-              <th className="px-3 py-2">Contact</th>
-              <th className="px-3 py-2">Email</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {loading ? (
-              <tr><td colSpan={5} className="py-10 text-center text-muted-foreground">Loading…</td></tr>
-            ) : items.length === 0 ? (
-              <tr><td colSpan={5} className="py-10 text-center text-muted-foreground">No requests.</td></tr>
-            ) : (
-              items.map((r, i) => (
-                <tr key={r.id || r._id || i} className="hover:bg-muted/30">
-                  <td className="px-3 py-2 font-semibold">{r.company_name}</td>
-                  <td className="px-3 py-2">{r.contact_name || '—'}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{r.email}</td>
-                  <td className="px-3 py-2">{r.status}</td>
-                  <td className="px-3 py-2 text-right">
-                    {r.status === 'PENDING' && (
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => act(r.id, 'approve')} disabled={busy === r.id} className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                          {busy === r.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}Approve
-                        </button>
-                        <button onClick={() => act(r.id, 'reject')} disabled={busy === r.id} className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted disabled:opacity-50">
-                          <X size={13} />Reject
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </section>
+      <DataTable
+        label="Access requests"
+        minWidth={760}
+        rows={loadFailed ? [] : items}
+        rowKey={(r, i) => String(r.id || r._id || i)}
+        message={
+          loading && items.length === 0 ? (
+            <div role="status" className="flex items-center justify-center gap-2 py-10 text-[13px] text-ds-ink-2">
+              <Loader2 size={16} className="animate-spin" /> Loading requests…
+            </div>
+          ) : loadFailed ? (
+            <ErrorState title="Requests couldn’t be loaded" action={<button type="button" onClick={load} className={buttonClass('outline', 'md')}>Try again</button>} />
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={<UserCheck size={18} strokeWidth={1.75} />}
+              title={status === 'ALL' ? 'No requests yet' : `No ${label.toLowerCase()} requests`}
+              description={status === 'PENDING' ? 'New access requests will appear here.' : undefined}
+            />
+          ) : undefined
+        }
+        columns={[
+          { key: 'company_name', label: 'Company', className: 'font-medium' },
+          { key: 'contact_name', label: 'Contact', render: (r) => r.contact_name || <span className="text-ds-ink-3">—</span> },
+          { key: 'email', label: 'Email', render: (r) => <span className="text-ds-ink-2">{r.email || '—'}</span> },
+          { key: 'created_at', label: 'Requested', render: (r) => <span className="whitespace-nowrap text-ds-ink-2">{formatDate(r.created_at)}</span> },
+          { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+          {
+            key: 'actions',
+            label: 'Actions',
+            align: 'right',
+            render: (r) =>
+              r.status === 'PENDING' ? (
+                <div className="flex items-center justify-end gap-2">
+                  <button type="button" onClick={() => act(r.id, 'approve')} disabled={busy === r.id} aria-label={`Approve ${r.company_name}`} className={buttonClass('primary', 'sm')}>
+                    {busy === r.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={2} />}
+                    Approve
+                  </button>
+                  <button type="button" onClick={() => act(r.id, 'reject')} disabled={busy === r.id} aria-label={`Reject ${r.company_name}`} className={buttonClass('outline', 'sm')}>
+                    <X size={13} strokeWidth={2} />
+                    Reject
+                  </button>
+                </div>
+              ) : null,
+          },
+        ]}
+      />
     </AppLayout>
   );
 }

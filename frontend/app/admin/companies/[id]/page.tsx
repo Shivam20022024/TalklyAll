@@ -1,16 +1,40 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Loader2, Save } from 'lucide-react';
+import { ArrowLeft, Bot, Loader2, Phone, Save, Sparkles, Target, Users, Wallet } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 import { MetricCard } from '@/components/ui/MetricCard';
-import { Phone, Users, Target, Sparkles } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Panel, PanelHeader } from '@/components/ui/Panel';
+import { Tabs } from '@/components/ui/Tabs';
+import { Badge } from '@/components/ui/Badge';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Field, Input } from '@/components/ui/Field';
+import { buttonClass } from '@/components/ui/button';
+import { EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui/States';
+import { CompanyStatusBadge, ActiveBadge, RoleBadge } from '@/components/admin/StatusPills';
+import { DataTable, type Column } from '@/components/admin/DataTable';
 import { fetchApi } from '@/lib/api';
+import { formatDateTime } from '@/lib/format';
 import { useAuth } from '@/components/providers/AuthProvider';
 
 const TABS = ['Overview', 'Users', 'Calls', 'Campaigns', 'Leads', 'Analytics', 'Billing', 'Prompt'] as const;
 type Tab = (typeof TABS)[number];
+
+const endpointFor = (companyId: string, t: Tab): string | null => {
+  switch (t) {
+    case 'Overview': return `/api/v1/admin/companies/${companyId}/overview`;
+    case 'Users': return `/api/v1/admin/companies/${companyId}/users`;
+    case 'Calls': return `/api/v1/admin/companies/${companyId}/calls`;
+    case 'Campaigns': return `/api/v1/admin/companies/${companyId}/campaigns`;
+    case 'Leads': return `/api/v1/admin/companies/${companyId}/leads`;
+    case 'Analytics': return `/api/v1/admin/companies/${companyId}/analytics`;
+    case 'Billing': return `/api/v1/admin/companies/${companyId}/billing`;
+    case 'Prompt': return `/api/v1/admin/companies/${companyId}/prompt`;
+  }
+};
 
 export default function AdminCompanyDetail() {
   const params = useParams();
@@ -23,54 +47,70 @@ export default function AdminCompanyDetail() {
   const [loading, setLoading] = useState(true);
   const [agentDraft, setAgentDraft] = useState('');
   const [savingAgent, setSavingAgent] = useState(false);
+  // Presentation-only: failed loads (so an error is never shown as "No data").
+  const [companyFailed, setCompanyFailed] = useState(false);
+  const [tabFailed, setTabFailed] = useState(false);
+  const currentId = useRef(companyId);
+  currentId.current = companyId;
 
+  // Switching company (e.g. from the header selector) reuses this page, so a response for the
+  // previous company must never land on the new one: it would show the wrong company's details
+  // and agent ID, and Save would then write them to the new company.
   useEffect(() => {
+    let cancelled = false;
+    setCompany(null);
+    setAgentDraft('');
+    setCompanyFailed(false);
     fetchApi(`/api/v1/admin/companies/${companyId}`)
       .then((r) => {
+        if (cancelled) return;
         setCompany(r.data);
         setAgentDraft(r.data?.bolna_agent_id || '');
         setCompanyContext({ id: companyId, name: r.data?.name || 'Company' });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setCompanyFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [companyId, setCompanyContext]);
 
-  const endpointFor = (t: Tab): string | null => {
-    switch (t) {
-      case 'Overview': return `/api/v1/admin/companies/${companyId}/overview`;
-      case 'Users': return `/api/v1/admin/companies/${companyId}/users`;
-      case 'Calls': return `/api/v1/admin/companies/${companyId}/calls`;
-      case 'Campaigns': return `/api/v1/admin/companies/${companyId}/campaigns`;
-      case 'Leads': return `/api/v1/admin/companies/${companyId}/leads`;
-      case 'Analytics': return `/api/v1/admin/companies/${companyId}/analytics`;
-      case 'Billing': return `/api/v1/admin/companies/${companyId}/billing`;
-      case 'Prompt': return `/api/v1/admin/companies/${companyId}/prompt`;
-    }
-  };
-
-  const loadTab = useCallback(async (t: Tab) => {
+  // Same rule for the tab content: only the latest tab / company request may set the data.
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setTabData(null);
-    try {
-      const ep = endpointFor(t);
-      if (ep) {
-        const r = await fetchApi(ep);
-        setTabData(r.data);
-      }
-    } finally {
+    setTabFailed(false);
+    const ep = endpointFor(companyId, tab);
+    if (!ep) {
       setLoading(false);
+      return;
     }
-  }, [companyId]);
-
-  useEffect(() => { loadTab(tab); }, [tab, loadTab]);
+    fetchApi(ep)
+      .then((r) => {
+        if (!cancelled) setTabData(r.data);
+      })
+      .catch(() => {
+        if (!cancelled) setTabFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, companyId]);
 
   const saveAgent = async () => {
+    const target = companyId;
     setSavingAgent(true);
     try {
-      await fetchApi(`/api/v1/admin/companies/${companyId}`, {
+      await fetchApi(`/api/v1/admin/companies/${target}`, {
         method: 'PATCH',
         body: JSON.stringify({ bolna_agent_id: agentDraft || null }),
       });
-      setCompany((c: any) => ({ ...c, bolna_agent_id: agentDraft }));
+      if (currentId.current === target) setCompany((c: any) => ({ ...c, bolna_agent_id: agentDraft }));
       alert('Saved');
     } catch (e: any) {
       alert(e.message || 'Failed');
@@ -79,134 +119,241 @@ export default function AdminCompanyDetail() {
     }
   };
 
+  const back = (
+    <Link href="/admin/companies" className="inline-flex h-6 items-center gap-1 text-xs text-ds-ink-3 hover:text-ds-primary">
+      <ArrowLeft size={13} /> All companies
+    </Link>
+  );
+
+  if (companyFailed) {
+    return (
+      <AppLayout title="Company">
+        <PageHeader meta={back} title="Company" />
+        <Panel>
+          <ErrorState
+            title="This company couldn’t be loaded"
+            description="It may not exist, or the request failed. Pick a company from the selector in the header, or go back to the company list."
+            action={<Link href="/admin/companies" className={buttonClass('outline', 'md')}>Back to companies</Link>}
+          />
+        </Panel>
+      </AppLayout>
+    );
+  }
+
+  const agentUnchanged = (agentDraft || '') === (company?.bolna_agent_id || '');
+
   return (
     <AppLayout title={company?.name || 'Company'}>
-      <section>
-        <p className="eyebrow text-primary">Platform / Companies / {company?.name || '…'}</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-[-0.06em]">{company?.name || 'Company'}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Status: <span className="font-semibold">{company?.status}</span> · ID <span className="font-mono text-xs">{companyId}</span>
-        </p>
-      </section>
+      <PageHeader
+        meta={back}
+        title={company?.name || <Skeleton className="inline-block h-7 w-56 align-middle" />}
+        description={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {company ? <CompanyStatusBadge status={company.status} /> : null}
+            <span className="text-xs text-ds-ink-3">
+              ID <span className="font-mono">{companyId}</span>
+            </span>
+          </span>
+        }
+      />
 
-      <section className="rounded-xl border border-border bg-card p-4">
-        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dedicated Bolna agent ID</label>
-        <div className="mt-2 flex gap-2">
-          <input
-            value={agentDraft}
-            onChange={(e) => setAgentDraft(e.target.value)}
-            placeholder="bolna agent id for this company"
-            className="flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-primary"
-          />
-          <button onClick={saveAgent} disabled={savingAgent} className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">
-            {savingAgent ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}Save
+      <Panel>
+        <PanelHeader title="Dedicated Bolna agent" description="Calls for this company use this agent. Leave empty to clear it." />
+        <form
+          className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (company) saveAgent();
+          }}
+        >
+          <Field label="Bolna agent ID" className="sm:flex-1">
+            <Input
+              className="font-mono"
+              value={agentDraft}
+              onChange={(e) => setAgentDraft(e.target.value)}
+              placeholder="Agent ID for this company"
+              disabled={!company}
+            />
+          </Field>
+          <button type="submit" disabled={savingAgent || !company || agentUnchanged} className={buttonClass('primary', 'md')}>
+            {savingAgent ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} strokeWidth={1.75} />}
+            Save
           </button>
-        </div>
-      </section>
+        </form>
+      </Panel>
 
-      <div className="flex flex-wrap gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm font-semibold transition-colors ${tab === t ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            {t}
-          </button>
-        ))}
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Company sections" idPrefix="company" />
+
+      <div role="tabpanel" id="company-panel" aria-labelledby={`company-tab-${tab}`} tabIndex={0} className="min-w-0 space-y-4 outline-none">
+        {loading ? (
+          <LoadingState label={`Loading ${tab.toLowerCase()}…`}>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-[116px] animate-pulse rounded-xl border border-ds-line bg-ds-bg" />
+              ))}
+            </div>
+          </LoadingState>
+        ) : tabFailed ? (
+          <Panel>
+            <ErrorState title={`${tab} couldn’t be loaded`} description="The request failed. Switch tabs or reload the page to try again." />
+          </Panel>
+        ) : (
+          <TabContent tab={tab} data={tabData} />
+        )}
       </div>
-
-      {loading ? (
-        <div className="flex h-[240px] items-center justify-center text-muted-foreground"><Loader2 className="animate-spin" /></div>
-      ) : (
-        <TabContent tab={tab} data={tabData} />
-      )}
     </AppLayout>
   );
 }
 
+const when = (v: unknown) => <span className="whitespace-nowrap text-ds-ink-2">{formatDateTime(v)}</span>;
+const mono = (v: unknown) => <span className="font-mono text-xs text-ds-ink-2">{v === null || v === undefined || v === '' ? '—' : String(v)}</span>;
+const inr = (v: unknown) => `₹${Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 function TabContent({ tab, data }: { tab: Tab; data: any }) {
-  if (!data) return <p className="text-sm text-muted-foreground">No data.</p>;
+  if (!data) {
+    return (
+      <Panel>
+        <EmptyState title="No data" description={`There is nothing to show for ${tab.toLowerCase()} yet.`} />
+      </Panel>
+    );
+  }
 
   if (tab === 'Overview') {
     return (
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <MetricCard label="Total calls" value={String(data.total_calls ?? 0)} change="" Icon={Phone} tone="violet" />
-        <MetricCard label="Inbound calls" value={String(data.inbound_calls ?? 0)} change="" Icon={Phone} tone="blue" />
-        <MetricCard label="Outbound calls" value={String(data.outbound_calls ?? 0)} change="" Icon={Phone} tone="green" />
-        <MetricCard label="Total leads" value={String(data.total_leads ?? 0)} change="" Icon={Users} tone="blue" />
-        <MetricCard label="Hot leads" value={String(data.hot_leads ?? 0)} change="" Icon={Sparkles} tone="orange" />
-        <MetricCard label="Total spend (₹)" value={String(data.total_spending ?? 0)} change="" Icon={Target} tone="green" />
-      </section>
+      <>
+        <p className="text-[13px] text-ds-ink-2">All-time figures for this company.</p>
+        <section aria-label="Overview metrics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
+          <MetricCard label="Total calls" value={String(data.total_calls ?? 0)} Icon={Phone} tone="violet" />
+          <MetricCard label="Inbound calls" value={String(data.inbound_calls ?? 0)} Icon={Phone} tone="blue" />
+          <MetricCard label="Outbound calls" value={String(data.outbound_calls ?? 0)} Icon={Phone} tone="blue" />
+          <MetricCard label="Total leads" value={String(data.total_leads ?? 0)} Icon={Users} tone="blue" hint="Analysed calls" />
+          <MetricCard label="Hot leads" value={String(data.hot_leads ?? 0)} Icon={Sparkles} tone="violet" />
+          <MetricCard label="Total spend" value={inr(data.total_spending)} Icon={Wallet} tone="blue" />
+        </section>
+      </>
     );
   }
 
   if (tab === 'Analytics') {
     return (
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <MetricCard label="Total leads" value={String(data.total_leads ?? 0)} change="" Icon={Users} tone="blue" />
-        <MetricCard label="Calls made" value={String(data.calls_made ?? 0)} change="" Icon={Phone} tone="violet" />
-        <MetricCard label="Connected" value={String(data.connected_calls ?? 0)} change="" Icon={Phone} tone="green" />
-        <MetricCard label="Qualified" value={String(data.qualified_leads ?? 0)} change="" Icon={Target} tone="orange" />
-        <MetricCard label="Converted" value={String(data.converted_leads ?? 0)} change="" Icon={Sparkles} tone="green" />
-        <MetricCard label="Conversion rate" value={String(data.conversion_rate ?? '0%')} change="" Icon={Target} tone="blue" />
-      </section>
+      <>
+        <p className="text-[13px] text-ds-ink-2">The last 30 days.</p>
+        <section aria-label="Analytics metrics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
+          <MetricCard label="Total leads" value={String(data.total_leads ?? 0)} Icon={Users} tone="blue" />
+          <MetricCard label="Calls made" value={String(data.calls_made ?? 0)} Icon={Phone} tone="violet" />
+          <MetricCard label="Connected" value={String(data.connected_calls ?? 0)} Icon={Phone} tone="blue" />
+          <MetricCard label="Qualified" value={String(data.qualified_leads ?? 0)} Icon={Target} tone="violet" />
+          <MetricCard label="Converted" value={String(data.converted_leads ?? 0)} Icon={Sparkles} tone="blue" />
+          <MetricCard label="Conversion rate" value={String(data.conversion_rate ?? '0%')} Icon={Target} tone="violet" />
+        </section>
+      </>
     );
   }
 
   if (tab === 'Billing') {
+    const usage: any[] = data.usage || [];
     return (
-      <div className="space-y-4">
-        <section className="grid gap-3 sm:grid-cols-3">
-          <MetricCard label="Wallet balance" value={String(data.wallet?.balance ?? 0)} change="" Icon={Target} tone="green" />
-          <MetricCard label="Minutes used" value={String(data.wallet?.minutes_used ?? 0)} change="" Icon={Phone} tone="violet" />
-          <MetricCard label="Total spending" value={String(data.wallet?.total_spending ?? 0)} change="" Icon={Sparkles} tone="orange" />
+      <>
+        <section aria-label="Billing metrics" className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+          <MetricCard label="Wallet balance" value={inr(data.wallet?.balance)} Icon={Wallet} tone="blue" hint={data.wallet?.plan_name || undefined} />
+          <MetricCard label="Minutes used" value={String(data.wallet?.minutes_used ?? 0)} Icon={Phone} tone="violet" />
+          <MetricCard label="Total spending" value={inr(data.wallet?.total_spending)} Icon={Wallet} tone="blue" />
         </section>
-        <SimpleTable rows={data.usage || []} columns={['created_at', 'service_type', 'billed_minutes', 'customer_cost']} />
-      </div>
+        <div>
+          <h3 className="mb-2 text-[13px] font-semibold text-ds-ink">Recent usage</h3>
+          <DataTable
+            label="Recent usage"
+            minWidth={560}
+            rows={usage}
+            columns={[
+              { key: 'created_at', label: 'Date', render: (r) => when(r.created_at) },
+              { key: 'service_type', label: 'Service', render: (r) => (r.service_type ? <Badge variant="neutral">{String(r.service_type).replace(/_/g, ' ')}</Badge> : <span className="text-ds-ink-3">—</span>) },
+              { key: 'billed_minutes', label: 'Billed minutes', align: 'right', className: 'tabular-nums' },
+              { key: 'customer_cost', label: 'Cost', align: 'right', className: 'tabular-nums', render: (r) => (typeof r.customer_cost === 'number' ? inr(r.customer_cost) : <span className="text-ds-ink-3">—</span>) },
+            ]}
+            message={usage.length === 0 ? <EmptyState icon={<Wallet size={18} strokeWidth={1.75} />} title="No usage yet" description="Billed calls will be listed here." /> : undefined}
+          />
+        </div>
+      </>
     );
   }
 
   if (tab === 'Prompt') {
     return (
-      <div className="space-y-4">
-        <p className="text-xs font-semibold uppercase text-muted-foreground">Status: {data.prompt_status}</p>
-        <pre className="whitespace-pre-wrap rounded-xl border border-border bg-card p-4 text-sm">{data.prompt || '(no prompt)'}</pre>
-      </div>
+      <Panel>
+        <PanelHeader
+          title="Agent prompt"
+          description="The prompt this company’s agent is working from."
+          action={data.prompt_status ? <StatusBadge status={data.prompt_status} /> : undefined}
+        />
+        {data.welcome_message && (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-ds-ink-3">Greeting</p>
+            <p className="mt-1 whitespace-pre-wrap rounded-lg bg-ds-surface px-3 py-2 text-[13px] text-ds-ink">{data.welcome_message}</p>
+          </div>
+        )}
+        <div className="mt-4">
+          <p className="text-xs font-medium text-ds-ink-3">Prompt</p>
+          {data.prompt ? (
+            <pre className="mt-1 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-lg border border-ds-line bg-ds-surface p-3 text-[13px] leading-relaxed text-ds-ink">{data.prompt}</pre>
+          ) : (
+            <p className="mt-1 flex items-center gap-2 text-[13px] text-ds-ink-2"><Bot size={14} /> No prompt has been saved for this company.</p>
+          )}
+        </div>
+      </Panel>
     );
   }
 
-  const rows = Array.isArray(data) ? data : [];
-  const columns =
-    tab === 'Users' ? ['name', 'email', 'role', 'is_active']
-    : tab === 'Calls' ? ['call_id', 'customer_name', 'direction', 'status', 'created_at']
-    : tab === 'Campaigns' ? ['name', 'status', 'leads_count', 'calls_made', 'created_at']
-    : ['name', 'phone', 'status', 'aiScore', 'created_at'];
-  return <SimpleTable rows={rows} columns={columns} />;
-}
-
-function SimpleTable({ rows, columns }: { rows: any[]; columns: string[] }) {
-  if (!rows.length) return <p className="text-sm text-muted-foreground">Nothing to show.</p>;
+  const rows: any[] = Array.isArray(data) ? data : [];
+  const config: Record<'Users' | 'Calls' | 'Campaigns' | 'Leads', { columns: Column<any>[]; empty: string }> = {
+    Users: {
+      empty: 'This company has no users.',
+      columns: [
+        { key: 'name', label: 'Name', className: 'font-medium' },
+        { key: 'email', label: 'Email', render: (r) => <span className="text-ds-ink-2">{r.email || '—'}</span> },
+        { key: 'role', label: 'Role', render: (r) => <RoleBadge role={r.role} /> },
+        { key: 'is_active', label: 'Status', render: (r) => <ActiveBadge active={r.is_active !== false} /> },
+      ],
+    },
+    Calls: {
+      empty: 'No calls have been made for this company yet.',
+      columns: [
+        { key: 'call_id', label: 'Call ID', render: (r) => mono(r.call_id) },
+        { key: 'customer_name', label: 'Customer' },
+        { key: 'direction', label: 'Direction', render: (r) => (r.direction ? <Badge variant="neutral" className="capitalize">{r.direction}</Badge> : <span className="text-ds-ink-3">—</span>) },
+        { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+        { key: 'created_at', label: 'Date', render: (r) => when(r.created_at) },
+      ],
+    },
+    Campaigns: {
+      empty: 'This company has no campaigns.',
+      columns: [
+        { key: 'name', label: 'Campaign', className: 'font-medium' },
+        { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+        { key: 'leads_count', label: 'Leads', align: 'right', className: 'tabular-nums' },
+        { key: 'calls_made', label: 'Calls made', align: 'right', className: 'tabular-nums' },
+        { key: 'created_at', label: 'Created', render: (r) => when(r.created_at) },
+      ],
+    },
+    Leads: {
+      empty: 'This company has no leads.',
+      columns: [
+        { key: 'name', label: 'Name', className: 'font-medium' },
+        { key: 'phone', label: 'Phone', render: (r) => mono(r.phone) },
+        { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+        { key: 'aiScore', label: 'AI score', align: 'right', className: 'tabular-nums' },
+        { key: 'created_at', label: 'Created', render: (r) => when(r.created_at) },
+      ],
+    },
+  };
+  const c = config[tab as 'Users' | 'Calls' | 'Campaigns' | 'Leads'];
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-border text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            {columns.map((c) => <th key={c} className="px-3 py-2">{c.replace(/_/g, ' ')}</th>)}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/50">
-          {rows.map((r, i) => (
-            <tr key={i} className="hover:bg-muted/30">
-              {columns.map((c) => (
-                <td key={c} className="px-3 py-2">
-                  {typeof r[c] === 'boolean' ? (r[c] ? 'Yes' : 'No') : String(r[c] ?? '—')}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      label="Company records"
+      minWidth={640}
+      rows={rows}
+      columns={c.columns}
+      message={rows.length === 0 ? <EmptyState title={`No ${tab.toLowerCase()}`} description={c.empty} /> : undefined}
+    />
   );
 }

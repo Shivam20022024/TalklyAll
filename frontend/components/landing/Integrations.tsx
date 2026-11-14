@@ -55,7 +55,7 @@ export default function Integrations() {
   return (
     <section id="integrations" className="section scroll-mt-12 pt-0! lg:pt-0!">
       <div className="wrap">
-        <SectionHeading title="Connect Voice AI to Your Stack">
+        <SectionHeading title="Connect TalklyAI to Your Stack">
           WhatsApp is ready today. Other connections are listed as placeholders until a provider is confirmed.
         </SectionHeading>
 

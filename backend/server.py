@@ -1002,20 +1002,17 @@ async def get_call(call_id: str, current_user: dict = Depends(require_company_ac
         elif not doc:
             doc = exact_doc
 
-    # 3. If doc still has no transcript, look up by lead's phone number AND name for latest completed call
+    # 3. If doc still has no transcript, look up by lead's phone number for latest completed call
     if not doc or not doc.get("transcript"):
         lead = await db.leads.find_one(tenant_filter(current_user, {"lead_id": call_id}))
         if lead and lead.get("phone"):
             clean_digits = "".join(filter(str.isdigit, str(lead["phone"])))
             if clean_digits:
-                filter_criteria = {
-                    "customer_id": {"$regex": clean_digits},
-                    "transcript": {"$regex": r"\S"}
-                }
-                if lead.get("name") and str(lead["name"]).strip().lower() not in ("valued customer", "unknown", ""):
-                    filter_criteria["customer_name"] = {"$regex": f"^{re.escape(str(lead['name']).strip())}$", "$options": "i"}
                 phone_call = await db.calls.find_one(
-                    tenant_filter(current_user, filter_criteria),
+                    tenant_filter(current_user, {
+                        "customer_id": {"$regex": clean_digits},
+                        "transcript": {"$regex": r"\S"}
+                    }),
                     sort=[("created_at", -1)]
                 )
                 if phone_call:

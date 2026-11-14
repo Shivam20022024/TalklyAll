@@ -20,3 +20,8 @@ backend/agent_dump.json
 backend/*.log
 backend/payload_dump.json
 *.tsbuildinfo
+
+_backup*/
+screenshots/
+
+design-review/

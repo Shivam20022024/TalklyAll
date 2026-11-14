@@ -90,8 +90,8 @@ async def test_whatsapp_message(payload: dict = Body(...), current_user: dict = 
     )
 
     test_message = (
-        "🚀 *Voice AI WhatsApp Integration Test*\n\n"
-        "Great news! Your Meta WhatsApp Cloud API is successfully connected to Voice AI.\n\n"
+        "🚀 *TalklyAI WhatsApp Integration Test*\n\n"
+        "Great news! Your Meta WhatsApp Cloud API is successfully connected to TalklyAI.\n\n"
         "Post-call automated reminders, demo links, and brochures will now be sent automatically to your prospects."
     )
 

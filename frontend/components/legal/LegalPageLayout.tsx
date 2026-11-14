@@ -26,9 +26,9 @@ export default function LegalPageLayout({
         <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 font-bold text-lg tracking-tight">
             <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-black">
-              V
+              T
             </div>
-            Voice<span className="text-primary font-normal"> AI</span>
+            Talkly<span className="text-primary font-normal">AI</span>
           </Link>
           <Link href="/login" className="text-xs font-semibold text-muted-foreground hover:text-foreground">
             Sign In
@@ -53,7 +53,7 @@ export default function LegalPageLayout({
           ))}
         </div>
         <p className="mt-4 text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Voice AI. All rights reserved.
+          © {new Date().getFullYear()} TalklyAI · A product by <span className="font-semibold">Novalantis</span>
         </p>
       </footer>
     </div>

@@ -21,7 +21,7 @@ export default function Collections() {
           <p className="text-sm font-semibold text-brand-dark">Collections</p>
           <h2 className="h-section mt-3">Recover Payments With Respect for Every Customer</h2>
           <p className="mt-4 text-[1.0625rem] leading-relaxed text-pretty">
-            Voice AI supports responsible, compliance-aware conversations without pressure tactics. Customers hear clear
+            TalklyAI supports responsible, compliance-aware conversations without pressure tactics. Customers hear clear
             information and get a route to a person when they need one.
           </p>
         </Reveal>

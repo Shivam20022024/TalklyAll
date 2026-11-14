@@ -20,9 +20,9 @@ export default function PricingPage() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 font-bold text-lg tracking-tight">
             <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-black">
-              V
+              T
             </div>
-            Voice<span className="text-primary font-normal"> AI</span>
+            Talkly<span className="text-primary font-normal">AI</span>
           </Link>
           <div className="flex items-center gap-4">
             <Link href="/login" className="text-xs font-semibold text-muted-foreground hover:text-foreground">
@@ -63,7 +63,7 @@ export default function PricingPage() {
               <div className="mt-5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Free Trial</div>
               <h3 className="mt-1.5 text-2xl font-bold tracking-tight">Starter Sandbox</h3>
               <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
-                Experience Voice AI live with full access to prompt engineering and test calls.
+                Experience TalklyAI live with full access to prompt engineering and test calls.
               </p>
               <div className="mt-7 flex items-baseline gap-1.5 border-t border-border pt-6">
                 <span className="text-4xl font-extrabold tabular-nums">₹0</span>
@@ -209,7 +209,7 @@ export default function PricingPage() {
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed">You can top up your wallet anytime starting from ₹250 via UPI, NetBanking, or Credit Card through our secure Razorpay payment integration.</p>
             </div>
             <div className="p-5 rounded-xl border border-border bg-card">
-              <h4 className="font-semibold text-sm">Can I use Voice AI for multiple industries?</h4>
+              <h4 className="font-semibold text-sm">Can I use TalklyAI for multiple industries?</h4>
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed">Yes! You can configure separate campaigns for clinic appointments, course admissions, home loan verification, or property site visits with specialized qualification criteria.</p>
             </div>
           </div>
@@ -218,7 +218,7 @@ export default function PricingPage() {
 
       {/* Footer */}
       <footer className="border-t border-border/40 py-8 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} Voice AI. All rights reserved.
+        © {new Date().getFullYear()} TalklyAI by Novalantis. All rights reserved.
       </footer>
     </div>
   )

@@ -128,9 +128,12 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
+  /* --color-accent and --color-muted are intentionally NOT mapped here. The
+     marketing @theme block below defines them (#7955e8 / #667085) and already
+     won the cascade site-wide; mapping them here too only created a silent
+     duplicate. The dashboard restores shadcn's muted surface inside .ds-app
+     (see the dashboard design system section at the end of this file). */
   --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -627,9 +630,77 @@ html {
   scroll-padding-top: 4.25rem;
 }
 
-/* Hide Next.js development indicator badge so investor demo is completely clean */
-nextjs-portal,
-[data-nextjs-toast],
-[data-nextjs-dialog-overlay] {
-  display: none !important;
+/* ==========================================================================
+   Dashboard design system ("ds-*").
+   Purely additive. Every token is namespaced `ds-` so it cannot collide with
+   the shadcn variables or the marketing tokens above, and every rule below is
+   scoped to the `.ds-app` wrapper rendered by components/layout/AppLayout.tsx.
+   The marketing site, login and register pages never render that wrapper, so
+   they are unaffected.
+   ========================================================================== */
+
+@theme {
+  --color-ds-bg: #ffffff;
+  --color-ds-surface: #f8fafc;
+  --color-ds-primary: #2463eb;
+  --color-ds-primary-hover: #1d4fd1;
+  --color-ds-primary-soft: #eef3fe;
+  /* accent and ink-3 are tuned so text in these colours meets WCAG AA (4.5:1) on the soft
+     tinted surfaces as well as on white (was #7955e8 = 4.34:1 and #64748b = 4.28:1 there). */
+  --color-ds-accent: #6f4bde;
+  --color-ds-accent-soft: #f3effd;
+  --color-ds-ink: #111827;
+  --color-ds-ink-2: #475569;
+  --color-ds-ink-3: #5b6b81;
+  --color-ds-line: #e2e8f0;
+  --color-ds-line-strong: #cbd5e1;
+  --color-ds-success: #10b981;
+  --color-ds-success-soft: #ecfdf5;
+  --color-ds-success-ink: #047857;
+  --color-ds-warning: #f59e0b;
+  --color-ds-warning-soft: #fffbeb;
+  --color-ds-warning-ink: #b45309;
+  --color-ds-error: #ef4444;
+  --color-ds-error-soft: #fef2f2;
+  --color-ds-error-ink: #b91c1c;
+
+  --shadow-ds-pop: 0 4px 6px -2px rgb(15 23 42 / 0.05), 0 12px 24px -8px rgb(15 23 42 / 0.12);
+}
+
+.ds-app {
+  /* Inside the dashboard only, `bg-muted` utilities mean shadcn's near-white
+     surface (as the dashboard pages were written for), not the marketing
+     site's #667085 text grey. Utilities read var(--color-muted), so this
+     scoped override cannot reach marketing, login, or other public pages. */
+  --color-muted: var(--muted);
+  /* `font-mono` compiles to var(--font-geist-mono), a leftover from the Next.js
+     starter that is never defined, so monospace text silently fell back to the
+     body font. Defined here, scoped to the dashboard only. */
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  background: var(--color-ds-surface);
+  color: var(--color-ds-ink);
+  font-family: 'Inter Variable', 'Noto Sans Devanagari', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.ds-app :focus-visible {
+  outline: 2px solid var(--color-ds-primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.ds-app button:not(:disabled),
+.ds-app [role='button'] {
+  cursor: pointer;
+}
+
+/* Thin, quiet scrollbars for the sidebar and popovers. */
+.ds-scroll { scrollbar-width: thin; scrollbar-color: var(--color-ds-line-strong) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-app *, .ds-app *::before, .ds-app *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

@@ -91,7 +91,7 @@ export default function Features() {
   return (
     <section id="features" className="section">
       <div className="wrap">
-        <SectionHeading title="Why Businesses Choose Voice AI">
+        <SectionHeading title="Why Businesses Choose TalklyAI">
           Every call becomes a conversation you can read, score, and act on.
         </SectionHeading>
         <ul className="grid gap-5 md:grid-cols-2">

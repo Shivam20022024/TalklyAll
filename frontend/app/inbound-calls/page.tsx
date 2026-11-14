@@ -1,32 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  PhoneIncoming,
-  Search,
-  X,
-  User,
-  Sparkles,
-  MessageSquare,
-  Clock,
-  Activity,
-  PhoneMissed,
-  Users,
-  CalendarDays,
-  Download,
-  Flame,
-  Zap,
-  Phone,
-  Eye,
-  Filter,
-  CheckCircle2,
-  Copy,
-  Check,
-  Radio,
-  FileSpreadsheet
-} from 'lucide-react'
+import { PhoneIncoming, Sparkles, MessageSquare, Flame, Copy, Check, RefreshCw, FileSpreadsheet, FileText, Sun, CheckCircle2, Calendar, Bot, Clock, Users, User, Search, ChevronDown } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { fetchApi, fetchBlob, downloadBlob } from '@/lib/api'
+import { Badge } from '@/components/ui/Badge'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EmptyState, ErrorState, LoadingState, Skeleton } from '@/components/ui/States'
+import { Alert } from '@/components/ui/Alert'
+import { LoadMore } from '@/components/ui/Pagination'
+import { Sheet, DetailGrid, SheetSection } from '@/components/ui/Dialog'
+import { Transcript } from '@/components/ui/Transcript'
+import { buttonClass } from '@/components/ui/button'
+import { formatDateTime, parseApiDate } from '@/lib/format'
 
 interface CallStats {
   total_calls: number
@@ -41,6 +27,8 @@ export default function InboundCallsPage() {
   const [calls, setCalls] = useState<any[]>([])
   const [stats, setStats] = useState<CallStats | null>(null)
   const [loading, setLoading] = useState(true)
+  // Presentation-only: true while the latest load (or "load more") failed, so it is never shown as "no inbound calls".
+  const [loadFailed, setLoadFailed] = useState(false)
   const [query, setQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('All')
   const [page, setPage] = useState(0)
@@ -48,13 +36,18 @@ export default function InboundCallsPage() {
   const [hasMore, setHasMore] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // Presentation-only filters applied to the calls already loaded (no extra request).
+  const [outcomeFilter, setOutcomeFilter] = useState<string>('all')
+  const [scoreFilter, setScoreFilter] = useState<string>('all')
+  const [languageFilter, setLanguageFilter] = useState<string>('all')
+  const [rangeFilter, setRangeFilter] = useState<string>('all')
   const LIMIT = 25
 
   const handleExport = async () => {
     setExporting(true)
     try {
       const blob = await fetchBlob('/api/v1/calls/export?direction=inbound')
-      downloadBlob(blob, 'voiceai_inbound_calls.xlsx')
+      downloadBlob(blob, 'talkly_inbound_calls.xlsx')
     } catch (e: any) {
       alert(e.message || 'Failed to export inbound calls')
     } finally {
@@ -74,8 +67,10 @@ export default function InboundCallsPage() {
         if (pageNum === 0) setCalls([])
         setHasMore(false)
       }
+      setLoadFailed(false)
     } catch (e) {
       console.error('Failed to load inbound calls', e)
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -144,443 +139,433 @@ export default function InboundCallsPage() {
       return true
     })
 
+  // Per-row display values. Answered/duration rules are the page's existing logic,
+  // moved here unchanged. Summary no longer falls back to invented text.
+  const inboundView = (call: any) => {
+    const durationSecs = typeof call.duration_seconds === 'number' ? call.duration_seconds : (parseInt(call.duration, 10) || 0)
+    const hasDuration = durationSecs > 0 || (call.duration && call.duration !== '00:00' && call.duration !== '0')
+    const wasAnswered = hasDuration || !!call.transcript || ['Analyzed', 'Completed', 'In Progress'].includes(call.status)
+    const displayStatus = !wasAnswered ? 'Not Answered' : call.status
+    const isKnownCaller = call.customer_name && !['inbound caller', 'unknown', 'there', ''].includes(call.customer_name.toLowerCase())
+    const tempInfo = getLeadTemperature(call)
+    const durationFormatted = formatDuration(durationSecs > 0 ? durationSecs : (call.duration || 0))
+    const summaryText = call.outcome_summary || call.summary || call.analysis?.summary || null
+    return { displayStatus, isKnownCaller, tempInfo, durationFormatted, summaryText }
+  }
+  const FILTERS = ['All', 'Hot', 'Warm', 'Analyzed'] as const
+  const answeredPct = stats?.total_calls ? Math.round(((stats.answered_calls || 0) / stats.total_calls) * 100) : null
+
+  // ── presentation-only state and helpers (no request, payload or handler is changed) ──
+  // Same rules as the tab filter above, so each tab can show how many loaded calls it holds.
+  const tabMatches = (c: any, f: string) => {
+    if (f === 'Hot') return c.analysis?.lead_temperature === 'Hot' || (c.analysis?.lead_score && c.analysis.lead_score >= 75)
+    if (f === 'Warm') return c.analysis?.lead_temperature === 'Warm' || (c.analysis?.lead_score && c.analysis.lead_score >= 45 && c.analysis.lead_score < 75)
+    if (f === 'Analyzed') return c.status === 'Analyzed'
+    return true
+  }
+  const TABS = [
+    { key: 'All', label: 'All Calls', Icon: null as any },
+    { key: 'Hot', label: 'Hot', Icon: Flame },
+    { key: 'Warm', label: 'Warm', Icon: Sun },
+    { key: 'Analyzed', label: 'Analyzed', Icon: CheckCircle2 },
+  ]
+  const tabCount = (key: string) => (key === 'All' ? calls.length : calls.filter((c) => tabMatches(c, key)).length)
+  const outcomeOptions = Array.from(new Set(calls.map((c) => c.analysis?.intent_label as string).filter(Boolean)))
+  const languageOptions = Array.from(new Set(calls.map((c) => c.language as string).filter(Boolean)))
+  const RANGES: { key: string; label: string; days: number | null }[] = [
+    { key: 'all', label: 'All Time', days: null },
+    { key: '7', label: 'Last 7 Days', days: 7 },
+    { key: '30', label: 'Last 30 Days', days: 30 },
+  ]
+  const filteredView = visibleCalls
+    .filter((c) => outcomeFilter === 'all' || c.analysis?.intent_label === outcomeFilter)
+    .filter((c) => scoreFilter === 'all' || getLeadTemperature(c).label === scoreFilter)
+    .filter((c) => languageFilter === 'all' || c.language === languageFilter)
+    .filter((c) => {
+      const days = RANGES.find((r) => r.key === rangeFilter)?.days
+      if (!days) return true
+      const d = parseApiDate(c.created_at)
+      return d ? Date.now() - d.getTime() <= days * 86400000 : false
+    })
+  const filtersActive = Boolean(query || filterStatus !== 'All' || outcomeFilter !== 'all' || scoreFilter !== 'all' || languageFilter !== 'all' || rangeFilter !== 'all')
+  const clearFilters = () => { setQuery(''); setFilterStatus('All'); setOutcomeFilter('all'); setScoreFilter('all'); setLanguageFilter('all'); setRangeFilter('all') }
+
+  const statsReady = stats !== null
+  // Compact indicators are plain ratios of the same stats the cards already show (never a trend or estimate).
+  const ratio = (n?: number) => (stats && stats.total_calls ? Math.max(0, Math.min(100, Math.round(((n || 0) / stats.total_calls) * 100))) : 0)
+  const KPI_CARDS = [
+    { label: 'Total Inbound', value: stats ? (stats.total_calls ?? 0).toLocaleString() : '—', hint: stats ? `${stats.calls_today ?? 0} today` : '', pct: ratio(stats?.calls_today), bar: 'bg-blue-500', Icon: PhoneIncoming, card: 'from-blue-50 via-white to-white border-blue-100', tile: 'from-blue-100 to-blue-50 text-ds-primary' },
+    { label: 'Answered by AI', value: stats ? (stats.answered_calls ?? 0).toLocaleString() : '—', hint: stats ? (answeredPct !== null ? `${answeredPct}% of inbound calls` : 'No inbound calls yet') : '', pct: ratio(stats?.answered_calls), bar: 'bg-violet-500', Icon: Bot, card: 'from-violet-50 via-white to-white border-violet-100', tile: 'from-violet-100 to-violet-50 text-[#7955E8]' },
+    { label: 'Avg Conversation', value: stats ? formatDuration(stats.avg_duration_seconds ?? 0) : '—', hint: stats ? `${stats.missed_calls ?? 0} missed or incomplete` : '', pct: ratio(stats?.missed_calls), bar: 'bg-emerald-500', Icon: Clock, card: 'from-emerald-50 via-white to-white border-emerald-100', tile: 'from-emerald-100 to-emerald-50 text-emerald-600' },
+    { label: 'Unique Callers', value: stats ? (stats.unique_callers ?? 0).toLocaleString() : '—', hint: stats ? 'Distinct phone numbers' : '', pct: ratio(stats?.unique_callers), bar: 'bg-orange-400', Icon: Users, card: 'from-orange-50 via-white to-white border-orange-100', tile: 'from-orange-100 to-orange-50 text-orange-500' },
+  ]
+
+  const controlCls =
+    'h-11 rounded-xl border border-ds-line bg-ds-bg text-[15px] text-ds-ink outline-none transition focus-visible:border-ds-primary focus-visible:ring-2 focus-visible:ring-ds-primary/20'
+  const headBtn =
+    'inline-flex h-12 items-center gap-2 rounded-xl border border-ds-line bg-ds-bg px-5 text-[15px] font-semibold text-ds-ink shadow-sm transition-colors hover:bg-ds-surface disabled:cursor-not-allowed disabled:opacity-50'
+  const iconBtn =
+    'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-ds-line bg-ds-bg text-ds-ink-2 shadow-sm transition-colors hover:border-ds-primary/40 hover:bg-blue-50 hover:text-ds-primary'
+  const th = 'px-2.5 py-3.5 text-[13px] font-semibold tracking-wide text-ds-ink-2'
+  const select = (label: string, value: string, onChange: (v: string) => void, children: React.ReactNode, lead?: React.ReactNode) => (
+    <div className="relative min-w-[140px] flex-1 sm:min-w-0 sm:flex-none">
+      {lead && <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ds-ink-2">{lead}</span>}
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className={`${controlCls} w-full cursor-pointer appearance-none ${lead ? 'pl-10' : 'pl-3.5'} pr-9 font-medium`}>
+        {children}
+      </select>
+      <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
+    </div>
+  )
+
+  const avatar = (call: any, known: boolean) => {
+    const name = String(call.customer_name || '').trim()
+    if (!name) return <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-700" aria-hidden="true"><User size={19} strokeWidth={1.75} /></span>
+    return (
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold ring-1 ring-inset ${known ? 'bg-blue-50 text-ds-primary ring-blue-100' : 'bg-violet-50 text-violet-700 ring-violet-100'}`} aria-hidden="true">
+        {name.slice(0, 2).toUpperCase()}
+      </span>
+    )
+  }
+  const SCORE_TONE: Record<string, string> = { Hot: 'bg-rose-50 text-rose-700 border-rose-100', Warm: 'bg-violet-50 text-violet-700 border-violet-100', Cold: 'bg-slate-50 text-slate-700 border-slate-200' }
+  const scoreBadge = (t: { label: string; score: number | null }) =>
+    t.label === 'Neutral'
+      ? <span className="text-ds-ink-3">—</span>
+      : (
+        <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-[14px] font-semibold ${SCORE_TONE[t.label] || 'border-ds-line bg-ds-surface text-ds-ink-2'}`}>
+          {t.label === 'Hot' ? <Flame size={13} strokeWidth={1.75} aria-hidden="true" /> : null}
+          {t.label}{t.score !== null && <span className="tabular-nums"> · {t.score}</span>}
+        </span>
+      )
+  const callerBadge = (known: boolean) =>
+    known
+      ? <span className="rounded-lg bg-blue-50 px-2.5 py-0.5 text-[13px] font-semibold text-blue-700">CRM lead</span>
+      : <span className="rounded-lg border border-ds-line bg-ds-surface px-2.5 py-0.5 text-[13px] font-medium text-ds-ink-2">New caller</span>
+  const INTENT_TONE: Record<string, string> = { Hot: 'bg-rose-50 text-rose-700', Warm: 'bg-violet-50 text-violet-700' }
+  const intentChip = (call: any, label: string) =>
+    call.analysis?.intent_label ? (
+      <span className={`mb-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-0.5 text-[13px] font-semibold ${INTENT_TONE[label] || 'bg-blue-50 text-blue-700'}`}>
+        <Sparkles size={12} strokeWidth={1.75} aria-hidden="true" /><span className="truncate">{call.analysis.intent_label}</span>
+      </span>
+    ) : null
+  const copyButton = (call: any) => call.customer_id ? (
+    <button
+      onClick={(e) => copyPhone(e, call.customer_id, call.call_id)}
+      className={iconBtn}
+      title="Copy number"
+      aria-label={`Copy ${call.customer_id}`}
+    >
+      {copiedId === call.call_id ? <Check size={18} className="text-ds-success-ink" /> : <Copy size={17} strokeWidth={1.75} />}
+    </button>
+  ) : null
+  const viewButton = (call: any) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); setSelectedCall(call) }}
+      aria-label={`View call from ${call.customer_name || 'inbound caller'}`}
+      title="View call details and transcript"
+      className={iconBtn}
+    >
+      <FileText size={17} strokeWidth={1.75} />
+    </button>
+  )
+  const tabIcon = (key: string, active: boolean) => {
+    if (key === 'Hot') return <Flame size={18} strokeWidth={1.5} aria-hidden="true" className={active ? 'fill-white/90' : 'fill-rose-500 text-rose-500'} />
+    if (key === 'Warm') return <span aria-hidden="true" className={`h-3.5 w-3.5 rounded-full ${active ? 'bg-white/90' : 'bg-amber-400'}`} />
+    if (key === 'Analyzed') return <CheckCircle2 size={19} strokeWidth={2} aria-hidden="true" className={active ? 'fill-white/90 text-ds-primary' : 'fill-emerald-500 text-white'} />
+    return null
+  }
+
   return (
     <AppLayout title="Inbound Calls">
-      {/* Header Banner with live pulse & action buttons */}
-      <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="eyebrow text-primary">Workspace / Inbound Calling</p>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+      {/* Page header */}
+      <header className="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-100/70 via-blue-50/70 to-white px-5 py-5 shadow-sm sm:px-6">
+        <div className="relative flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8b6cf0] to-[#6a47d6] text-white shadow-md shadow-violet-500/30 ring-1 ring-white/70" aria-hidden="true">
+              <PhoneIncoming size={30} strokeWidth={2} />
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-[30px] font-bold leading-tight tracking-tight text-ds-ink sm:text-[32px]">Inbound Calls</h1>
+              <p className="mt-0.5 text-[16px] text-ds-ink-2">Calls to your number, answered by your AI agent, with transcripts and lead outcomes.</p>
+            </div>
+          </div>
+          {/* Decorative waveform (no data) */}
+          <svg aria-hidden="true" viewBox="0 0 180 40" className="pointer-events-none hidden h-10 w-44 shrink-0 text-[#7955E8]/55 2xl:block" fill="currentColor">
+            {[8, 16, 26, 14, 30, 20, 10, 24, 34, 18, 28, 12, 22, 32, 16, 8].map((h, i) => (
+              <rect key={i} x={i * 11 + 2} y={20 - h / 2} width="4" height={h} rx="2" />
+            ))}
+          </svg>
+          <div className="flex flex-wrap items-center gap-3 lg:shrink-0">
+            <button
+              onClick={() => {
+                setPage(0)
+                loadCalls(0)
+                loadStats()
+              }}
+              className={headBtn}
+              title="Refresh list"
+            >
+              <RefreshCw size={18} strokeWidth={1.75} />Refresh
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="inline-flex h-12 items-center gap-2 rounded-xl bg-ds-primary px-6 text-[15px] font-semibold text-white shadow-md shadow-blue-600/20 transition-colors hover:bg-ds-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <FileSpreadsheet size={18} strokeWidth={1.75} />
+              {exporting ? 'Exporting…' : 'Export .xlsx'}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Summary stat cards (the existing inbound stats endpoint) */}
+      <section aria-label="Inbound call statistics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        {KPI_CARDS.map(({ label, value, hint, pct, bar, Icon, card, tile }) => (
+          <div key={label} className={`rounded-2xl border bg-gradient-to-br px-4 py-4 shadow-sm sm:px-5 ${card}`}>
+            <div className="flex items-center gap-3.5 sm:gap-4">
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-sm ring-1 ring-white/80 sm:h-14 sm:w-14 ${tile}`} aria-hidden="true">
+                <Icon size={24} strokeWidth={1.75} />
               </span>
-              Helpline Line Active
-            </span>
+              <div className="min-w-0">
+                <p className="text-[15px] font-medium leading-snug text-ds-ink-2 sm:text-[16px]">{label}</p>
+                <p className="mt-0.5 text-[30px] font-bold leading-none tracking-tight text-ds-ink tabular-nums sm:text-[32px]">{value}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-[14px] leading-snug text-ds-ink-2 sm:text-[15px]">{statsReady && hint ? hint : ' '}</p>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/5" aria-hidden="true">
+              <div className={`h-full rounded-full ${bar}`} style={{ width: `${statsReady ? pct : 0}%` }} />
+            </div>
           </div>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-[-0.06em] sm:text-[34px] text-foreground">
-            Inbound Call Log & Lead Outcomes
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-            Real-time inquiries and incoming calls handled directly by your AI Voice Agent with automatic transcript extraction and CRM lead qualification.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => {
-              setPage(0)
-              loadCalls(0)
-              loadStats()
-            }}
-            className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer shadow-xs"
-            title="Refresh list"
-          >
-            Refresh
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground shadow-md shadow-primary/20 hover:opacity-90 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <FileSpreadsheet size={15} />
-            {exporting ? 'Exporting...' : 'Export Inbound (.xlsx)'}
-          </button>
-        </div>
+        ))}
       </section>
 
-      {/* KPI Stat Cards with Gradient Glow & Animations */}
-      <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Inbound Calls */}
-        <div className="group relative overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-violet-500/40">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black tracking-wider text-muted-foreground uppercase">Total Inbound</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 group-hover:scale-110 transition-transform">
-              <PhoneIncoming size={17} />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-foreground">{stats?.total_calls ?? 0}</div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="font-bold text-violet-600 dark:text-violet-400">+{stats?.calls_today ?? 0}</span>
-            <span>calls received today</span>
-          </div>
-          <div className="absolute -right-6 -bottom-6 h-20 w-20 rounded-full bg-violet-500/5 blur-xl group-hover:bg-violet-500/15 transition-colors" />
+      {/* Main panel */}
+      <div className="rounded-2xl border border-ds-line bg-ds-bg shadow-sm">
+        {/* Status navigation */}
+        <div role="tablist" aria-label="Filter inbound calls" className="flex items-center gap-2.5 overflow-x-auto px-4 pb-3 pt-4 sm:px-6 sm:pt-5">
+          {TABS.map(({ key, label }) => {
+            const isActive = (FILTERS as readonly string[]).includes(filterStatus) ? filterStatus === key : key === 'All'
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setFilterStatus(key)}
+                className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-5 text-[15px] font-semibold transition-colors sm:text-[16px] ${
+                  isActive ? 'border-ds-primary bg-ds-primary text-white shadow-md shadow-blue-600/25' : 'border-ds-line bg-ds-bg text-ds-ink hover:border-ds-primary/40 hover:bg-blue-50/60'
+                }`}
+              >
+                {tabIcon(key, isActive)}
+                {label} <span className="tabular-nums">({tabCount(key)})</span>
+              </button>
+            )
+          })}
         </div>
 
-        {/* Answered by AI Agent */}
-        <div className="group relative overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-emerald-500/40">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black tracking-wider text-muted-foreground uppercase">Answered by AI</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 group-hover:scale-110 transition-transform">
-              <CheckCircle2 size={17} />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-foreground">{stats?.answered_calls ?? 0}</div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="font-bold text-emerald-600 dark:text-emerald-400">
-              {stats?.total_calls ? Math.round(((stats.answered_calls || 0) / stats.total_calls) * 100) : 100}%
-            </span>
-            <span>answered automatically</span>
-          </div>
-          <div className="absolute -right-6 -bottom-6 h-20 w-20 rounded-full bg-emerald-500/5 blur-xl group-hover:bg-emerald-500/15 transition-colors" />
-        </div>
-
-        {/* Avg Call Duration */}
-        <div className="group relative overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-amber-500/40">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black tracking-wider text-muted-foreground uppercase">Avg Conversation</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 group-hover:scale-110 transition-transform">
-              <Clock size={17} />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-foreground">
-            {formatDuration(stats?.avg_duration_seconds ?? 0)}
-          </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Missed / incomplete:</span>
-            <span className="font-bold text-foreground">{stats?.missed_calls ?? 0}</span>
-          </div>
-          <div className="absolute -right-6 -bottom-6 h-20 w-20 rounded-full bg-amber-500/5 blur-xl group-hover:bg-amber-500/15 transition-colors" />
-        </div>
-
-        {/* Unique Callers */}
-        <div className="group relative overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-blue-500/40">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black tracking-wider text-muted-foreground uppercase">Unique Callers</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 group-hover:scale-110 transition-transform">
-              <Users size={17} />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-foreground">{stats?.unique_callers ?? 0}</div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Distinct phone numbers</span>
-          </div>
-          <div className="absolute -right-6 -bottom-6 h-20 w-20 rounded-full bg-blue-500/5 blur-xl group-hover:bg-blue-500/15 transition-colors" />
-        </div>
-      </section>
-
-      {/* Main Table Card with Search, Filter Pills & Outcome Column */}
-      <section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          {/* Live Search */}
-          <div className="relative">
-            <Search className="absolute left-3.5 top-2.5 text-primary" size={15} />
+        {/* Filter toolbar */}
+        <div className="mx-4 flex flex-wrap items-center gap-2.5 border-t border-ds-line py-4 sm:mx-6">
+          <div className="relative w-full sm:min-w-[200px] sm:flex-1">
+            <Search size={17} strokeWidth={1.75} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ds-ink-3" />
             <input
+              type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by caller, phone, or outcome..."
-              className="h-10 w-full sm:w-80 rounded-xl border border-border bg-background pl-10 pr-4 text-xs font-medium outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+              placeholder="Search caller, phone, or outcome…"
+              aria-label="Search inbound calls"
+              className={`${controlCls} w-full bg-ds-surface pl-10 pr-3 placeholder:text-ds-ink-3 [&::-webkit-search-cancel-button]:hidden`}
             />
           </div>
-
-          {/* Quick Filter Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { id: 'All', label: 'All Inbound' },
-              { id: 'Hot', label: '🔥 Hot Leads' },
-              { id: 'Warm', label: '⚡ Warm' },
-              { id: 'Analyzed', label: 'Analyzed' }
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilterStatus(f.id)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${filterStatus === f.id
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'border border-border/80 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          {outcomeOptions.length > 0 &&
+            select('Filter by outcome', outcomeFilter, setOutcomeFilter, <>
+              <option value="all">All Outcomes</option>
+              {outcomeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+            </>)}
+          {select('Filter by AI score', scoreFilter, setScoreFilter, <>
+            <option value="all">All AI Score</option>
+            <option value="Hot">Hot (75+)</option>
+            <option value="Warm">Warm (45–74)</option>
+            <option value="Cold">Cold (under 45)</option>
+          </>)}
+          {languageOptions.length > 0 &&
+            select('Filter by language', languageFilter, setLanguageFilter, <>
+              <option value="all">All Languages</option>
+              {languageOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+            </>)}
+          <div className="contents">
+            {select('Filter by date range', rangeFilter, setRangeFilter, <>
+              {RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </>, <Calendar size={17} strokeWidth={1.75} />)}
           </div>
         </div>
 
-        {/* Table View */}
-        <div className="mt-5 overflow-x-auto">
-          {loading ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mb-2" />
-              <p className="animate-pulse">Loading inbound calls and AI outcomes...</p>
-            </div>
-          ) : visibleCalls.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground mb-3">
-                <PhoneIncoming size={22} />
-              </div>
-              <p className="font-semibold text-foreground">No inbound calls found</p>
-              <p className="text-xs text-muted-foreground mt-1">Calls placed to your phone number will appear here automatically.</p>
-            </div>
-          ) : (
-            <table className="w-full min-w-[950px] text-left">
-              <thead>
-                <tr className="border-b border-border/80 h-12 text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
-                  <th className="pb-3 pl-4 font-bold w-[18%]">Caller</th>
-                  <th className="pb-3 px-3 font-bold w-[14%]">Phone</th>
-                  <th className="pb-3 px-3 font-bold w-[30%]">Outcome & Intent</th>
-                  <th className="pb-3 px-2 font-bold text-center w-[10%]">AI Score</th>
-                  <th className="pb-3 px-2 font-bold text-center w-[8%]">Duration</th>
-                  <th className="pb-3 px-2 font-bold text-center w-[8%]">Status</th>
-                  <th className="pb-3 px-3 font-bold text-right w-[12%]">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {visibleCalls.map((call, idx) => {
-                  const durationSecs = typeof call.duration_seconds === 'number' ? call.duration_seconds : (parseInt(call.duration, 10) || 0)
-                  const hasDuration = durationSecs > 0 || (call.duration && call.duration !== '00:00' && call.duration !== '0')
-                  const wasAnswered = hasDuration || !!call.transcript || ['Analyzed', 'Completed', 'In Progress'].includes(call.status)
-                  const displayStatus = !wasAnswered ? 'Not Answered' : call.status
-                  const isKnownCaller = call.customer_name && !['inbound caller', 'unknown', 'there', ''].includes(call.customer_name.toLowerCase())
-                  const tempInfo = getLeadTemperature(call)
-                  const durationFormatted = formatDuration(durationSecs > 0 ? durationSecs : (call.duration || 0))
-                  const summaryText = call.outcome_summary || call.summary || call.analysis?.summary || (call.status === 'Completed' ? 'Call completed successfully.' : 'Inbound conversation recorded.')
+        {/* Stale data warning */}
+        {loadFailed && calls.length > 0 && (
+          <div className="px-4 pb-3 sm:px-6">
+            <Alert tone="warning" title="Couldn’t load inbound calls">
+              The calls below were loaded earlier and may be out of date. Try "Load more" again or reload the page.
+            </Alert>
+          </div>
+        )}
 
-                  return (
-                    <tr
-                      key={`${call._id || call.call_id || 'call'}-${idx}`}
-                      onClick={() => setSelectedCall(call)}
-                      className="group transition-all duration-150 hover:bg-muted/40 cursor-pointer"
-                    >
-                      {/* Caller */}
-                      <td className="pl-4 py-4 align-top">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 group-hover:scale-105 transition-transform">
-                            <PhoneIncoming size={15} />
-                          </div>
-                          <div className="flex flex-col min-w-0">
-                            <p className={`text-sm truncate max-w-[150px] ${isKnownCaller ? 'text-foreground font-bold' : 'text-muted-foreground font-medium'}`}>
-                              {call.customer_name || 'Inbound Caller'}
-                            </p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {isKnownCaller ? (
-                                <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                  CRM Lead
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-muted text-muted-foreground">
-                                  New Caller
-                                </span>
-                              )}
-                              <span className="text-[10px] text-muted-foreground">{call.language || 'Hindi'}</span>
+        {/* Call records */}
+        {loading ? (
+          <div className="p-6 pt-2">
+            <LoadingState label="Loading inbound calls…">
+              <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+            </LoadingState>
+          </div>
+        ) : loadFailed && calls.length === 0 ? (
+          <div className="p-6 pt-2">
+            <ErrorState title="Inbound calls couldn’t be loaded" description="The request failed, so no list is shown rather than an empty one. Reload the page to try again." />
+          </div>
+        ) : filteredView.length === 0 ? (
+          <div className="p-6 pt-2">
+            <EmptyState
+              icon={<PhoneIncoming size={18} strokeWidth={1.75} />}
+              title={calls.length === 0 ? 'No inbound calls yet' : 'No inbound calls match these filters'}
+              description={calls.length === 0 ? 'Calls placed to your phone number will appear here automatically.' : 'Try a different search or filter. Only loaded calls are searched.'}
+              action={calls.length > 0 && filtersActive ? <button onClick={clearFilters} className={buttonClass('outline', 'md')}>Clear filters</button> : undefined}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div role="region" aria-label="Inbound calls table" tabIndex={0} className="mx-3 hidden overflow-x-auto outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ds-primary sm:mx-4 xl:block">
+              <table className="w-full min-w-[940px] border-collapse text-[15px]">
+                <thead>
+                  <tr className="bg-slate-50 [&>th:first-child]:rounded-l-xl [&>th:last-child]:rounded-r-xl">
+                    <th scope="col" className={`${th} pl-4 text-left`}>Caller</th>
+                    <th scope="col" className={`${th} text-left`}>Phone</th>
+                    <th scope="col" className={`${th} text-left`}>Outcome &amp; Intent</th>
+                    <th scope="col" className={`${th} text-left`}>AI Score</th>
+                    <th scope="col" className={`${th} text-right`}>Duration</th>
+                    <th scope="col" className={`${th} text-left`}>Status</th>
+                    <th scope="col" className={`${th} pr-4 text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredView.map((call, idx) => {
+                    const v = inboundView(call)
+                    return (
+                      <tr key={`${call._id || call.call_id || 'call'}-${idx}`} onClick={() => setSelectedCall(call)} className="cursor-pointer border-b border-slate-100 transition-colors last:border-b-0 hover:bg-blue-50/40">
+                        <td className="max-w-[260px] py-4 pl-4 pr-2.5 align-top">
+                          <div className="flex min-w-0 items-start gap-3">
+                            {avatar(call, Boolean(v.isKnownCaller))}
+                            <div className="min-w-0">
+                              <p className={`truncate text-[16px] ${v.isKnownCaller ? 'font-semibold text-ds-ink' : 'font-semibold text-ds-ink'}`}>{call.customer_name || 'Inbound caller'}</p>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                                {callerBadge(Boolean(v.isKnownCaller))}
+                                {call.language && <span className="text-[14px] text-ds-ink-2">{call.language}</span>}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
-
-                      {/* Phone */}
-                      <td className="px-3 py-4 align-top">
-                        <div className="flex items-center gap-1 text-xs font-mono font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-                          <span title={call.customer_id}>{call.customer_id || '-'}</span>
-                          {call.customer_id && (
-                            <button
-                              onClick={(e) => copyPhone(e, call.customer_id, call.call_id)}
-                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Copy number"
-                            >
-                              {copiedId === call.call_id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                            </button>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground mt-1">
-                          {call.created_at ? new Date(call.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                        </div>
-                      </td>
-
-                      {/* Outcome & Intent (Lead Style) */}
-                      <td className="px-3 py-4 align-top">
-                        <div className="flex flex-col gap-1 max-w-[340px]">
-                          {call.analysis?.intent_label && (
-                            <span className="inline-flex items-center gap-1 w-fit rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary tracking-wide border border-primary/20">
-                              <Sparkles size={11} /> {call.analysis.intent_label}
-                            </span>
-                          )}
-                          <p
-                            className="text-xs text-muted-foreground line-clamp-2 leading-relaxed break-words"
-                            title={summaryText}
-                          >
-                            {summaryText}
-                          </p>
-                        </div>
-                      </td>
-
-                      {/* AI Temperature / Score */}
-                      <td className="px-2 py-4 align-top text-center">
-                        {tempInfo.label !== 'Neutral' ? (
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold border ${tempInfo.color}`}>
-                            {tempInfo.label === 'Hot' ? <Flame size={12} /> : <Zap size={12} />}
-                            {tempInfo.label}
-                            {tempInfo.score !== null && <span className="opacity-75 font-normal">({tempInfo.score})</span>}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/60">—</span>
-                        )}
-                      </td>
-
-                      {/* Duration */}
-                      <td className="px-2 py-4 align-top text-center">
-                        <div className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-foreground bg-muted/40 px-2 py-1 rounded-lg">
-                          <Clock size={11} className="text-muted-foreground" />
-                          {durationFormatted}
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-2 py-4 align-top text-center">
-                        <div className="inline-flex items-center gap-1.5">
-                          <span className={`h-2 w-2 rounded-full shrink-0 ${displayStatus === 'Completed' ? 'bg-emerald-500' :
-                              displayStatus === 'Analyzed' ? 'bg-purple-500' :
-                                displayStatus === 'In Progress' ? 'bg-blue-500 animate-ping' :
-                                  displayStatus === 'Not Answered' ? 'bg-amber-500' : 'bg-muted-foreground'
-                            }`} />
-                          <span className="text-xs font-medium text-foreground">{displayStatus}</span>
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-3 py-4 align-top text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedCall(call)
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all shadow-xs cursor-pointer"
-                        >
-                          <Eye size={13} />
-                          <span>View</span>
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-
-          {calls.length > 0 && hasMore && (
-            <div className="mt-6 flex justify-center pb-2">
-              <button
-                onClick={() => setPage(p => p + 1)}
-                className="rounded-xl border border-border bg-card px-5 py-2 text-xs font-bold text-foreground hover:bg-muted transition-all shadow-xs cursor-pointer"
-              >
-                Load More Inbound Calls
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Slide-over / Modal for Full Call Analysis & Conversation Transcript */}
-      {selectedCall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-2xl rounded-2xl border border-border/70 bg-background/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="relative border-b border-border bg-muted/40 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3.5">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 shadow-sm">
-                  <PhoneIncoming size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold tracking-tight text-foreground">
-                      {selectedCall.customer_name || 'Inbound Caller'}
-                    </h2>
-                    {selectedCall.customer_name && !['inbound caller', 'unknown', 'there', ''].includes(selectedCall.customer_name.toLowerCase()) && (
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-600 border border-emerald-500/20">
-                        CRM Lead
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 font-mono">{selectedCall.customer_id}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedCall(null)}
-                className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
+                        </td>
+                        <td className="px-2.5 py-4 align-top">
+                          <p className="whitespace-nowrap font-medium tabular-nums text-ds-ink" title={call.customer_id}>{call.customer_id || '—'}</p>
+                          <p className="mt-1 text-[14px] text-ds-ink-2">{formatDateTime(call.created_at)}</p>
+                        </td>
+                        <td className="min-w-[190px] max-w-[320px] px-2.5 py-4 align-top">
+                          {intentChip(call, v.tempInfo.label)}
+                          {v.summaryText
+                            ? <p className="line-clamp-2 break-words text-ds-ink-2" title={v.summaryText}>{v.summaryText}</p>
+                            : <p className="text-ds-ink-3">No summary yet</p>}
+                        </td>
+                        <td className="px-2.5 py-4 align-top">{scoreBadge(v.tempInfo)}</td>
+                        <td className="px-2.5 py-4 text-right align-top font-medium tabular-nums text-ds-ink">{v.durationFormatted}</td>
+                        <td className="px-2.5 py-4 align-top"><StatusBadge status={v.displayStatus} className="px-2.5 py-1 text-[14px]" /></td>
+                        <td className="py-3 pl-2.5 pr-3 align-top">
+                          <div className="flex items-center justify-end gap-1.5">{copyButton(call)}{viewButton(call)}</div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {/* 4 Stat Badges */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">
-                    <Clock size={12} className="text-primary" /> Duration
-                  </div>
-                  <div className="text-sm font-bold text-foreground">
-                    {formatDuration(selectedCall.duration_seconds || selectedCall.duration || 0)}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">
-                    <MessageSquare size={12} className="text-blue-500" /> Language
-                  </div>
-                  <div className="text-sm font-bold text-foreground">{selectedCall.language || 'Hindi'}</div>
-                </div>
-
-                <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">
-                    <Sparkles size={12} className="text-amber-500" /> AI Intent
-                  </div>
-                  <div className="text-sm font-bold text-foreground truncate">
-                    {selectedCall.analysis?.lead_temperature ? `${selectedCall.analysis.lead_temperature} Intent` : selectedCall.status}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border bg-card p-3.5 shadow-xs">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">
-                    <CalendarDays size={12} className="text-emerald-500" /> Date
-                  </div>
-                  <div className="text-xs font-semibold text-foreground truncate">
-                    {selectedCall.created_at ? new Date(selectedCall.created_at).toLocaleDateString() : '-'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Call Summary & Outcome Box */}
-              <div>
-                <h3 className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-foreground">
-                  <Sparkles size={14} className="text-primary" /> AI Call Summary & Outcome
-                </h3>
-                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs font-medium leading-relaxed text-foreground shadow-xs">
-                  {selectedCall.outcome_summary || selectedCall.summary || selectedCall.analysis?.summary || 'Call concluded and analyzed.'}
-                </div>
-              </div>
-
-              {/* Full Transcript with Styled Bubbles */}
-              {selectedCall.transcript && (
-                <div>
-                  <h3 className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-foreground">
-                    <MessageSquare size={14} className="text-primary" /> Conversation Transcript
-                  </h3>
-                  <div className="rounded-xl border border-border bg-card p-4 space-y-3 max-h-[300px] overflow-y-auto">
-                    {selectedCall.transcript.split('\n').filter(Boolean).map((line: string, i: number) => {
-                      const isAi = line.startsWith('AI:')
-                      const cleanText = line.replace(/^(AI:|Customer:|User:)\s*/, '')
-                      return (
-                        <div key={i} className={`flex flex-col ${isAi ? 'items-start' : 'items-end'}`}>
-                          <span className="text-[10px] font-bold text-muted-foreground mb-1">
-                            {isAi ? '🤖 Voice AI' : '👤 Caller'}
-                          </span>
-                          <div className={`rounded-xl px-3.5 py-2 text-xs leading-relaxed max-w-[85%] ${isAi
-                              ? 'bg-muted/70 text-foreground border border-border/60'
-                              : 'bg-primary text-primary-foreground font-medium shadow-xs'
-                            }`}>
-                            {cleanText}
+            {/* Cards: phones and tablets */}
+            <div className="space-y-2.5 px-3 pb-3 xl:hidden">
+              {filteredView.map((call, idx) => {
+                const v = inboundView(call)
+                return (
+                  <article key={`${call._id || call.call_id || 'call'}-m-${idx}`} className="rounded-2xl border border-ds-line bg-ds-bg p-3.5 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      {avatar(call, Boolean(v.isKnownCaller))}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-[16px] font-semibold text-ds-ink">{call.customer_name || 'Inbound caller'}</p>
+                            <p className="text-[14px] tabular-nums text-ds-ink-2">{call.customer_id || '—'}</p>
                           </div>
+                          <StatusBadge status={v.displayStatus} className="shrink-0 px-2.5 py-0.5 text-[14px]" />
                         </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
+                        <div className="mt-2">{intentChip(call, v.tempInfo.label)}</div>
+                        {v.summaryText && <p className="line-clamp-2 text-[14px] text-ds-ink-2">{v.summaryText}</p>}
+                        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[14px] text-ds-ink-2">
+                          {scoreBadge(v.tempInfo)}
+                          {callerBadge(Boolean(v.isKnownCaller))}
+                          <span className="tabular-nums">{v.durationFormatted}</span>
+                          {call.language && <span>{call.language}</span>}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="text-[14px] text-ds-ink-2">{formatDateTime(call.created_at)}</span>
+                          <div className="flex items-center gap-2">{copyButton(call)}{viewButton(call)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
             </div>
+          </>
+        )}
+
+        {/* Footer: loaded count + existing "Load more" */}
+        {!loading && calls.length > 0 && (
+          <div className="mx-4 mt-1 flex flex-col gap-3 border-t border-ds-line py-4 sm:mx-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[15px] text-ds-ink-2 tabular-nums">
+              Showing <span className="font-medium text-ds-ink">{filteredView.length}</span> of <span className="font-medium text-ds-ink">{calls.length}</span> loaded calls{hasMore ? ' · more available' : ''}
+            </p>
+            {hasMore && <LoadMore onClick={() => setPage(p => p + 1)} label="Load more inbound calls" />}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      <Sheet
+        open={Boolean(selectedCall)}
+        onClose={() => setSelectedCall(null)}
+        title={selectedCall?.customer_name || 'Inbound caller'}
+        description={<span className="tabular-nums">{selectedCall?.customer_id}</span>}
+        headerExtra={selectedCall ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {selectedCall.customer_name && !['inbound caller', 'unknown', 'there', ''].includes(selectedCall.customer_name.toLowerCase()) && <Badge variant="primary">CRM lead</Badge>}
+            <StatusBadge status={selectedCall.status} />
+          </div>
+        ) : null}
+      >
+        {selectedCall && (
+          <>
+            <DetailGrid
+              items={[
+                { label: 'Duration', value: <span className="tabular-nums">{formatDuration(selectedCall.duration_seconds || selectedCall.duration || 0)}</span> },
+                { label: 'Language', value: selectedCall.language || '—' },
+                { label: 'AI intent', value: selectedCall.analysis?.lead_temperature ? `${selectedCall.analysis.lead_temperature} intent` : (selectedCall.status || '—') },
+                { label: 'Date', value: formatDateTime(selectedCall.created_at) },
+              ]}
+            />
+            <SheetSection title="AI call summary & outcome" icon={<Sparkles size={14} />}>
+              <p className="rounded-lg border border-ds-line bg-ds-surface p-3.5 text-[13px] leading-relaxed text-ds-ink-2">
+                {selectedCall.outcome_summary || selectedCall.summary || selectedCall.analysis?.summary || 'No summary available.'}
+              </p>
+            </SheetSection>
+            {selectedCall.transcript && (
+              <SheetSection title="Conversation transcript" icon={<MessageSquare size={14} />}>
+                <Transcript text={selectedCall.transcript} customerLabel="Caller" />
+              </SheetSection>
+            )}
+          </>
+        )}
+      </Sheet>
     </AppLayout>
   )
 }

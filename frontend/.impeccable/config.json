@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-12T14:27:57.210Z",
+        "reason": "user confirmed: user decided 'Use Inter as the font' when approving Phase 1 of the TalklyAI dashboard redesign"
+      }
+    ]
+  }
+}
