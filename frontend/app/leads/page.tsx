@@ -81,10 +81,10 @@ function initials(name?: string) {
 
 // ─── Status-tab config ────────────────────────────────────────────────────────
 // Maps tab key → filterStatus value used by the existing filter logic
-type TabKey = 'all' | 'urgent' | 'followup' | 'qualified'
+type TabKey = 'all' | 'interested' | 'followup' | 'qualified'
 const TAB_STATUS: Record<TabKey, string | null> = {
   all: null,
-  urgent: 'Urgent',
+  interested: 'Interested',
   followup: 'Follow Up',
   qualified: 'Qualified',
 }
@@ -441,7 +441,7 @@ function LeadsContent() {
   // ── tabs definition ─────────────────────────────────────────────────────────
   const TABS: { key: TabKey; label: string }[] = [
     { key: 'all', label: 'All Leads' },
-    { key: 'urgent', label: 'Urgent' },
+    { key: 'interested', label: 'Interested' },
     { key: 'followup', label: 'Follow Up' },
     { key: 'qualified', label: 'Qualified' },
   ]
@@ -485,7 +485,7 @@ function LeadsContent() {
   const convertedCount = leads.filter((l) => (l.status || '').toLowerCase() === 'converted').length
   const KPI_CARDS = [
     { label: 'Total Leads', value: leads.length, Icon: Users, tile: 'bg-blue-50 text-ds-primary' },
-    { label: 'Urgent Leads', value: tabCount('urgent'), Icon: Zap, tile: 'bg-orange-50 text-orange-500' },
+    { label: 'Interested Leads', value: tabCount('interested'), Icon: Sparkles, tile: 'bg-amber-50 text-amber-600' },
     { label: 'Qualified Leads', value: tabCount('qualified'), Icon: Target, tile: 'bg-violet-50 text-ds-accent' },
     { label: 'Converted Leads', value: convertedCount, Icon: CheckCircle2, tile: 'bg-emerald-50 text-emerald-600' },
   ]
