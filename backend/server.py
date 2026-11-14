@@ -877,7 +877,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 # Startup logic moved to lifespan context manager above
 
 @app.get("/api/v1/calls")
-async def get_calls(limit: int = 20, skip: int = 0, direction: str = None, current_user: dict = Depends(require_company_access)):
+async def get_calls(limit: int = 500, skip: int = 0, direction: str = None, current_user: dict = Depends(require_company_access)):
     db = mongodb.get_db()
     base_filter = {"direction": direction} if direction else None
     cursor = db.calls.find(tenant_filter(current_user, base_filter)).sort("created_at", -1).skip(skip).limit(limit)

@@ -41,7 +41,7 @@ export default function InboundCallsPage() {
   const [scoreFilter, setScoreFilter] = useState<string>('all')
   const [languageFilter, setLanguageFilter] = useState<string>('all')
   const [rangeFilter, setRangeFilter] = useState<string>('all')
-  const LIMIT = 25
+  const LIMIT = 500
 
   const handleExport = async () => {
     setExporting(true)

@@ -31,7 +31,7 @@ export default function CallsPage() {
   // Presentation-only filters applied to the calls already loaded (no extra request).
   const [directionFilter, setDirectionFilter] = useState<DirectionTab>('all')
   const [languageFilter, setLanguageFilter] = useState<string>('all')
-  const LIMIT = 20
+  const LIMIT = 500
 
   const loadCalls = async (pageNum: number) => {
     if (pageNum === 0) setLoading(true)
