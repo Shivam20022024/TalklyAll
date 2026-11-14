@@ -427,6 +427,14 @@ function LeadsContent() {
       .trim()
   }
 
+  // outcome label
+  const leadOutcome = (lead: any): string => {
+    const st = String(lead.status || '').toLowerCase()
+    if (st === 'no answer' || st === 'not answered' || st === 'not received') return 'No response from customer'
+    if (st === 'busy') return 'Call busy / rejected'
+    return lead.outcome_summary || lead.outcome || lead.status || '—'
+  }
+
   // campaign label
   const campaignLabel = (lead: any): string => lead.campaign_name || lead.campaign || '—'
 
@@ -888,9 +896,9 @@ function LeadsContent() {
                       <td className="min-w-[200px] max-w-[320px] py-3 pr-4 align-middle">
                         <span
                           className="line-clamp-2 block text-[14px] leading-snug text-ds-ink break-words"
-                          title={lead.outcome_summary || lead.outcome || (lead.status === 'No Answer' ? 'No response from customer' : lead.status) || '—'}
+                          title={leadOutcome(lead)}
                         >
-                          {lead.outcome_summary || lead.outcome || (lead.status === 'No Answer' ? 'No response from customer' : lead.status) || '—'}
+                          {leadOutcome(lead)}
                         </span>
                       </td>
 
@@ -985,7 +993,7 @@ function LeadsContent() {
                       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[14px] text-ds-ink-2">
                         <StatusBadge status={lead.status} className="px-2.5 py-0.5 text-[14px]" />
                         {intentLabel(lead) !== '—' && <span className="text-ds-ink">{intentLabel(lead)}</span>}
-                        {lead.outcome_summary ? <span>· {lead.outcome_summary}</span> : (campaignLabel(lead) !== '—' && <span>· {campaignLabel(lead)}</span>)}
+                        {leadOutcome(lead) !== '—' && <span>· {leadOutcome(lead)}</span>}
                         <span>{relativeTime(lead.lastContact || lead.last_called_at || lead.updated_at || lead.created_at)}</span>
                       </div>
                       <div className="mt-2 flex items-center justify-end gap-1">

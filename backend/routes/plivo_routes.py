@@ -284,16 +284,15 @@ async def finalize_plivo_call(
 
         sync_lead_id = call_doc.get("lead_id") or call_id
         lead_filter = {"company_id": cid} if cid else {}
-        match_conditions = [{"lead_id": sync_lead_id}, {"lead_id": call_id}]
-        if call_doc.get("customer_id"):
-            match_conditions.append({"phone": call_doc.get("customer_id")})
-        lead_filter["$or"] = match_conditions
+        lead_filter["$or"] = [{"lead_id": sync_lead_id}, {"lead_id": call_id}]
 
         await db.leads.update_many(
             lead_filter,
             {"$set": {
                 "status": lead_status,
-                "lastContact": datetime.utcnow().isoformat()
+                "lastContact": datetime.utcnow().isoformat(),
+                "last_called_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
             }}
         )
 
