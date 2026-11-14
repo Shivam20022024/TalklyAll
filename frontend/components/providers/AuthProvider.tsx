@@ -82,10 +82,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const userData = await fetchApi('/api/v1/auth/me');
           setUser({ ...userData, role: normalizeRole(userData.role) });
-        } catch (error) {
+        } catch (error: any) {
           console.error('Auth verification failed', error);
-          removeAuthToken();
-          setUser(null);
+          // Only wipe session if the server explicitly rejected credentials (401/403)
+          if (error?.message === 'Unauthorized' || error?.status === 401 || error?.status === 403) {
+            removeAuthToken();
+            setUser(null);
+          }
         }
       }
       setLoading(false);
