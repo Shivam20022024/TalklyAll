@@ -22,14 +22,24 @@ class IntelligenceService:
             days = 30
             
         start_date = (today - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_iso = start_date.isoformat()
         
-        base_query_leads = {"company_id": company_id, "created_at": {"$gte": start_date}}
-        base_query_calls = {"company_id": company_id, "created_at": {"$gte": start_date}}
+        lead_time_cond = {
+            "$or": [
+                {"created_at": {"$gte": start_date}},
+                {"lastContact": {"$gte": start_iso}},
+                {"last_called_at": {"$gte": start_iso}},
+                {"updated_at": {"$gte": start_iso}}
+            ]
+        }
+        
+        lead_conditions = [{"company_id": company_id}, lead_time_cond]
+        call_conditions = [{"company_id": company_id}, {"created_at": {"$gte": start_date}}]
         
         call_industry_conds = []
         if campaign_id:
-            base_query_leads["campaign_id"] = campaign_id
-            base_query_calls["campaign_id"] = campaign_id
+            lead_conditions.append({"campaign_id": campaign_id})
+            call_conditions.append({"campaign_id": campaign_id})
         elif industry and industry != "all":
             # Match campaigns that belong to this industry vertical
             matching_campaigns = await db.campaigns.find(
@@ -44,23 +54,26 @@ class IntelligenceService:
                 call_industry_conds.append({"campaign_id": {"$in": matching_campaign_ids}})
                 lead_industry_conds.append({"campaign_id": {"$in": matching_campaign_ids}})
             
-            base_query_calls["$or"] = call_industry_conds
-            base_query_leads["$or"] = lead_industry_conds
+            call_conditions.append({"$or": call_industry_conds})
+            lead_conditions.append({"$or": lead_industry_conds})
+        
+        base_query_leads = {"$and": lead_conditions}
+        base_query_calls = {"$and": call_conditions}
         
         # 1-4. Concurrently fetch all top-level metrics
         total_leads_task = db.leads.count_documents(base_query_leads)
         calls_made_task = db.calls.count_documents(base_query_calls)
-        # Derived from db.leads, not db.calls, and specifically a superset of
-        # every status interested_leads/qualified_leads/converted_leads check
-        # below - a lead can have more than one call attempt, so counting
-        # "connected" from call records separately could (and did, confirmed
-        # live on the dashboard) undercount relative to lead-status-based
-        # funnel stages below it, breaking the implied funnel ordering
-        # (Inquiries >= Connected >= Pre-Screened >= Urgent) the dashboard
-        # cards visually present.
-        connected_calls_task = db.leads.count_documents({
+        connected_leads_task = db.leads.count_documents({
             **base_query_leads,
             "status": {"$nin": ["New", "No Answer"]}
+        })
+        connected_calls_from_calls_task = db.calls.count_documents({
+            **base_query_calls,
+            "$or": [
+                {"duration": {"$gt": 0}},
+                {"duration_seconds": {"$gt": 0}},
+                {"status": {"$in": ["Completed", "completed", "Analyzed"]}}
+            ]
         })
         qualified_leads_task = db.leads.count_documents({
             **base_query_leads, 
@@ -79,14 +92,18 @@ class IntelligenceService:
         })
         
         (
-            total_leads, calls_made, connected_calls, 
-            qualified_leads, interested_leads, converted_leads, contacted_leads,
+            total_leads_raw, calls_made, connected_leads, connected_from_calls,
+            qualified_leads, interested_leads, converted_leads, contacted_leads_raw,
             analyzed_calls_count
         ) = await asyncio.gather(
-            total_leads_task, calls_made_task, connected_calls_task,
+            total_leads_task, calls_made_task, connected_leads_task, connected_calls_from_calls_task,
             qualified_leads_task, interested_leads_task, converted_leads_task, contacted_leads_task,
             analyzed_calls_task
         )
+
+        connected_calls = max(connected_leads, connected_from_calls)
+        total_leads = max(total_leads_raw, calls_made, connected_calls)
+        contacted_leads = max(contacted_leads_raw, connected_calls)
         
         # 5. Conversion Rate
         conversion_rate = "0%"
@@ -131,14 +148,25 @@ class IntelligenceService:
                 d_end = d_start + timedelta(hours=step_hours)
                 labels.append(d_start.strftime("%I %p"))
                 
-                chart_base = {"company_id": company_id, "created_at": {"$gte": d_start, "$lt": d_end}}
+                chart_base_conds = [{"company_id": company_id}, {"created_at": {"$gte": d_start, "$lt": d_end}}]
                 if campaign_id:
-                    chart_base["campaign_id"] = campaign_id
+                    chart_base_conds.append({"campaign_id": campaign_id})
                 elif call_industry_conds:
-                    chart_base["$or"] = call_industry_conds
+                    chart_base_conds.append({"$or": call_industry_conds})
                     
-                chart_tasks.append(db.calls.count_documents(chart_base))
-                chart_tasks.append(db.calls.count_documents({**chart_base, "status": {"$in": ["Completed", "completed", "Analyzed"]}}))
+                chart_tasks.append(db.calls.count_documents({"$and": chart_base_conds}))
+                chart_tasks.append(db.calls.count_documents({
+                    "$and": [
+                        *chart_base_conds,
+                        {
+                            "$or": [
+                                {"duration": {"$gt": 0}},
+                                {"duration_seconds": {"$gt": 0}},
+                                {"status": {"$in": ["Completed", "completed", "Analyzed"]}}
+                            ]
+                        }
+                    ]
+                }))
         else:
             points = min(12, days)
             step_days = max(1, days // points)
@@ -147,14 +175,25 @@ class IntelligenceService:
                 d_end = d_start + timedelta(days=step_days)
                 labels.append(d_start.strftime("%b %d"))
                 
-                chart_base = {"company_id": company_id, "created_at": {"$gte": d_start, "$lt": d_end}}
+                chart_base_conds = [{"company_id": company_id}, {"created_at": {"$gte": d_start, "$lt": d_end}}]
                 if campaign_id:
-                    chart_base["campaign_id"] = campaign_id
+                    chart_base_conds.append({"campaign_id": campaign_id})
                 elif call_industry_conds:
-                    chart_base["$or"] = call_industry_conds
+                    chart_base_conds.append({"$or": call_industry_conds})
                     
-                chart_tasks.append(db.calls.count_documents(chart_base))
-                chart_tasks.append(db.calls.count_documents({**chart_base, "status": {"$in": ["Completed", "completed", "Analyzed"]}}))
+                chart_tasks.append(db.calls.count_documents({"$and": chart_base_conds}))
+                chart_tasks.append(db.calls.count_documents({
+                    "$and": [
+                        *chart_base_conds,
+                        {
+                            "$or": [
+                                {"duration": {"$gt": 0}},
+                                {"duration_seconds": {"$gt": 0}},
+                                {"status": {"$in": ["Completed", "completed", "Analyzed"]}}
+                            ]
+                        }
+                    ]
+                }))
                 
         if chart_tasks:
             results = await asyncio.gather(*chart_tasks)
@@ -165,6 +204,65 @@ class IntelligenceService:
                     "calls_made": results[idx*2],
                     "connected_calls": results[idx*2 + 1]
                 })
+
+        # Real Call Duration & Response Time Analytics from Call Records
+        calls_cursor = db.calls.find(
+            base_query_calls,
+            {"duration": 1, "duration_seconds": 1, "status": 1, "created_at": 1, "answered_at": 1}
+        ).limit(500)
+
+        call_durations = []
+        response_times_sec = []
+        async for c in calls_cursor:
+            dur = c.get("duration") or c.get("duration_seconds")
+            if dur is not None and isinstance(dur, (int, float)) and dur > 0:
+                call_durations.append(float(dur))
+
+            ans_at = c.get("answered_at")
+            c_at = c.get("created_at")
+            if ans_at and c_at:
+                try:
+                    if isinstance(ans_at, str):
+                        ans_dt = datetime.fromisoformat(ans_at.replace("Z", "+00:00").replace("+00:00", ""))
+                    else:
+                        ans_dt = ans_at
+                    if isinstance(c_at, str):
+                        c_dt = datetime.fromisoformat(c_at.replace("Z", "+00:00").replace("+00:00", ""))
+                    else:
+                        c_dt = c_at
+                    diff = (ans_dt - c_dt).total_seconds()
+                    if 0 <= diff <= 300:
+                        response_times_sec.append(diff)
+                except Exception:
+                    pass
+
+        # Format average call duration
+        if call_durations:
+            avg_sec = round(sum(call_durations) / len(call_durations))
+            if avg_sec >= 60:
+                mins = avg_sec // 60
+                secs = avg_sec % 60
+                avg_call_duration_str = f"{mins}m {secs}s" if secs > 0 else f"{mins}m"
+            else:
+                avg_call_duration_str = f"{avg_sec}s"
+        else:
+            avg_call_duration_str = "0s"
+
+        # Format call success rate
+        if calls_made > 0:
+            call_success_rate = f"{round((connected_calls / calls_made) * 100)}%"
+        else:
+            call_success_rate = "0%"
+
+        # Format response time (time to first outreach response)
+        if response_times_sec:
+            avg_resp = round(sum(response_times_sec) / len(response_times_sec))
+            if avg_resp < 60:
+                response_time_str = f"~ {max(1, avg_resp)}s"
+            else:
+                response_time_str = f"~ {(avg_resp / 60):.1f} min"
+        else:
+            response_time_str = "< 1 min"
 
         # Aggregate real intents and objections from analyzed calls
         analyzed_calls_cursor = db.calls.find(
@@ -226,7 +324,10 @@ class IntelligenceService:
             "chart_data": chart_data,
             "analyzed_calls_count": analyzed_calls_count,
             "real_intents": real_intents,
-            "real_objections": real_objections
+            "real_objections": real_objections,
+            "avg_call_duration": avg_call_duration_str,
+            "call_success_rate": call_success_rate,
+            "response_time": response_time_str
         }
     async def get_overall_dashboard_metrics(self, db, company_id: str) -> Dict[str, Any]:
         """

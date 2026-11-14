@@ -426,8 +426,8 @@ export default function DashboardPage() {
                     key={key}
                     onClick={() => handleIndustryChange(key)}
                     className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors ${isActive
-                        ? 'bg-ds-primary text-white'
-                        : 'border border-ds-line bg-white text-ds-ink-2 hover:border-ds-line-strong hover:text-ds-ink'
+                      ? 'bg-ds-primary text-white'
+                      : 'border border-ds-line bg-white text-ds-ink-2 hover:border-ds-line-strong hover:text-ds-ink'
                       }`}
                   >
                     {Icon && <Icon size={12} strokeWidth={1.75} />}
@@ -534,16 +534,16 @@ export default function DashboardPage() {
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${idx === 0
-                          ? 'bg-blue-600'
-                          : idx === 1
-                            ? 'bg-blue-500'
-                            : idx === 2
-                              ? 'bg-indigo-500'
-                              : idx === 3
-                                ? 'bg-indigo-600'
-                                : idx === 4
-                                  ? 'bg-violet-600'
-                                  : 'bg-emerald-600'
+                        ? 'bg-blue-600'
+                        : idx === 1
+                          ? 'bg-blue-500'
+                          : idx === 2
+                            ? 'bg-indigo-500'
+                            : idx === 3
+                              ? 'bg-indigo-600'
+                              : idx === 4
+                                ? 'bg-violet-600'
+                                : 'bg-emerald-600'
                         }`}
                       style={{ width: `${Math.max(pctNumber, 3)}%` }}
                     />
@@ -706,23 +706,27 @@ export default function DashboardPage() {
 
           <div className="mt-4 flex flex-1 flex-col justify-center">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold tracking-tight text-ds-ink">~ 2.4 min</span>
+              <span className="text-3xl font-extrabold tracking-tight text-ds-ink">
+                {dashboardData?.response_time || '< 1 min'}
+              </span>
               <span className="flex items-center gap-1 text-sm font-medium text-ds-success-ink">
                 <TrendingUp size={12} /> Faster than manual
               </span>
             </div>
             <p className="mt-1.5 text-sm text-ds-ink-2">
-              Automated AI dialers initiate student engagement within minutes of inquiry capture.
+              Automated AI dialers initiate {config.shortLabel.toLowerCase()} outreach within minutes of inquiry capture.
             </p>
 
             <div className="mt-4 flex items-center justify-between rounded-lg bg-ds-surface p-3">
               <div>
                 <p className="text-[13px] font-medium text-ds-ink-3">Avg. Call Duration</p>
-                <p className="text-base font-semibold text-ds-ink">3m 42s</p>
+                <p className="text-base font-semibold text-ds-ink">{dashboardData?.avg_call_duration || '—'}</p>
               </div>
               <div className="text-right">
                 <p className="text-[13px] font-medium text-ds-ink-3">Call Success Rate</p>
-                <p className="text-base font-semibold text-ds-success-ink">{conversionRate}</p>
+                <p className="text-base font-semibold text-ds-success-ink">
+                  {dashboardData?.call_success_rate || (callsMade > 0 ? `${connectedPct}%` : '0%')}
+                </p>
               </div>
             </div>
           </div>
@@ -738,7 +742,9 @@ export default function DashboardPage() {
             </span>
             <div>
               <h2 className="text-[19px] font-semibold leading-snug text-ds-ink">Recent Activity</h2>
-              <p className="text-sm text-ds-ink-2">Latest student inquiries, calls and counseling follow-ups</p>
+              <p className="text-sm text-ds-ink-2">
+                Latest {config.shortLabel.toLowerCase()} inquiries, calls and follow-ups
+              </p>
             </div>
           </div>
           <Link href="/calls" className="shrink-0 whitespace-nowrap text-sm font-semibold text-ds-primary hover:underline">
