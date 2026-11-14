@@ -76,7 +76,7 @@ function timeAgo(dateStr: string): string {
 
 export default function DashboardPage() {
   const { user, isSuperAdmin } = useAuth()
-  const [range, setRange] = useState<RangeValue>('30 Days')
+  const [range, setRange] = useState<RangeValue>('Today')
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
 
   // Adaptive Industry Selection:

@@ -151,6 +151,7 @@ app.add_middleware(
 )
 
 
+
 from routes.campaign_routes import campaign_router
 from routes.lead_routes import lead_router
 from routes.auth_routes import auth_router
@@ -187,7 +188,7 @@ async def health_check():
     return {"status": "ok", "service": "TalklyAI Backend"}
 
 @app.get("/api/v1/analytics/dashboard")
-async def get_analytics_dashboard(range: str = "30 Days", campaign_id: str = None, industry: str = None, current_user: dict = Depends(require_company_access)):
+async def get_analytics_dashboard(range: str = "Today", campaign_id: str = None, industry: str = None, current_user: dict = Depends(require_company_access)):
     db = mongodb.get_db()
     metrics = await intelligence_service.get_dashboard_metrics(db, current_user["company_id"], range, campaign_id, industry)
     return {"status": "success", "data": metrics}

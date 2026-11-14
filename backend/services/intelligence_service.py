@@ -7,7 +7,7 @@ class IntelligenceService:
     Service for calculating AI Business Intelligence metrics across calls.
     """
     
-    async def get_dashboard_metrics(self, db, company_id: str, range_str: str = "30 Days", campaign_id: str = None, industry: str = None) -> Dict[str, Any]:
+    async def get_dashboard_metrics(self, db, company_id: str, range_str: str = "Today", campaign_id: str = None, industry: str = None) -> Dict[str, Any]:
         """
         Calculates top-level metrics for the BI Dashboard, optionally filtered by campaign or industry vertical.
         """
