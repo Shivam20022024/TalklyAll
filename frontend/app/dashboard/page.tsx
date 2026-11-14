@@ -118,7 +118,7 @@ export default function DashboardPage() {
             }
             return
           }
-        } catch {}
+        } catch { }
 
         try {
           const promptRes = await fetchApi('/api/v1/prompt')
@@ -127,7 +127,7 @@ export default function DashboardPage() {
             if (promptRes.offering) setCustomOffering(promptRes.offering)
             return
           }
-        } catch {}
+        } catch { }
 
         if (user?.industry) {
           setSelectedIndustry(user.industry)
@@ -141,7 +141,7 @@ export default function DashboardPage() {
             setSelectedIndustry(saved)
             return
           }
-        } catch {}
+        } catch { }
         setSelectedIndustry(user?.industry || 'edtech')
       }
     }
@@ -153,7 +153,7 @@ export default function DashboardPage() {
     setSelectedCampaignId('')
     try {
       localStorage.setItem('talkly_selected_industry', ind)
-    } catch {}
+    } catch { }
   }
 
   // Load Dashboard metrics, campaigns, and recent activity
@@ -425,11 +425,10 @@ export default function DashboardPage() {
                   <button
                     key={key}
                     onClick={() => handleIndustryChange(key)}
-                    className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors ${
-                      isActive
+                    className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors ${isActive
                         ? 'bg-ds-primary text-white'
                         : 'border border-ds-line bg-white text-ds-ink-2 hover:border-ds-line-strong hover:text-ds-ink'
-                    }`}
+                      }`}
                   >
                     {Icon && <Icon size={12} strokeWidth={1.75} />}
                     <span>{item.shortLabel}</span>
@@ -496,9 +495,8 @@ export default function DashboardPage() {
                     <button
                       key={r}
                       onClick={() => setRange(val as RangeValue)}
-                      className={`rounded px-2.5 py-1 text-[13px] transition-colors ${
-                        isActive ? 'bg-white font-semibold text-ds-primary shadow-xs' : 'text-ds-ink-3 hover:text-ds-ink'
-                      }`}
+                      className={`rounded px-2.5 py-1 text-[13px] transition-colors ${isActive ? 'bg-white font-semibold text-ds-primary shadow-xs' : 'text-ds-ink-3 hover:text-ds-ink'
+                        }`}
                     >
                       {r}
                     </button>
@@ -535,19 +533,18 @@ export default function DashboardPage() {
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        idx === 0
+                      className={`h-full rounded-full transition-all duration-500 ${idx === 0
                           ? 'bg-blue-600'
                           : idx === 1
-                          ? 'bg-blue-500'
-                          : idx === 2
-                          ? 'bg-indigo-500'
-                          : idx === 3
-                          ? 'bg-indigo-600'
-                          : idx === 4
-                          ? 'bg-violet-600'
-                          : 'bg-emerald-600'
-                      }`}
+                            ? 'bg-blue-500'
+                            : idx === 2
+                              ? 'bg-indigo-500'
+                              : idx === 3
+                                ? 'bg-indigo-600'
+                                : idx === 4
+                                  ? 'bg-violet-600'
+                                  : 'bg-emerald-600'
+                        }`}
                       style={{ width: `${Math.max(pctNumber, 3)}%` }}
                     />
                   </div>

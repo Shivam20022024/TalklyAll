@@ -12,6 +12,8 @@ const VARIANT_BY_STATUS: Record<string, BadgeVariant> = {
   calling: 'primary',
   contacted: 'primary',
   interested: 'accent',
+  'follow up': 'accent',
+  urgent: 'warning',
   qualified: 'primary',
   converted: 'success',
   'no answer': 'warning',

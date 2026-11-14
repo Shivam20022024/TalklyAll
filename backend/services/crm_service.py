@@ -162,10 +162,19 @@ class CRMService:
                 or (any(k in summary for k in summary_conversion_keywords) and conv_prob >= 40)
             )
 
+        is_followup = (
+            any(k in str(intents).lower() for k in ["follow-up", "follow up", "callback", "call back"])
+            or any(k in summary.lower() for k in ["follow up", "follow-up", "call back", "callback", "reschedule"])
+            or any(k in str(analysis_result.get("outcome", "")).lower() for k in ["callback", "call back", "follow up", "follow-up"])
+            or any(k in str(analysis_result.get("action_items", [])).lower() for k in ["callback", "follow up", "follow-up"])
+        )
+
         if is_converted:
             lead_status = "Converted"
         elif lead_temp == "Hot" or conv_prob >= 50 or lead_score >= 75:
             lead_status = "Qualified"
+        elif is_followup:
+            lead_status = "Follow Up"
         elif (lead_temp in ["Warm", "Hot"] or lead_score >= 40) and not (lead_temp == "Cold" and lead_score < 30):
             lead_status = "Interested"
         else:
