@@ -413,7 +413,7 @@ function LeadsContent() {
           : Object.entries(v).map(([k, x]) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${typeof x === 'number' && x < 1 && x > 0 ? `${Math.round(x * 100)}%` : x}`).join(', '))
         : String(v || '-')
 
-  const loadedNote = leads.length >= 200 ? 'Showing the 200 most recently active leads.' : null
+  const loadedNote = leads.length >= 5000 ? 'Showing 5,000 leads.' : null
 
   // ── intent label from lead data ─────────────────────────────────────────────
   const intentLabel = (lead: any): string => {

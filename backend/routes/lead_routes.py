@@ -517,7 +517,7 @@ async def upload_leads_csv(
     return {"status": "success", "inserted_count": len(docs), "total_rows_parsed": len(rows)}
 
 @lead_router.get("/leads")
-async def list_leads(campaign_id: str = None, range: str = None, industry: str = None, current_user: dict = Depends(require_company_access)):
+async def list_leads(campaign_id: str = None, range: str = None, industry: str = None, limit: int = None, current_user: dict = Depends(require_company_access)):
     from datetime import timedelta
     db = mongodb.get_db()
     query = tenant_filter(current_user)
@@ -547,14 +547,10 @@ async def list_leads(campaign_id: str = None, range: str = None, industry: str =
                 {"lastContact": {"$gte": start_date.isoformat()}}
             ]
 
-    # Sort by most recent activity (lastContact), not just when the lead
-    # record was first created - confirmed live: a lead that's called again
-    # weeks after it was first added (e.g. a reused Quick Call match) kept
-    # sorting by its original creation date, burying it far below leads
-    # created more recently but never actually contacted since. Leads with
-    # no lastContact yet (nulls) sort last automatically, falling back to
-    # created_at order among themselves.
-    leads = await db.leads.find(query).sort([("lastContact", -1), ("created_at", -1)]).to_list(length=200)
+    # Sort by most recent activity (lastContact), then created_at.
+    # Return all leads (up to 5,000) so user sees the entire pipeline without a 200-lead cap.
+    max_length = limit if limit and limit > 0 else 5000
+    leads = await db.leads.find(query).sort([("lastContact", -1), ("created_at", -1)]).to_list(length=max_length)
 
     for l in leads:
         l["_id"] = None
