@@ -1162,6 +1162,8 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
                 "industry": call_industry,
                 "status": "Calling",
                 "lastContact": datetime.utcnow().isoformat(),
+                "last_called_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
             },
             "$setOnInsert": {
                 "lead_id": quick_lead_id,
@@ -2115,7 +2117,9 @@ async def sync_lead_status_from_call(db, lead_id: str, analysis_result: dict):
     update_data = {
         "status": lead_status,
         "aiScore": analysis_result.get("lead_score", 0),
-        "lastContact": datetime.utcnow().isoformat()
+        "lastContact": datetime.utcnow().isoformat(),
+        "last_called_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
     }
     
     # Extract requirements (general offering or property) and location if available

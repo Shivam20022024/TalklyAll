@@ -900,7 +900,7 @@ function LeadsContent() {
 
                       <td className="whitespace-nowrap py-3 pr-4 align-middle">
                         <span className="tabular-nums text-ds-ink">
-                          {relativeTime(lead.last_called_at || lead.updated_at || lead.created_at)}
+                          {relativeTime(lead.lastContact || lead.last_called_at || lead.updated_at || lead.created_at)}
                         </span>
                       </td>
 
@@ -981,7 +981,7 @@ function LeadsContent() {
                         <StatusBadge status={lead.status} className="px-2.5 py-0.5 text-[14px]" />
                         {intentLabel(lead) !== '—' && <span className="text-ds-ink">{intentLabel(lead)}</span>}
                         {campaignLabel(lead) !== '—' && <span>· {campaignLabel(lead)}</span>}
-                        <span>{relativeTime(lead.last_called_at || lead.updated_at || lead.created_at)}</span>
+                        <span>{relativeTime(lead.lastContact || lead.last_called_at || lead.updated_at || lead.created_at)}</span>
                       </div>
                       <div className="mt-2 flex items-center justify-end gap-1">
                         <button onClick={() => handleCall(lead)} aria-label={`Call ${lead.name || 'lead'}`} className={rowAction}>
