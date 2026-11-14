@@ -813,7 +813,7 @@ export default function DashboardPage() {
             <IndustryIcon size={17} strokeWidth={1.75} />
           </span>
           <div>
-            <h2 className="text-[17px] font-semibold text-ds-ink">Tuning Voice AI for {config.label}?</h2>
+            <h2 className="text-[17px] font-semibold text-ds-ink">Tuning Talkly for {config.label}?</h2>
             <p className="mt-0.5 text-sm text-ds-ink-2">
               Customize counseling persona, demo booking flow, and objection rebuttals in AI Prompt Studio.
             </p>

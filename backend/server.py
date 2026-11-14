@@ -1008,11 +1008,14 @@ async def get_call(call_id: str, current_user: dict = Depends(require_company_ac
         if lead and lead.get("phone"):
             clean_digits = "".join(filter(str.isdigit, str(lead["phone"])))
             if clean_digits:
+                filter_criteria = {
+                    "customer_id": {"$regex": clean_digits},
+                    "transcript": {"$regex": r"\S"}
+                }
+                if lead.get("name") and str(lead["name"]).strip().lower() not in ("valued customer", "unknown", ""):
+                    filter_criteria["customer_name"] = {"$regex": f"^{re.escape(str(lead['name']).strip())}$", "$options": "i"}
                 phone_call = await db.calls.find_one(
-                    tenant_filter(current_user, {
-                        "customer_id": {"$regex": clean_digits},
-                        "transcript": {"$regex": r"\S"}
-                    }),
+                    tenant_filter(current_user, filter_criteria),
                     sort=[("created_at", -1)]
                 )
                 if phone_call:
