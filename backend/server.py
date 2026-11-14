@@ -990,44 +990,14 @@ async def delete_bulk_calls(payload: dict = Body(...), current_user: dict = Depe
 @app.get("/api/v1/calls/{call_id}")
 async def get_call(call_id: str, current_user: dict = Depends(require_company_access)):
     db = mongodb.get_db()
-    # 1. First check if there is a completed call specifically associated with this lead_id (most recent first)
+    # 1. First check if there is a call specifically associated with this lead_id (most recent first)
     doc = await db.calls.find_one(
-        tenant_filter(current_user, {"lead_id": call_id, "transcript": {"$regex": r"\S"}}),
+        tenant_filter(current_user, {"lead_id": call_id}),
         sort=[("created_at", -1)]
     )
-    # 2. If no call by lead_id with transcript, check exact call_id
+    # 2. If no call by lead_id, check exact call_id
     if not doc:
-        exact_doc = await db.calls.find_one(tenant_filter(current_user, {"call_id": call_id}))
-        if exact_doc and exact_doc.get("transcript"):
-            doc = exact_doc
-        elif not doc:
-            doc = exact_doc
-
-    # 3. If doc still has no transcript, look up by lead's phone number for latest completed call
-    if not doc or not doc.get("transcript"):
-        lead = await db.leads.find_one(tenant_filter(current_user, {"lead_id": call_id}))
-        if lead and lead.get("phone"):
-            clean_digits = "".join(filter(str.isdigit, str(lead["phone"])))
-            if clean_digits:
-                filter_criteria = {
-                    "customer_id": {"$regex": clean_digits},
-                    "transcript": {"$regex": r"\S"}
-                }
-                if lead.get("name") and str(lead["name"]).strip().lower() not in ("valued customer", "unknown", ""):
-                    filter_criteria["customer_name"] = {"$regex": f"^{re.escape(str(lead['name']).strip())}$", "$options": "i"}
-                phone_call = await db.calls.find_one(
-                    tenant_filter(current_user, filter_criteria),
-                    sort=[("created_at", -1)]
-                )
-                if phone_call:
-                    doc = phone_call
-
-    # 4. Fallback to latest call by lead_id even without transcript
-    if not doc:
-        doc = await db.calls.find_one(
-            tenant_filter(current_user, {"lead_id": call_id}),
-            sort=[("created_at", -1)]
-        )
+        doc = await db.calls.find_one(tenant_filter(current_user, {"call_id": call_id}))
 
     if not doc:
         raise HTTPException(status_code=404, detail="Call not found")

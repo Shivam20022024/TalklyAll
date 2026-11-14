@@ -210,9 +210,10 @@ async def finalize_plivo_call(
             duration = max(0, int((datetime.utcnow() - started_at).total_seconds()))
 
     update_data = {
-        "status": "Completed",
         "last_updated": datetime.utcnow().isoformat()
     }
+    if not already_analyzed:
+        update_data["status"] = "Completed"
     if duration is not None:
         update_data["duration"] = duration
         update_data["duration_seconds"] = duration
@@ -285,6 +286,9 @@ async def finalize_plivo_call(
         sync_lead_id = call_doc.get("lead_id") or call_id
         lead_filter = {"company_id": cid} if cid else {}
         lead_filter["$or"] = [{"lead_id": sync_lead_id}, {"lead_id": call_id}]
+        if lead_status == "No Answer":
+            # Never downgrade converted or qualified leads on a single missed re-call
+            lead_filter["status"] = {"$nin": ["Converted", "Qualified", "Interested"]}
 
         await db.leads.update_many(
             lead_filter,

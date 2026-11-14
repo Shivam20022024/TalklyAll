@@ -429,10 +429,12 @@ function LeadsContent() {
 
   // outcome label
   const leadOutcome = (lead: any): string => {
+    if (lead.outcome_summary) return lead.outcome_summary
+    if (lead.outcome) return lead.outcome
     const st = String(lead.status || '').toLowerCase()
     if (st === 'no answer' || st === 'not answered' || st === 'not received') return 'No response from customer'
     if (st === 'busy') return 'Call busy / rejected'
-    return lead.outcome_summary || lead.outcome || lead.status || '—'
+    return lead.status || '—'
   }
 
   // campaign label
@@ -1170,7 +1172,11 @@ function LeadsContent() {
               ) : selectedCall && selectedCall.transcript ? (
                 <Transcript text={selectedCall.transcript} />
               ) : (
-                <p className="rounded-lg border border-dashed border-ds-line px-4 py-6 text-center text-[13px] text-ds-ink-3">No call transcript available for this lead yet.</p>
+                <p className="rounded-lg border border-dashed border-ds-line px-4 py-6 text-center text-[13px] text-ds-ink-3">
+                  {selectedLead?.status === 'No Answer'
+                    ? 'This call was not answered by the customer. No conversation transcript is available.'
+                    : 'No call transcript available for this lead yet.'}
+                </p>
               )}
             </SheetSection>
           </>
