@@ -381,12 +381,12 @@ function LeadsContent() {
   }
   const sortedLeads = sortKey
     ? [...visibleLeads].sort((a, b) => {
-        let r = 0
-        if (sortKey === 'name') r = String(a.name || '').localeCompare(String(b.name || ''))
-        if (sortKey === 'status') r = (STATUS_ORDER[String(a.status || '').toLowerCase()] ?? 1.5) - (STATUS_ORDER[String(b.status || '').toLowerCase()] ?? 1.5)
-        if (sortKey === 'aiScore') r = Number(a.aiScore || 0) - Number(b.aiScore || 0)
-        return sortDir === 'asc' ? r : -r
-      })
+      let r = 0
+      if (sortKey === 'name') r = String(a.name || '').localeCompare(String(b.name || ''))
+      if (sortKey === 'status') r = (STATUS_ORDER[String(a.status || '').toLowerCase()] ?? 1.5) - (STATUS_ORDER[String(b.status || '').toLowerCase()] ?? 1.5)
+      if (sortKey === 'aiScore') r = Number(a.aiScore || 0) - Number(b.aiScore || 0)
+      return sortDir === 'asc' ? r : -r
+    })
     : visibleLeads
 
   const pageCount = Math.max(1, Math.ceil(sortedLeads.length / PAGE_SIZE))
@@ -586,15 +586,13 @@ function LeadsContent() {
                 role="tab"
                 aria-selected={isActive}
                 onClick={() => switchTab(key)}
-                className={`relative -mb-px flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-[15px] font-semibold transition-colors sm:px-4 sm:text-[16px] ${
-                  isActive ? 'border-ds-primary text-ds-primary' : 'border-transparent text-ds-ink-2 hover:text-ds-ink'
-                }`}
+                className={`relative -mb-px flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-[15px] font-semibold transition-colors sm:px-4 sm:text-[16px] ${isActive ? 'border-ds-primary text-ds-primary' : 'border-transparent text-ds-ink-2 hover:text-ds-ink'
+                  }`}
               >
                 {label}
                 <span
-                  className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[13px] font-semibold tabular-nums ${
-                    isActive ? 'bg-ds-primary text-white' : 'bg-ds-surface text-ds-ink-2'
-                  }`}
+                  className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[13px] font-semibold tabular-nums ${isActive ? 'bg-ds-primary text-white' : 'bg-ds-surface text-ds-ink-2'
+                    }`}
                 >
                   {count}
                 </span>
@@ -617,30 +615,32 @@ function LeadsContent() {
             />
           </div>
 
-          <div className="relative min-w-[140px] flex-1 sm:flex-none">
-            <select
-              aria-label="Filter by campaign"
-              value={campaignId || ''}
-              onChange={e => {
-                const val = e.target.value
-                if (val) {
-                  setCampaignId(val)
-                  router.push(`/leads?campaign_id=${val}`)
-                } else {
-                  setCampaignId(null)
-                  router.push('/leads')
-                }
-              }}
-              className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium sm:w-auto`}
-            >
-              <option value="">All Campaigns</option>
-              {campaignId && !campaignOptions.includes(campaignId) && <option value={campaignId}>Selected campaign</option>}
-              {campaignOptions.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
-          </div>
+          {campaignOptions.length > 0 && (
+            <div className="relative min-w-[140px] flex-1 sm:flex-none">
+              <select
+                aria-label="Filter by campaign"
+                value={campaignId || ''}
+                onChange={e => {
+                  const val = e.target.value
+                  if (val) {
+                    setCampaignId(val)
+                    router.push(`/leads?campaign_id=${val}`)
+                  } else {
+                    setCampaignId(null)
+                    router.push('/leads')
+                  }
+                }}
+                className={`${controlCls} w-full cursor-pointer appearance-none pl-3.5 pr-9 font-medium sm:w-auto`}
+              >
+                <option value="">All Campaigns</option>
+                {campaignId && !campaignOptions.includes(campaignId) && <option value={campaignId}>Selected campaign</option>}
+                {campaignOptions.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ds-ink-2" />
+            </div>
+          )}
 
           <div className="relative min-w-[140px] flex-1 sm:flex-none">
             <select
@@ -797,7 +797,7 @@ function LeadsContent() {
                   </button>
                 </th>
                 <th scope="col" className="py-3 pr-4 text-left text-[13px] font-semibold uppercase tracking-wider text-ds-ink-2">Intent</th>
-                <th scope="col" className="py-3 pr-4 text-left text-[13px] font-semibold uppercase tracking-wider text-ds-ink-2">Campaign</th>
+                <th scope="col" className="py-3 pr-4 text-left text-[13px] font-semibold uppercase tracking-wider text-ds-ink-2 min-w-[200px] max-w-[320px]">Outcome</th>
                 <th scope="col" aria-sort={sortLabel('status')} className="py-3 pr-4 text-left text-[13px] font-semibold uppercase tracking-wider text-ds-ink-2">
                   <button type="button" onClick={() => toggleSort('status')} className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-ds-ink">
                     Status <span aria-hidden="true">{sortMark('status')}</span>
@@ -885,8 +885,13 @@ function LeadsContent() {
                         <span className="block truncate text-ds-ink" title={intentLabel(lead)}>{intentLabel(lead)}</span>
                       </td>
 
-                      <td className="max-w-[180px] py-3 pr-4 align-middle">
-                        <span className="block truncate text-ds-ink" title={campaignLabel(lead)}>{campaignLabel(lead)}</span>
+                      <td className="min-w-[200px] max-w-[320px] py-3 pr-4 align-middle">
+                        <span
+                          className="line-clamp-2 block text-[14px] leading-snug text-ds-ink break-words"
+                          title={lead.outcome_summary || lead.outcome || (lead.status === 'No Answer' ? 'No response from customer' : lead.status) || '—'}
+                        >
+                          {lead.outcome_summary || lead.outcome || (lead.status === 'No Answer' ? 'No response from customer' : lead.status) || '—'}
+                        </span>
                       </td>
 
                       <td className="py-3 pr-4 align-middle">
@@ -980,7 +985,7 @@ function LeadsContent() {
                       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[14px] text-ds-ink-2">
                         <StatusBadge status={lead.status} className="px-2.5 py-0.5 text-[14px]" />
                         {intentLabel(lead) !== '—' && <span className="text-ds-ink">{intentLabel(lead)}</span>}
-                        {campaignLabel(lead) !== '—' && <span>· {campaignLabel(lead)}</span>}
+                        {lead.outcome_summary ? <span>· {lead.outcome_summary}</span> : (campaignLabel(lead) !== '—' && <span>· {campaignLabel(lead)}</span>)}
                         <span>{relativeTime(lead.lastContact || lead.last_called_at || lead.updated_at || lead.created_at)}</span>
                       </div>
                       <div className="mt-2 flex items-center justify-end gap-1">
