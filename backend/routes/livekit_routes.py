@@ -89,6 +89,10 @@ async def generate_playground_token(payload: dict = Body(...), current_user: dic
     welcome_message = payload.get("welcome_message") or (prompt_doc.get("published_welcome_message") if prompt_doc else None) or company.get("custom_welcome") or "Hi! How can I help you today?"
     industry = payload.get("industry") or (prompt_doc.get("industry") if prompt_doc else None) or company.get("industry") or "general_sales"
 
+    kb = payload.get("knowledge_base") or (prompt_doc.get("knowledge_base") if prompt_doc else None) or (prompt_doc.get("draft_knowledge_base") if prompt_doc else None)
+    if kb and "KNOWLEDGE BASE" not in system_prompt:
+        system_prompt += f"\n\n--- KNOWLEDGE BASE & VERIFIED COMPANY FACTS ---\n{str(kb).strip()}\n\n"
+
     # Store playground session context in MongoDB so LiveKit agent worker can load it upon joining
     await db.livekit_sessions.update_one(
         {"room_name": room_name},

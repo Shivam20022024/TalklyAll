@@ -1070,9 +1070,11 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     raw_kb = (
         (specific_ind_prompt.get("published_knowledge_base") if specific_ind_prompt else None)
         or (specific_ind_prompt.get("knowledge_base") if specific_ind_prompt else None)
+        or (specific_ind_prompt.get("draft_knowledge_base") if specific_ind_prompt else None)
         or (template_def.get("knowledge_base") if isinstance(template_def, dict) else None)
         or (prompt_doc.get("published_knowledge_base") if prompt_doc else None)
         or (prompt_doc.get("knowledge_base") if prompt_doc else None)
+        or (prompt_doc.get("draft_knowledge_base") if prompt_doc else None)
         or ""
     )
     kb_directive = ""
