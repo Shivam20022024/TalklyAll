@@ -65,18 +65,21 @@ async def list_campaigns(industry: str = None, current_user: dict = Depends(requ
     # Bulk fetch leads counts (scoped to this company)
     leads_counts = {}
     converted_counts = {}
+    pending_leads_counts = {}
     if campaign_ids:
         leads_cursor = db.leads.aggregate([
             {"$match": {"campaign_id": {"$in": campaign_ids}, "company_id": company_id}},
             {"$group": {
                 "_id": "$campaign_id",
                 "count": {"$sum": 1},
-                "converted": {"$sum": {"$cond": [{"$in": ["$status", ["Converted", "converted"]]}, 1, 0]}}
+                "converted": {"$sum": {"$cond": [{"$in": ["$status", ["Converted", "converted"]]}, 1, 0]}},
+                "pending": {"$sum": {"$cond": [{"$in": ["$status", ["New", "Calling"]]}, 1, 0]}}
             }}
         ])
         async for doc in leads_cursor:
             leads_counts[doc["_id"]] = doc["count"]
             converted_counts[doc["_id"]] = doc.get("converted", 0)
+            pending_leads_counts[doc["_id"]] = doc.get("pending", 0)
 
     # Bulk fetch calls stats (scoped to this company)
     calls_stats = {}
@@ -110,7 +113,19 @@ async def list_campaigns(industry: str = None, current_user: dict = Depends(requ
             lead_converted = converted_counts.get(campaign_id, 0)
             call_interested = c_stats.get("interested", 0)
             interested = max(call_interested, lead_converted)
+            pending = pending_leads_counts.get(campaign_id, 0)
 
+            # Auto-resolve status: When all leads in the campaign have been called/contacted
+            # and no New/Calling leads remain, mark the campaign as Completed.
+            current_status = c.get("status") or "Active"
+            resolved_status = current_status
+            if current_status != "Paused":
+                if leads_count > 0 and pending == 0:
+                    resolved_status = "Completed"
+                elif pending > 0 and current_status == "Completed":
+                    resolved_status = "Active"
+
+            c["status"] = resolved_status
             c["leads"] = leads_count
             c["calls"] = calls_made
             c["connected"] = connected
@@ -125,7 +140,8 @@ async def list_campaigns(industry: str = None, current_user: dict = Depends(requ
                         "leads_count": leads_count,
                         "calls_made": calls_made,
                         "connected": connected,
-                        "interested": interested
+                        "interested": interested,
+                        "status": resolved_status
                     }}
                 )
             )

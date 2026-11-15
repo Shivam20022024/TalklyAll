@@ -5,7 +5,7 @@ import {
   Plus, Zap, Loader2, Upload, CreditCard, Building2,
   Stethoscope, GraduationCap, Briefcase, Banknote,
   ShoppingBag, Search, Users, Megaphone, CirclePause,
-  LayoutGrid, CheckCircle2, Download, ChevronDown, Play, Trash2
+  LayoutGrid, CheckCircle2, Download, ChevronDown, Play, Trash2, RotateCcw
 } from 'lucide-react'
 import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
@@ -162,8 +162,8 @@ export default function CampaignsPage() {
   }
 
   const handleTogglePause = async (campaign: any) => {
-    const isPaused = (campaign.status || '').toLowerCase() === 'paused'
-    const newStatus = isPaused ? 'Active' : 'Paused'
+    const st = (campaign.status || '').toLowerCase()
+    const newStatus = st === 'paused' || st === 'completed' ? 'Active' : 'Paused'
     try {
       await fetchApi(`/api/v1/campaigns/${campaign.campaign_id}`, {
         method: 'PATCH',
@@ -374,9 +374,8 @@ export default function CampaignsPage() {
                 role="tab"
                 aria-selected={isActive}
                 onClick={() => setStatusFilter(key)}
-                className={`relative -mb-px flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-[15px] font-semibold transition-colors sm:px-4 sm:text-[16px] ${
-                  isActive ? 'border-ds-primary text-ds-primary' : 'border-transparent text-ds-ink-2 hover:text-ds-ink'
-                }`}
+                className={`relative -mb-px flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-[15px] font-semibold transition-colors sm:px-4 sm:text-[16px] ${isActive ? 'border-ds-primary text-ds-primary' : 'border-transparent text-ds-ink-2 hover:text-ds-ink'
+                  }`}
               >
                 {label}
                 <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[13px] font-semibold tabular-nums ${isActive ? 'bg-ds-primary text-white' : 'bg-ds-surface text-ds-ink-2'}`}>
@@ -560,18 +559,27 @@ export default function CampaignsPage() {
                         </td>
                         <td className="py-3 pl-4 pr-5 align-middle">
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => handleTogglePause(campaign)}
-                              title={(campaign.status || '').toLowerCase() === 'paused' ? 'Resume campaign' : 'Pause campaign'}
-                              aria-label={(campaign.status || '').toLowerCase() === 'paused' ? `Resume ${campaign.name}` : `Pause ${campaign.name}`}
-                              className={`${rowAction} ${(campaign.status || '').toLowerCase() === 'paused' ? 'hover:text-emerald-600' : 'hover:text-amber-600'}`}
-                            >
-                              {(campaign.status || '').toLowerCase() === 'paused' ? (
-                                <Play size={18} strokeWidth={1.75} className="text-emerald-600 fill-emerald-600" />
-                              ) : (
-                                <CirclePause size={18} strokeWidth={1.75} className="text-amber-600" />
-                              )}
-                            </button>
+                            {(() => {
+                              const st = (campaign.status || '').toLowerCase()
+                              const isPaused = st === 'paused'
+                              const isCompleted = st === 'completed'
+                              return (
+                                <button
+                                  onClick={() => handleTogglePause(campaign)}
+                                  title={isPaused ? 'Resume campaign' : isCompleted ? 'Reactivate campaign' : 'Pause campaign'}
+                                  aria-label={isPaused ? `Resume ${campaign.name}` : isCompleted ? `Reactivate ${campaign.name}` : `Pause ${campaign.name}`}
+                                  className={`${rowAction} ${isPaused ? 'hover:text-emerald-600' : isCompleted ? 'hover:text-ds-primary' : 'hover:text-amber-600'}`}
+                                >
+                                  {isPaused ? (
+                                    <Play size={18} strokeWidth={1.75} className="text-emerald-600 fill-emerald-600" />
+                                  ) : isCompleted ? (
+                                    <RotateCcw size={18} strokeWidth={1.75} className="text-ds-primary" />
+                                  ) : (
+                                    <CirclePause size={18} strokeWidth={1.75} className="text-amber-600" />
+                                  )}
+                                </button>
+                              )
+                            })()}
                             <button
                               onClick={() => handleUploadClick(campaign.campaign_id)}
                               disabled={uploadingCampaignId === campaign.campaign_id}
@@ -643,18 +651,27 @@ export default function CampaignsPage() {
                           ))}
                         </dl>
                         <div className="mt-3 flex items-center justify-end gap-1 border-t border-ds-line/60 pt-2.5">
-                          <button
-                            onClick={() => handleTogglePause(campaign)}
-                            title={(campaign.status || '').toLowerCase() === 'paused' ? 'Resume campaign' : 'Pause campaign'}
-                            aria-label={(campaign.status || '').toLowerCase() === 'paused' ? `Resume ${campaign.name}` : `Pause ${campaign.name}`}
-                            className={`${rowAction} ${(campaign.status || '').toLowerCase() === 'paused' ? 'hover:text-emerald-600' : 'hover:text-amber-600'}`}
-                          >
-                            {(campaign.status || '').toLowerCase() === 'paused' ? (
-                              <Play size={18} strokeWidth={1.75} className="text-emerald-600 fill-emerald-600" />
-                            ) : (
-                              <CirclePause size={18} strokeWidth={1.75} className="text-amber-600" />
-                            )}
-                          </button>
+                          {(() => {
+                            const st = (campaign.status || '').toLowerCase()
+                            const isPaused = st === 'paused'
+                            const isCompleted = st === 'completed'
+                            return (
+                              <button
+                                onClick={() => handleTogglePause(campaign)}
+                                title={isPaused ? 'Resume campaign' : isCompleted ? 'Reactivate campaign' : 'Pause campaign'}
+                                aria-label={isPaused ? `Resume ${campaign.name}` : isCompleted ? `Reactivate ${campaign.name}` : `Pause ${campaign.name}`}
+                                className={`${rowAction} ${isPaused ? 'hover:text-emerald-600' : isCompleted ? 'hover:text-ds-primary' : 'hover:text-amber-600'}`}
+                              >
+                                {isPaused ? (
+                                  <Play size={18} strokeWidth={1.75} className="text-emerald-600 fill-emerald-600" />
+                                ) : isCompleted ? (
+                                  <RotateCcw size={18} strokeWidth={1.75} className="text-ds-primary" />
+                                ) : (
+                                  <CirclePause size={18} strokeWidth={1.75} className="text-amber-600" />
+                                )}
+                              </button>
+                            )
+                          })()}
                           <button
                             onClick={() => handleUploadClick(campaign.campaign_id)}
                             disabled={uploadingCampaignId === campaign.campaign_id}
@@ -765,8 +782,8 @@ export default function CampaignsPage() {
                 newCampaign.industry === 'ecommerce'
                   ? 'e.g. COD Confirmation - Wireless Earbuds'
                   : newCampaign.industry === 'bfsi'
-                  ? 'e.g. Q4 Personal Loan Campaign'
-                  : 'e.g. Summer Outreach Campaign'
+                    ? 'e.g. Q4 Personal Loan Campaign'
+                    : 'e.g. Summer Outreach Campaign'
               }
             />
           </Field>
