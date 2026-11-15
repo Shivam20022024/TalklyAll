@@ -64,13 +64,19 @@ async def list_campaigns(industry: str = None, current_user: dict = Depends(requ
 
     # Bulk fetch leads counts (scoped to this company)
     leads_counts = {}
+    converted_counts = {}
     if campaign_ids:
         leads_cursor = db.leads.aggregate([
             {"$match": {"campaign_id": {"$in": campaign_ids}, "company_id": company_id}},
-            {"$group": {"_id": "$campaign_id", "count": {"$sum": 1}}}
+            {"$group": {
+                "_id": "$campaign_id",
+                "count": {"$sum": 1},
+                "converted": {"$sum": {"$cond": [{"$in": ["$status", ["Converted", "converted"]]}, 1, 0]}}
+            }}
         ])
         async for doc in leads_cursor:
             leads_counts[doc["_id"]] = doc["count"]
+            converted_counts[doc["_id"]] = doc.get("converted", 0)
 
     # Bulk fetch calls stats (scoped to this company)
     calls_stats = {}
@@ -101,12 +107,15 @@ async def list_campaigns(industry: str = None, current_user: dict = Depends(requ
             c_stats = calls_stats.get(campaign_id, {})
             calls_made = c_stats.get("calls_made", 0)
             connected = c_stats.get("connected", 0)
-            interested = c_stats.get("interested", 0)
+            lead_converted = converted_counts.get(campaign_id, 0)
+            call_interested = c_stats.get("interested", 0)
+            interested = max(call_interested, lead_converted)
 
             c["leads"] = leads_count
             c["calls"] = calls_made
             c["connected"] = connected
             c["interested"] = interested
+            c["bookings"] = interested
 
             # Queue for bulk update (scoped to company)
             bulk_updates.append(
@@ -125,10 +134,13 @@ async def list_campaigns(industry: str = None, current_user: dict = Depends(requ
             c["calls"] = c.get("calls_made", 0)
             c["connected"] = c.get("connected", 0)
             c["interested"] = c.get("interested", 0)
+            c["bookings"] = c.get("interested", 0)
 
         # Calculate conversion for UI based on connected/interested
         if c.get("connected", 0) > 0:
             c["conversion"] = f"{round((c['interested'] / c['connected']) * 100, 1)}%"
+        elif c.get("leads", 0) > 0 and c.get("interested", 0) > 0:
+            c["conversion"] = f"{round((c['interested'] / c['leads']) * 100, 1)}%"
         else:
             c["conversion"] = "0%"
 
@@ -163,3 +175,29 @@ async def delete_campaign(campaign_id: str, current_user: dict = Depends(require
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return {"status": "success"}
+
+
+@campaign_router.post("/campaigns/delete-bulk")
+async def delete_bulk_campaigns(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):
+    db = mongodb.get_db()
+    campaign_ids = payload.get("campaign_ids", [])
+    if not campaign_ids:
+        return {"status": "success", "deleted_count": 0}
+
+    result = await db.campaigns.delete_many(tenant_filter(current_user, {"campaign_id": {"$in": campaign_ids}}))
+    return {"status": "success", "deleted_count": result.deleted_count}
+
+
+@campaign_router.post("/campaigns/status-bulk")
+async def update_bulk_campaign_status(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):
+    db = mongodb.get_db()
+    campaign_ids = payload.get("campaign_ids", [])
+    new_status = payload.get("status")
+    if not campaign_ids or not new_status:
+        raise HTTPException(status_code=400, detail="campaign_ids and status are required")
+
+    result = await db.campaigns.update_many(
+        tenant_filter(current_user, {"campaign_id": {"$in": campaign_ids}}),
+        {"$set": {"status": new_status, "updated_at": datetime.utcnow()}}
+    )
+    return {"status": "success", "modified_count": result.modified_count}

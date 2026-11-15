@@ -1039,7 +1039,9 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         customer_name = str(payload.get("customer_name")).strip()
     elif payload.get("name") and str(payload.get("name")).strip():
         customer_name = str(payload.get("name")).strip()
-    elif lead_id and not lead_id.startswith("test-agent-call-"):
+
+    lead = None
+    if lead_id and not lead_id.startswith("test-agent-call-"):
         lead = await db.leads.find_one(tenant_filter(current_user, {"lead_id": payload.get("lead_id")}))
         if not lead:
             try:
@@ -1047,7 +1049,7 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
                 lead = await db.leads.find_one(tenant_filter(current_user, {"_id": ObjectId(payload.get("lead_id"))}))
             except Exception:
                 pass
-        if lead and lead.get("name"):
+        if lead and lead.get("name") and not customer_name:
             customer_name = lead.get("name").strip()
 
     if not customer_name:
@@ -1183,7 +1185,7 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
             "voice_gender": voice_gender,
             "regional_accent": regional_accent,
             "company_id": current_user["company_id"],
-            "campaign_id": lead.get("campaign_id") if 'lead' in locals() and lead else None,
+            "campaign_id": payload.get("campaign_id") or (lead.get("campaign_id") if lead else None),
             "industry": call_industry,
             "amount_due": lead_amount,
             "due_date": lead_due,

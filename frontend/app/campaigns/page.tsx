@@ -5,7 +5,7 @@ import {
   Plus, Zap, Loader2, Upload, CreditCard, Building2,
   Stethoscope, GraduationCap, Briefcase, Banknote,
   ShoppingBag, Search, Users, Megaphone, CirclePause,
-  LayoutGrid, CheckCircle2, Download, ChevronDown
+  LayoutGrid, CheckCircle2, Download, ChevronDown, Play, Trash2
 } from 'lucide-react'
 import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
@@ -158,6 +158,69 @@ export default function CampaignsPage() {
       setSelected([])
     } catch (e: any) {
       alert(`Failed to trigger campaigns: ${e.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleTogglePause = async (campaign: any) => {
+    const isPaused = (campaign.status || '').toLowerCase() === 'paused'
+    const newStatus = isPaused ? 'Active' : 'Paused'
+    try {
+      await fetchApi(`/api/v1/campaigns/${campaign.campaign_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
+      })
+      setCampaigns((prev) =>
+        prev.map((c) => (c.campaign_id === campaign.campaign_id ? { ...c, status: newStatus } : c))
+      )
+    } catch (e: any) {
+      alert(`Failed to update campaign: ${e.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleDeleteCampaign = async (campaign: any) => {
+    if (!confirm(`Are you sure you want to delete campaign "${campaign.name}"? Leads in this campaign will not be deleted.`)) return
+    try {
+      await fetchApi(`/api/v1/campaigns/${campaign.campaign_id}`, {
+        method: 'DELETE'
+      })
+      setSelected((prev) => prev.filter((id) => id !== campaign.campaign_id))
+      setCampaigns((prev) => prev.filter((c) => c.campaign_id !== campaign.campaign_id))
+    } catch (e: any) {
+      alert(`Failed to delete campaign: ${e.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleBulkPause = async (pause: boolean) => {
+    if (selected.length === 0) return
+    const newStatus = pause ? 'Paused' : 'Active'
+    try {
+      await fetchApi('/api/v1/campaigns/status-bulk', {
+        method: 'POST',
+        body: JSON.stringify({ campaign_ids: selected, status: newStatus })
+      })
+      setCampaigns((prev) =>
+        prev.map((c) => (selected.includes(c.campaign_id) ? { ...c, status: newStatus } : c))
+      )
+      alert(`Successfully ${pause ? 'paused' : 'resumed'} ${selected.length} campaign(s)!`)
+      setSelected([])
+    } catch (e: any) {
+      alert(`Failed to update campaigns: ${e.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selected.length === 0) return
+    if (!confirm(`Are you sure you want to delete ${selected.length} selected campaign(s)? Leads in these campaigns will not be deleted.`)) return
+    try {
+      await fetchApi('/api/v1/campaigns/delete-bulk', {
+        method: 'POST',
+        body: JSON.stringify({ campaign_ids: selected })
+      })
+      setCampaigns((prev) => prev.filter((c) => !selected.includes(c.campaign_id)))
+      setSelected([])
+      alert('Selected campaigns deleted successfully!')
+    } catch (e: any) {
+      alert(`Failed to delete campaigns: ${e.message || 'Unknown error'}`)
     }
   }
 
@@ -372,6 +435,44 @@ export default function CampaignsPage() {
           </div>
         </div>
 
+        {/* Bulk selection action bar */}
+        {selected.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ds-line bg-ds-primary-soft/50 px-3 py-2.5 sm:px-5">
+            <span className="text-[14px] font-semibold text-ds-primary">
+              {selected.length} {selected.length === 1 ? 'campaign' : 'campaigns'} selected
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleBulkPause(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 text-[13px] font-semibold text-amber-800 shadow-sm transition-colors hover:bg-amber-50"
+              >
+                <CirclePause size={15} strokeWidth={1.75} />
+                Pause
+              </button>
+              <button
+                onClick={() => handleBulkPause(false)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 text-[13px] font-semibold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-50"
+              >
+                <Play size={15} strokeWidth={1.75} className="fill-emerald-800" />
+                Resume
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 text-[13px] font-semibold text-rose-700 shadow-sm transition-colors hover:bg-rose-50"
+              >
+                <Trash2 size={15} strokeWidth={1.75} />
+                Delete
+              </button>
+              <button
+                onClick={() => setSelected([])}
+                className="text-[13px] font-medium text-ds-ink-2 hover:text-ds-ink underline ml-1"
+              >
+                Deselect all
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Stale data warning */}
         {loadFailed && campaigns.length > 0 && (
           <div className="border-t border-ds-line px-3 py-2.5 sm:px-5">
@@ -457,8 +558,20 @@ export default function CampaignsPage() {
                         <td className="px-4 py-3 align-middle">
                           <StatusBadge status={campaign.status || 'Active'} className="px-3 py-1 text-[15px]" />
                         </td>
-                        <td className="py-3 pl-4 pr-4 align-middle">
+                        <td className="py-3 pl-4 pr-5 align-middle">
                           <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleTogglePause(campaign)}
+                              title={(campaign.status || '').toLowerCase() === 'paused' ? 'Resume campaign' : 'Pause campaign'}
+                              aria-label={(campaign.status || '').toLowerCase() === 'paused' ? `Resume ${campaign.name}` : `Pause ${campaign.name}`}
+                              className={`${rowAction} ${(campaign.status || '').toLowerCase() === 'paused' ? 'hover:text-emerald-600' : 'hover:text-amber-600'}`}
+                            >
+                              {(campaign.status || '').toLowerCase() === 'paused' ? (
+                                <Play size={18} strokeWidth={1.75} className="text-emerald-600 fill-emerald-600" />
+                              ) : (
+                                <CirclePause size={18} strokeWidth={1.75} className="text-amber-600" />
+                              )}
+                            </button>
                             <button
                               onClick={() => handleUploadClick(campaign.campaign_id)}
                               disabled={uploadingCampaignId === campaign.campaign_id}
@@ -476,6 +589,14 @@ export default function CampaignsPage() {
                             >
                               <Users size={18} strokeWidth={1.75} />
                             </Link>
+                            <button
+                              onClick={() => handleDeleteCampaign(campaign)}
+                              title="Delete campaign"
+                              aria-label={`Delete ${campaign.name}`}
+                              className={`${rowAction} hover:text-rose-600`}
+                            >
+                              <Trash2 size={18} strokeWidth={1.75} className="text-ds-ink-2 hover:text-rose-600" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -521,7 +642,19 @@ export default function CampaignsPage() {
                             </div>
                           ))}
                         </dl>
-                        <div className="mt-3 flex items-center justify-end gap-1">
+                        <div className="mt-3 flex items-center justify-end gap-1 border-t border-ds-line/60 pt-2.5">
+                          <button
+                            onClick={() => handleTogglePause(campaign)}
+                            title={(campaign.status || '').toLowerCase() === 'paused' ? 'Resume campaign' : 'Pause campaign'}
+                            aria-label={(campaign.status || '').toLowerCase() === 'paused' ? `Resume ${campaign.name}` : `Pause ${campaign.name}`}
+                            className={`${rowAction} ${(campaign.status || '').toLowerCase() === 'paused' ? 'hover:text-emerald-600' : 'hover:text-amber-600'}`}
+                          >
+                            {(campaign.status || '').toLowerCase() === 'paused' ? (
+                              <Play size={18} strokeWidth={1.75} className="text-emerald-600 fill-emerald-600" />
+                            ) : (
+                              <CirclePause size={18} strokeWidth={1.75} className="text-amber-600" />
+                            )}
+                          </button>
                           <button
                             onClick={() => handleUploadClick(campaign.campaign_id)}
                             disabled={uploadingCampaignId === campaign.campaign_id}
@@ -534,6 +667,14 @@ export default function CampaignsPage() {
                           <Link href={`/leads?campaign_id=${campaign.campaign_id}`} aria-label={`View leads for ${campaign.name}`} title="View leads" className={rowAction}>
                             <Users size={18} strokeWidth={1.75} />
                           </Link>
+                          <button
+                            onClick={() => handleDeleteCampaign(campaign)}
+                            title="Delete campaign"
+                            aria-label={`Delete ${campaign.name}`}
+                            className={`${rowAction} hover:text-rose-600`}
+                          >
+                            <Trash2 size={18} strokeWidth={1.75} className="text-ds-ink-2 hover:text-rose-600" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -552,14 +693,44 @@ export default function CampaignsPage() {
               {selected.length === 1 ? 'campaign' : 'campaigns'} selected
               <span className="block text-[14px] text-ds-ink-3 sm:inline"> <span className="hidden sm:inline">· </span>calls New and No Answer leads in selected campaigns</span>
             </p>
-            <button
-              onClick={handleStartCalling}
-              disabled={selected.length === 0}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-ds-primary px-4 text-[15px] font-semibold text-white transition-colors hover:bg-ds-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Zap size={16} strokeWidth={1.75} />
-              Start AI calling
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {selected.length > 0 && (
+                <>
+                  <button
+                    onClick={() => handleBulkPause(true)}
+                    title="Pause selected campaigns"
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 text-[14px] font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+                  >
+                    <CirclePause size={16} strokeWidth={1.75} />
+                    Pause
+                  </button>
+                  <button
+                    onClick={() => handleBulkPause(false)}
+                    title="Resume selected campaigns"
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-[14px] font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
+                  >
+                    <Play size={16} strokeWidth={1.75} className="fill-emerald-800" />
+                    Resume
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    title="Delete selected campaigns"
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 text-[14px] font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                  >
+                    <Trash2 size={16} strokeWidth={1.75} />
+                    Delete
+                  </button>
+                </>
+              )}
+              <button
+                onClick={handleStartCalling}
+                disabled={selected.length === 0}
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-ds-primary px-4 text-[15px] font-semibold text-white transition-colors hover:bg-ds-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Zap size={16} strokeWidth={1.75} />
+                Start AI calling
+              </button>
+            </div>
           </div>
           {!loading && visibleCampaigns.length > 0 && (
             <div className="border-t border-ds-line pt-4">

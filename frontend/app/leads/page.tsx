@@ -345,6 +345,7 @@ function LeadsContent() {
           location: lead.location || '',
           amount_due: lead.amount_due || lead.custom_fields?.amount_due || lead.custom_fields?.['Loan Amount'] || lead.custom_fields?.loan_amount || '',
           due_date: lead.due_date || lead.custom_fields?.due_date || lead.custom_fields?.['due date'] || '',
+          campaign_id: lead.campaign_id || '',
           custom_fields: lead.custom_fields || {}
         })
       })
