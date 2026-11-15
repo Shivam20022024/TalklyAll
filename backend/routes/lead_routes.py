@@ -554,6 +554,11 @@ async def list_leads(campaign_id: str = None, range: str = None, industry: str =
 
     for l in leads:
         l["_id"] = None
+        st = str(l.get("status") or "").lower()
+        if st in ("no answer", "not answered", "not received", "busy", "new"):
+            l["aiScore"] = 0
+            if isinstance(l.get("promise_to_pay"), dict):
+                l["promise_to_pay"]["promised"] = False
 
     return leads
 

@@ -290,14 +290,20 @@ async def finalize_plivo_call(
             # Never downgrade converted or qualified leads on a single missed re-call
             lead_filter["status"] = {"$nin": ["Converted", "Qualified", "Interested"]}
 
+        update_lead_fields = {
+            "status": lead_status,
+            "lastContact": datetime.utcnow().isoformat(),
+            "last_called_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        if lead_status in ("No Answer", "Busy"):
+            update_lead_fields["aiScore"] = 0
+            update_lead_fields["promise_to_pay"] = {"promised": False, "amount": "", "date": ""}
+            update_lead_fields["outcome_summary"] = "No response from customer" if lead_status == "No Answer" else "Call busy / rejected"
+
         await db.leads.update_many(
             lead_filter,
-            {"$set": {
-                "status": lead_status,
-                "lastContact": datetime.utcnow().isoformat(),
-                "last_called_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
-            }}
+            {"$set": update_lead_fields}
         )
 
     await db.calls.update_one({"call_id": call_id}, {"$set": update_data})

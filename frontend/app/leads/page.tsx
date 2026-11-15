@@ -907,7 +907,7 @@ function LeadsContent() {
 
                       <td className="py-3 pr-4 align-middle">
                         <StatusBadge status={lead.status} className="px-3 py-1 text-[15px]" />
-                        {lead.promise_to_pay?.promised && (
+                        {lead.promise_to_pay?.promised && !['no answer', 'not answered', 'not received', 'busy', 'new'].includes(String(lead.status || '').toLowerCase()) && (
                           <Badge variant="success" className="mt-1 block w-fit text-[13px]">
                             {ptpAmount(lead) ? `PTP ${ptpAmount(lead)}` : 'PTP'}
                           </Badge>
@@ -1079,13 +1079,16 @@ function LeadsContent() {
         description={<span className="tabular-nums">{selectedLead?.phone}</span>}
         headerExtra={selectedLead ? <div className="mt-2"><StatusBadge status={selectedLead.status} /></div> : null}
       >
-        {selectedLead && (
+        {selectedLead && (() => {
+          const isNoAnswerOrUncalled = ['no answer', 'not answered', 'not received', 'busy', 'new'].includes(String(selectedLead?.status || '').toLowerCase())
+          const displayAiScore = isNoAnswerOrUncalled ? 0 : (selectedLead.aiScore ?? 0)
+          return (
           <>
             <DetailGrid
               items={[
                 { label: 'Offering', value: selectedLead.offering || selectedLead.property || '—' },
                 { label: 'Location', value: selectedLead.location || '—' },
-                { label: 'AI score', value: <span className="tabular-nums">{selectedLead.aiScore ?? 0} <span className="font-normal text-ds-ink-3">/ 100</span></span> },
+                { label: 'AI score', value: <span className="tabular-nums">{displayAiScore} <span className="font-normal text-ds-ink-3">/ 100</span></span> },
                 { label: 'Sector', value: selectedLead.industry ? formatIndustryLabel(selectedLead.industry) : '—' },
               ]}
             />
@@ -1096,7 +1099,7 @@ function LeadsContent() {
               </SheetSection>
             )}
 
-            {((selectedLead?.industry === 'collections' || selectedCall?.industry === 'collections') && (selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay)) && (() => {
+            {(!isNoAnswerOrUncalled && ((selectedLead?.industry === 'collections' || selectedCall?.industry === 'collections') && (selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay))) && (() => {
               const ptp = selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay || {}
               const isPromised = Boolean(ptp.promised)
               const amt = formatINR(ptp.amount || selectedLead?.amount_due)
@@ -1181,7 +1184,7 @@ function LeadsContent() {
               )}
             </SheetSection>
           </>
-        )}
+        )})()}
       </Sheet>
     </AppLayout>
   )
