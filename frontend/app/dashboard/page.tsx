@@ -77,8 +77,6 @@ function timeAgo(dateStr: string): string {
 export default function DashboardPage() {
   const { user, isSuperAdmin } = useAuth()
   const [range, setRange] = useState<RangeValue>('Today')
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
-
   // Adaptive Industry Selection:
   const [selectedIndustry, setSelectedIndustry] = useState<string>('')
   const [customIndustryTitle, setCustomIndustryTitle] = useState<string>('')
@@ -150,7 +148,6 @@ export default function DashboardPage() {
 
   const handleIndustryChange = async (ind: string) => {
     setSelectedIndustry(ind)
-    setSelectedCampaignId('')
     try {
       localStorage.setItem('talkly_selected_industry', ind)
     } catch { }
@@ -162,10 +159,9 @@ export default function DashboardPage() {
       try {
         if (!silent) setLoading(true)
         const industryQuery = selectedIndustry ? `&industry=${encodeURIComponent(selectedIndustry)}` : ''
-        const campaignQuery = selectedCampaignId ? `&campaign_id=${encodeURIComponent(selectedCampaignId)}` : ''
 
         const [dashRes, campRes, callsRes, leadsRes] = await Promise.all([
-          fetchApi(`/api/v1/analytics/dashboard?range=${encodeURIComponent(range)}${campaignQuery}${industryQuery}`),
+          fetchApi(`/api/v1/analytics/dashboard?range=${encodeURIComponent(range)}${industryQuery}`),
           fetchApi('/api/v1/campaigns').catch(() => []),
           fetchApi('/api/v1/calls?limit=8').catch(() => []),
           fetchApi('/api/v1/leads?limit=8').catch(() => []),
@@ -177,13 +173,6 @@ export default function DashboardPage() {
         setRecentLeads(leadsRes || [])
         setRefreshFailed(false)
         setLastUpdated(new Date())
-
-        if (isSuperAdmin && selectedCampaignId && campRes) {
-          const camp = campRes.find((c: any) => c.campaign_id === selectedCampaignId)
-          if (camp?.industry && camp.industry !== selectedIndustry) {
-            setSelectedIndustry(camp.industry)
-          }
-        }
       } catch (e) {
         console.error('Failed to load dashboard data', e)
         setRefreshFailed(true)
@@ -197,7 +186,7 @@ export default function DashboardPage() {
       loadDashboard(true)
     }, 12000)
     return () => clearInterval(interval)
-  }, [range, selectedCampaignId, selectedIndustry, isSuperAdmin])
+  }, [range, selectedIndustry, isSuperAdmin])
 
   const config = getIndustryConfig(selectedIndustry, customIndustryTitle, customOffering)
   const isSolar =
@@ -374,20 +363,6 @@ export default function DashboardPage() {
             {RANGES.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
-              </option>
-            ))}
-          </Select>
-
-          <Select
-            aria-label="Filter by campaign"
-            value={selectedCampaignId}
-            onChange={(e) => setSelectedCampaignId(e.target.value)}
-            className="sm:w-60 bg-white text-sm font-medium"
-          >
-            <option value="">All {config.shortLabel} campaigns</option>
-            {visibleCampaigns.map((c: any) => (
-              <option key={c.campaign_id} value={c.campaign_id}>
-                {c.name} {c.offering ? `(${c.offering})` : ''}
               </option>
             ))}
           </Select>

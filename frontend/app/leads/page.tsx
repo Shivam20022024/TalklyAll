@@ -1083,108 +1083,109 @@ function LeadsContent() {
           const isNoAnswerOrUncalled = ['no answer', 'not answered', 'not received', 'busy', 'new'].includes(String(selectedLead?.status || '').toLowerCase())
           const displayAiScore = isNoAnswerOrUncalled ? 0 : (selectedLead.aiScore ?? 0)
           return (
-          <>
-            <DetailGrid
-              items={[
-                { label: 'Offering', value: selectedLead.offering || selectedLead.property || '—' },
-                { label: 'Location', value: selectedLead.location || '—' },
-                { label: 'AI score', value: <span className="tabular-nums">{displayAiScore} <span className="font-normal text-ds-ink-3">/ 100</span></span> },
-                { label: 'Sector', value: selectedLead.industry ? formatIndustryLabel(selectedLead.industry) : '—' },
-              ]}
-            />
+            <>
+              <DetailGrid
+                items={[
+                  { label: 'Offering', value: selectedLead.offering || selectedLead.property || '—' },
+                  { label: 'Location', value: selectedLead.location || '—' },
+                  { label: 'AI score', value: <span className="tabular-nums">{displayAiScore} <span className="font-normal text-ds-ink-3">/ 100</span></span> },
+                  { label: 'Sector', value: selectedLead.industry ? formatIndustryLabel(selectedLead.industry) : '—' },
+                ]}
+              />
 
-            {selectedLead.custom_fields && Object.keys(selectedLead.custom_fields).length > 0 && (
-              <SheetSection title="Uploaded lead data" icon={<FileSpreadsheet size={14} />}>
-                <DetailGrid items={Object.entries(selectedLead.custom_fields).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: String(v || '—') }))} />
-              </SheetSection>
-            )}
-
-            {(!isNoAnswerOrUncalled && ((selectedLead?.industry === 'collections' || selectedCall?.industry === 'collections') && (selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay))) && (() => {
-              const ptp = selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay || {}
-              const isPromised = Boolean(ptp.promised)
-              const amt = formatINR(ptp.amount || selectedLead?.amount_due)
-              return (
-                <SheetSection title="Promise to pay" icon={<CircleDollarSign size={14} />}>
-                  <div className={`rounded-lg border p-3.5 text-[13px] ${isPromised ? 'border-ds-success/30 bg-ds-success-soft' : 'border-ds-line bg-ds-surface'}`}>
-                    {isPromised ? (
-                      <>
-                        <p className="font-medium text-ds-ink">
-                          {amt ? `Committed to pay ${amt}` : 'Committed to pay (amount not captured)'}{ptp.date ? ` by ${ptp.date}` : ''}
-                        </p>
-                        {selectedLead?.collections_status && (
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <StatusBadge status={selectedLead.collections_status} />
-                            {selectedLead.collections_total_paid > 0 && <span className="text-xs text-ds-ink-2">{formatINR(selectedLead.collections_total_paid)} received</span>}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-ds-ink-2">No confirmed commitment yet - the customer did not give a clear amount and date during this call.</p>
-                    )}
-                  </div>
+              {selectedLead.custom_fields && Object.keys(selectedLead.custom_fields).length > 0 && (
+                <SheetSection title="Uploaded lead data" icon={<FileSpreadsheet size={14} />}>
+                  <DetailGrid items={Object.entries(selectedLead.custom_fields).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: String(v || '—') }))} />
                 </SheetSection>
-              )
-            })()}
+              )}
 
-            {((selectedLead?.industry === 'ecommerce' || selectedCall?.industry === 'ecommerce' || Boolean(selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount)) ||
-              (selectedCall?.analysis?.order_confirmation?.status && ['Confirmed', 'Cancelled'].includes(selectedCall.analysis.order_confirmation.status) && selectedCall?.analysis?.intents?.some((i: string) => i.toLowerCase().includes('order') || i.toLowerCase().includes('cod')))) && (() => {
-                const oc = selectedCall?.analysis?.order_confirmation || {}
-                const isConfirmed = oc.status === 'Confirmed' || selectedLead?.status === 'Confirmed'
-                const isCancelled = oc.status === 'Cancelled' || selectedLead?.status === 'Cancelled'
+              {(!isNoAnswerOrUncalled && ((selectedLead?.industry === 'collections' || selectedCall?.industry === 'collections') && (selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay))) && (() => {
+                const ptp = selectedLead?.promise_to_pay || selectedCall?.analysis?.promise_to_pay || {}
+                const isPromised = Boolean(ptp.promised)
+                const amt = formatINR(ptp.amount || selectedLead?.amount_due)
                 return (
-                  <SheetSection
-                    title="COD order status"
-                    icon={<ShoppingBag size={14} />}
-                    action={<Badge variant={isConfirmed ? 'success' : isCancelled ? 'error' : 'warning'}>{isConfirmed ? 'Confirmed' : isCancelled ? 'Cancelled' : 'Pending'}</Badge>}
-                  >
-                    <div className="rounded-lg border border-ds-line bg-ds-surface p-3.5 text-[13px]">
-                      <p className="font-medium text-ds-ink">
-                        {isConfirmed ? 'COD order confirmed for dispatch' : isCancelled ? 'Order cancelled by customer (RTO prevented)' : 'Pending order confirmation'}
-                      </p>
-                      {(selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount) && (
-                        <p className="mt-1 text-ds-ink-2">
-                          COD amount: <span className="font-medium text-ds-ink">₹{selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount}</span>
-                          {(selectedLead?.delivery_address || selectedLead?.location) && (
-                            <> · Delivery address: <span className="font-medium text-ds-ink">{selectedLead?.delivery_address || selectedLead?.location}</span></>
+                  <SheetSection title="Promise to pay" icon={<CircleDollarSign size={14} />}>
+                    <div className={`rounded-lg border p-3.5 text-[13px] ${isPromised ? 'border-ds-success/30 bg-ds-success-soft' : 'border-ds-line bg-ds-surface'}`}>
+                      {isPromised ? (
+                        <>
+                          <p className="font-medium text-ds-ink">
+                            {amt ? `Committed to pay ${amt}` : 'Committed to pay (amount not captured)'}{ptp.date ? ` by ${ptp.date}` : ''}
+                          </p>
+                          {selectedLead?.collections_status && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <StatusBadge status={selectedLead.collections_status} />
+                              {selectedLead.collections_total_paid > 0 && <span className="text-xs text-ds-ink-2">{formatINR(selectedLead.collections_total_paid)} received</span>}
+                            </div>
                           )}
-                        </p>
+                        </>
+                      ) : (
+                        <p className="text-ds-ink-2">No confirmed commitment yet - the customer did not give a clear amount and date during this call.</p>
                       )}
                     </div>
                   </SheetSection>
                 )
               })()}
 
-            {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !ANALYSIS_SKIP.includes(k)).length > 0 && (
-              <SheetSection title="Extracted by AI" icon={<Sparkles size={14} />}>
-                <DetailGrid
-                  items={Object.keys(selectedCall.analysis)
-                    .filter(k => !ANALYSIS_SKIP.includes(k))
-                    .map(key => ({ label: key.replace(/_/g, ' '), value: <span className="line-clamp-4">{renderAnalysisValue(selectedCall.analysis[key])}</span> }))}
-                />
-              </SheetSection>
-            )}
+              {((selectedLead?.industry === 'ecommerce' || selectedCall?.industry === 'ecommerce' || Boolean(selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount)) ||
+                (selectedCall?.analysis?.order_confirmation?.status && ['Confirmed', 'Cancelled'].includes(selectedCall.analysis.order_confirmation.status) && selectedCall?.analysis?.intents?.some((i: string) => i.toLowerCase().includes('order') || i.toLowerCase().includes('cod')))) && (() => {
+                  const oc = selectedCall?.analysis?.order_confirmation || {}
+                  const isConfirmed = oc.status === 'Confirmed' || selectedLead?.status === 'Confirmed'
+                  const isCancelled = oc.status === 'Cancelled' || selectedLead?.status === 'Cancelled'
+                  return (
+                    <SheetSection
+                      title="COD order status"
+                      icon={<ShoppingBag size={14} />}
+                      action={<Badge variant={isConfirmed ? 'success' : isCancelled ? 'error' : 'warning'}>{isConfirmed ? 'Confirmed' : isCancelled ? 'Cancelled' : 'Pending'}</Badge>}
+                    >
+                      <div className="rounded-lg border border-ds-line bg-ds-surface p-3.5 text-[13px]">
+                        <p className="font-medium text-ds-ink">
+                          {isConfirmed ? 'COD order confirmed for dispatch' : isCancelled ? 'Order cancelled by customer (RTO prevented)' : 'Pending order confirmation'}
+                        </p>
+                        {(selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount) && (
+                          <p className="mt-1 text-ds-ink-2">
+                            COD amount: <span className="font-medium text-ds-ink">₹{selectedLead?.order_amount || selectedLead?.custom_fields?.order_amount}</span>
+                            {(selectedLead?.delivery_address || selectedLead?.location) && (
+                              <> · Delivery address: <span className="font-medium text-ds-ink">{selectedLead?.delivery_address || selectedLead?.location}</span></>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </SheetSection>
+                  )
+                })()}
 
-            <SheetSection title="Call transcript" icon={<MessageSquare size={14} />} action={loadingCall ? <Loader2 size={14} className="animate-spin text-ds-ink-3" /> : null}>
-              {loadingCall ? (
-                <LoadingState label="Fetching conversation…">
-                  <div className="space-y-2 rounded-lg border border-ds-line p-4">
-                    <Skeleton className="h-4 w-2/3" />
-                    <Skeleton className="ml-auto h-4 w-1/2" />
-                    <Skeleton className="h-4 w-3/5" />
-                  </div>
-                </LoadingState>
-              ) : selectedCall && selectedCall.transcript ? (
-                <Transcript text={selectedCall.transcript} />
-              ) : (
-                <p className="rounded-lg border border-dashed border-ds-line px-4 py-6 text-center text-[13px] text-ds-ink-3">
-                  {selectedLead?.status === 'No Answer'
-                    ? 'This call was not answered by the customer. No conversation transcript is available.'
-                    : 'No call transcript available for this lead yet.'}
-                </p>
+              {selectedCall?.analysis && Object.keys(selectedCall.analysis).filter(k => !ANALYSIS_SKIP.includes(k)).length > 0 && (
+                <SheetSection title="Extracted by AI" icon={<Sparkles size={14} />}>
+                  <DetailGrid
+                    items={Object.keys(selectedCall.analysis)
+                      .filter(k => !ANALYSIS_SKIP.includes(k))
+                      .map(key => ({ label: key.replace(/_/g, ' '), value: <span className="line-clamp-4">{renderAnalysisValue(selectedCall.analysis[key])}</span> }))}
+                  />
+                </SheetSection>
               )}
-            </SheetSection>
-          </>
-        )})()}
+
+              <SheetSection title="Call transcript" icon={<MessageSquare size={14} />} action={loadingCall ? <Loader2 size={14} className="animate-spin text-ds-ink-3" /> : null}>
+                {loadingCall ? (
+                  <LoadingState label="Fetching conversation…">
+                    <div className="space-y-2 rounded-lg border border-ds-line p-4">
+                      <Skeleton className="h-4 w-2/3" />
+                      <Skeleton className="ml-auto h-4 w-1/2" />
+                      <Skeleton className="h-4 w-3/5" />
+                    </div>
+                  </LoadingState>
+                ) : selectedCall && selectedCall.transcript ? (
+                  <Transcript text={selectedCall.transcript} />
+                ) : (
+                  <p className="rounded-lg border border-dashed border-ds-line px-4 py-6 text-center text-[13px] text-ds-ink-3">
+                    {selectedLead?.status === 'No Answer'
+                      ? 'This call was not answered by the customer. No conversation transcript is available.'
+                      : 'No call transcript available for this lead yet.'}
+                  </p>
+                )}
+              </SheetSection>
+            </>
+          )
+        })()}
       </Sheet>
     </AppLayout>
   )
