@@ -907,6 +907,12 @@ function LeadsContent() {
 
                       <td className="py-3 pr-4 align-middle">
                         <StatusBadge status={lead.status} className="px-3 py-1 text-[15px]" />
+                        {!['no answer', 'not answered', 'not received', 'busy', 'new'].includes(String(lead.status || '').toLowerCase()) && (lead.aiScore ?? 0) > 0 && (
+                          <span className="mt-1 flex w-fit items-center gap-1 rounded-md bg-ds-surface px-2 py-0.5 text-[12px] font-semibold tabular-nums text-ds-ink">
+                            <Sparkles size={11} className="text-amber-500" />
+                            {lead.aiScore}/100
+                          </span>
+                        )}
                         {lead.promise_to_pay?.promised && !['no answer', 'not answered', 'not received', 'busy', 'new'].includes(String(lead.status || '').toLowerCase()) && (
                           <Badge variant="success" className="mt-1 block w-fit text-[13px]">
                             {ptpAmount(lead) ? `PTP ${ptpAmount(lead)}` : 'PTP'}
