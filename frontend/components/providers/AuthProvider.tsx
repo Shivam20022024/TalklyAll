@@ -76,24 +76,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
     const initAuth = async () => {
       const token = getAuthToken();
       if (token) {
-        try {
-          const userData = await fetchApi('/api/v1/auth/me');
-          setUser({ ...userData, role: normalizeRole(userData.role) });
-        } catch (error: any) {
-          console.error('Auth verification failed', error);
-          // Only wipe session if the server explicitly rejected credentials (401/403)
-          if (error?.message === 'Unauthorized' || error?.status === 401 || error?.status === 403) {
-            removeAuthToken();
-            setUser(null);
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts && isMounted) {
+          try {
+            const userData = await fetchApi('/api/v1/auth/me');
+            if (isMounted) {
+              setUser({ ...userData, role: normalizeRole(userData.role) });
+            }
+            break;
+          } catch (error: any) {
+            attempts++;
+            // Only wipe session if the server explicitly rejected credentials (401/403)
+            if (error?.message === 'Unauthorized' || error?.status === 401 || error?.status === 403) {
+              if (isMounted) {
+                removeAuthToken();
+                setUser(null);
+              }
+              break;
+            }
+
+            // Transient network or cold-start error: wait and retry if attempts remain
+            if (attempts < maxAttempts && isMounted) {
+              await new Promise((resolve) => setTimeout(resolve, 1200));
+            } else if (isMounted) {
+              console.warn('Auth verification failed after retries (backend may still be initializing):', error);
+            }
           }
         }
       }
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     };
+
     initAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const setCompanyContext = useCallback((ctx: CompanyContext | null) => {
