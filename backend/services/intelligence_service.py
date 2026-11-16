@@ -102,6 +102,7 @@ class IntelligenceService:
         )
 
         connected_calls = max(connected_leads, connected_from_calls)
+        calls_made = max(calls_made, contacted_leads_raw, connected_calls)
         total_leads = max(total_leads_raw, calls_made, connected_calls)
         contacted_leads = max(contacted_leads_raw, connected_calls)
         
@@ -120,19 +121,25 @@ class IntelligenceService:
         # backend/routes/collections_routes.py).
         if industry == "collections":
             identity_verified_task = db.leads.count_documents({
-                **base_query_leads, "identity_verified": True
+                **base_query_leads,
+                "status": {"$nin": ["New", "No Answer", "Busy"]},
+                "identity_verified": True
             })
             ptp_secured_task = db.leads.count_documents({
-                **base_query_leads, "promise_to_pay.promised": True
+                **base_query_leads,
+                "status": {"$nin": ["New", "No Answer", "Busy"]},
+                "promise_to_pay.promised": True
             })
             ptp_kept_task = db.leads.count_documents({
-                **base_query_leads, "collections_status": {"$in": ["kept", "kept_late"]}
+                **base_query_leads,
+                "status": {"$nin": ["New", "No Answer", "Busy"]},
+                "collections_status": {"$in": ["kept", "kept_late"]}
             })
             identity_verified, ptp_secured, ptp_kept = await asyncio.gather(
                 identity_verified_task, ptp_secured_task, ptp_kept_task
             )
-            qualified_leads = identity_verified
-            interested_leads = ptp_secured
+            qualified_leads = min(identity_verified, connected_calls)
+            interested_leads = min(ptp_secured, connected_calls)
             conversion_rate = f"{(ptp_kept / total_leads * 100):.1f}%" if total_leads > 0 else "0%"
             
         # 6. Chart Data

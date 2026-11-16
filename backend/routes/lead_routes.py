@@ -557,6 +557,9 @@ async def list_leads(campaign_id: str = None, range: str = None, industry: str =
         st = str(l.get("status") or "").lower()
         if st in ("no answer", "not answered", "not received", "busy", "new"):
             l["aiScore"] = 0
+            l["identity_verified"] = False
+            l["ptp_amount"] = None
+            l["ptp_date"] = None
             if isinstance(l.get("promise_to_pay"), dict):
                 l["promise_to_pay"]["promised"] = False
 

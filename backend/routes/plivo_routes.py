@@ -299,6 +299,9 @@ async def finalize_plivo_call(
         if lead_status in ("No Answer", "Busy"):
             update_lead_fields["aiScore"] = 0
             update_lead_fields["promise_to_pay"] = {"promised": False, "amount": "", "date": ""}
+            update_lead_fields["ptp_amount"] = None
+            update_lead_fields["ptp_date"] = None
+            update_lead_fields["identity_verified"] = False
             update_lead_fields["outcome_summary"] = "No response from customer" if lead_status == "No Answer" else "Call busy / rejected"
 
         await db.leads.update_many(
