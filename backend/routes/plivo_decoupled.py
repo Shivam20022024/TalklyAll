@@ -66,8 +66,8 @@ GOODBYE_KEYWORDS = [
 # DECOUPLED_FIRST_WORD_DIRECTIVE below) instead of a whole sentence,
 # cutting the dead air before the agent's first word - confirmed live as a
 # 2-3s gap before this change.
-_SENTENCE_END_RE = re.compile(r"^(.*?[.!?।])\s*")
-_CLAUSE_END_RE = re.compile(r"^(.*?[,])\s*")
+_SENTENCE_END_RE = re.compile(r"^(.*?(?:\.(?!\d)|[!?!।]))\s*")
+_CLAUSE_END_RE = re.compile(r"^(.*?,(?!\d))\s+(?=[A-Za-z\u0900-\u097F])")
 _COMMON_ABBRS = {"dr.", "mr.", "mrs.", "ms.", "rs.", "no.", "vs.", "e.g.", "i.e."}
 
 DECOUPLED_FIRST_WORD_DIRECTIVE_EN = (
@@ -275,8 +275,9 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
         text = re.sub(r'(?i)\b_?customer[_\s]?name_?\b', customer_name, text)
     else:
         text = re.sub(r'(?i)\b_?customer[_\s]?name_?\b', '', text)
-    # Strip markdown bold/italics/code markers (*, _, ~, `) and brackets
-    cleaned = re.sub(r'[*_~`#\[\]]', '', text)
+    # Strip markdown bold/italics/code markers (*, _, ~, `), brackets, and double/smart quotes
+    cleaned = re.sub(r'[*_~`#\[\]"“”]', '', text)
+    cleaned = cleaned.strip(" '\"“”‘’")
 
     # On subsequent turns, strip repetitive customer name vocatives (e.g. 'I see, Mohit.' -> 'I see.')
     # BUT NEVER strip the name during identity confirmation or when asking questions ending in '?'
@@ -681,6 +682,11 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     async for delta in stream_openai_reply(messages, OPENAI_CHAT_API_KEY, OPENAI_CHAT_MODEL, client=openai_http_client):
                         full_reply += delta
                         if not first_sentence_flushed:
+                            # Hold off if buffer ends in digit followed by . or , (e.g. "4." or "₹45,")
+                            # to avoid slicing numbers across streamed audio chunks
+                            if re.search(r'\d[.,]\s*$', full_reply):
+                                continue
+
                             m = _SENTENCE_END_RE.match(full_reply)
                             target_match = None
                             if m:
@@ -688,11 +694,11 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                                 cand_lower = cand.lower()
                                 # Don't flush tiny 1-2 word fragments alone (e.g. "Got it.", "जी बिल्कुल।", "ठीक है।")
                                 # Flushing tiny fragments causes disconnected prosody, flat downward cadence, and jitter gaps.
-                                # Require at least 3 words, or match forward to include the next clause/sentence boundary.
-                                if cand_lower not in _COMMON_ABBRS and len(cand.split()) >= 3:
+                                # Require at least 3 words, or match forward to include the next full sentence boundary.
+                                if not any(cand_lower.endswith(abbr) for abbr in _COMMON_ABBRS) and len(cand.split()) >= 3:
                                     target_match = m
                                 else:
-                                    m2 = re.match(r"^(" + re.escape(cand) + r"\s+.*?[.!?।,])\s*", full_reply)
+                                    m2 = re.match(r"^(" + re.escape(cand) + r"\s+.*?(?:\.(?!\d)|[!?!।]))\s*", full_reply)
                                     if m2 and len(m2.group(1).strip().split()) >= 3:
                                         target_match = m2
                             if not target_match:

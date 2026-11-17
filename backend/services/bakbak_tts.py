@@ -16,6 +16,7 @@
 
 import base64
 import logging
+import os
 from typing import AsyncIterator, Optional
 
 import httpx
@@ -92,7 +93,7 @@ class BakbakTTSSession:
                     "model": self._model,
                     "codec": "mulaw",
                     "sample_rate": 8000,
-                    "speed": 1.0,
+                    "speed": float(os.environ.get("VOICE_AGENT_SPEED", "0.94")),
                 },
             )
             if resp.status_code != 200:

@@ -110,6 +110,21 @@ def test_tn06_english_mode_preservation():
     print("✓ TN06: English Mode Preservation PASSED")
 
 
+def test_tn11_english_tts_normalization():
+    # English mode should cleanly normalize rupees, percentages, tech terms, and acronyms for natural accent
+    cases = [
+        ("The fee is ₹45,000 with a ₹10,000 discount.", "The fee is 45,000 rupees with a 10,000 rupees discount."),
+        ("You get 10% off on all items.", "You get 10 percent off on all items."),
+        ("We offer c++ and c# training with .net.", "We offer C plus plus and C sharp training with dot net."),
+        ("Available in 2BHK and 3BHK flats.", "Available in 2 B-H-K and 3 B-H-K flats."),
+        ("0% interest EMI with easy KYC and OTP.", "0 percent interest E-M-I with easy K-Y-C and O-T-P."),
+    ]
+    for inp, expected in cases:
+        out = normalize_for_tts(inp, language="English")
+        assert out == expected, f"Failed on '{inp}': expected '{expected}', got '{out}'"
+    print("✓ TN11: English TTS Normalization PASSED")
+
+
 def test_tn07_full_hindi_speech_utterances():
     # Real utterances from conversations
     utterances = [

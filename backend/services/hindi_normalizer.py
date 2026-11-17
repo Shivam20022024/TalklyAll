@@ -453,11 +453,50 @@ def normalize_standalone_numbers_hindi(text: str) -> str:
     return text
 
 
+def normalize_for_english_tts(text: str) -> str:
+    """
+    Normalizes symbols, currency, percentages, technical terms, and common acronyms
+    into clean, natural spoken English words for Indian English TTS models.
+    Prevents TTS phonetic artifacts like skipping the rupee symbol (₹), pronouncing
+    c++ as 'c', or slurring acronyms like 2BHK, EMI, GST, etc.
+    """
+    if not text:
+        return ""
+
+    # 1. Currency normalization (₹45,000 / ₹45000 / Rs. 500 -> 45,000 rupees / 500 rupees)
+    text = re.sub(r'₹\s*(\d+(?:,\d+)*(?:\.\d+)?)', r'\1 rupees', text)
+    text = re.sub(r'\bRs\.?\s*(\d+(?:,\d+)*(?:\.\d+)?)', r'\1 rupees', text, flags=re.IGNORECASE)
+
+    # 2. Percentages (10% -> 10 percent)
+    text = re.sub(r'(\d+(?:\.\d+)?)\s*%', r'\1 percent', text)
+
+    # 3. Programming languages & technical frameworks
+    text = re.sub(r'(?i)(?<!\w)c\+\+(?!\w)', 'C plus plus', text)
+    text = re.sub(r'(?i)(?<!\w)c#(?!\w)', 'C sharp', text)
+    text = re.sub(r'(?i)(?<!\w)\.net\b', 'dot net', text)
+
+    # 4. Common real estate, finance & business terms for crisp articulation
+    text = re.sub(r'(?i)\b([1-9])\s*bhk\b', r'\1 B-H-K', text)
+    text = re.sub(r'(?i)\bemi\b', 'E-M-I', text)
+    text = re.sub(r'(?i)\bgst\b', 'G-S-T', text)
+    text = re.sub(r'(?i)\bkyc\b', 'K-Y-C', text)
+    text = re.sub(r'(?i)\botp\b', 'O-T-P', text)
+    text = re.sub(r'(?i)\bb2b\b', 'B to B', text)
+    text = re.sub(r'(?i)\bb2c\b', 'B to C', text)
+    text = re.sub(r'(?i)\bui/ux\b', 'UI UX', text)
+    text = re.sub(r'(?i)\bai\b(?!\w)', 'A-I', text)
+
+    # Clean up duplicate whitespace
+    text = re.sub(r'[ \t]+', ' ', text).strip()
+    return text
+
+
 def normalize_for_tts(text: str, language: str = "Hindi") -> str:
     """
     Main entry point for language-aware TTS text normalization.
     
-    - If language is English: returns text untouched (preserving English numbers and phonetics).
+    - If language is English: normalizes currency, symbols, percentages, and technical terms
+      into natural spoken English while preserving English numbers and phonetics.
     - If language is Hindi / Hinglish: converts currency, times, measurements, dates,
       and numbers into natural Hindi spoken words.
     
@@ -476,11 +515,22 @@ def normalize_for_tts(text: str, language: str = "Hindi") -> str:
     has_hinglish_kw = bool(HINGLISH_KEYWORDS_REGEX.search(text))
 
     if is_pure_english and not (has_devanagari or has_hindi_markers or has_hinglish_kw):
-        # Preserve English pronunciation untouched ONLY for genuinely English text
-        return text
+        # Apply English phonetic and currency normalization for crisp Indian English accent
+        return normalize_for_english_tts(text)
 
     # Apply Hindi normalization sequentially
     normalized = text
+    # Normalize tech and financial acronyms in Hindi speech for clean pronunciation
+    normalized = re.sub(r'(?i)(?<!\w)c\+\+(?!\w)', 'सी प्लस प्लस', normalized)
+    normalized = re.sub(r'(?i)(?<!\w)c#(?!\w)', 'सी शार्प', normalized)
+    normalized = re.sub(r'(?i)(?<!\w)\.net\b', 'डॉट नेट', normalized)
+    normalized = re.sub(r'(?i)\bemi\b', 'ईएमआई', normalized)
+    normalized = re.sub(r'(?i)\bgst\b', 'जीएसटी', normalized)
+    normalized = re.sub(r'(?i)\bkyc\b', 'केवाईसी', normalized)
+    normalized = re.sub(r'(?i)\botp\b', 'ओटीपी', normalized)
+    normalized = re.sub(r'(?i)\bb2b\b', 'बी टू बी', normalized)
+    normalized = re.sub(r'(?i)\bb2c\b', 'बी टू सी', normalized)
+
     normalized = normalize_currency_hindi(normalized)
     normalized = normalize_time_hindi(normalized)
     normalized = normalize_measurements_hindi(normalized)

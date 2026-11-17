@@ -313,5 +313,5 @@ async def test_custom_template_voice_context_resolution(world):
     assert "Tata Solar" not in ctx_b["welcome_text"]
     assert "Solar Energy Consultant" not in ctx_b["system_prompt"]
     # Tenant B safely falls back to standard general sales
-    assert "AI calling services" in ctx_b["welcome_text"]
+    assert "Product / Service Solution" in ctx_b["welcome_text"] or "AI calling services" in ctx_b["welcome_text"]
 

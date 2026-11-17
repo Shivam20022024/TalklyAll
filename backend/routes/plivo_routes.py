@@ -361,8 +361,9 @@ def clean_tts_text(text: str, customer_name: str = "", is_subsequent: bool = Fal
         text = re.sub(r'(?i)\b_?customer[_\s]?name_?\b', customer_name, text)
     else:
         text = re.sub(r'(?i)\b_?customer[_\s]?name_?\b', '', text)
-    # Strip markdown bold/italics/code markers (*, _, ~, `) and brackets
-    cleaned = re.sub(r'[*_~`#\[\]]', '', text)
+    # Strip markdown bold/italics/code markers (*, _, ~, `), brackets, and double/smart quotes
+    cleaned = re.sub(r'[*_~`#\[\]"“”]', '', text)
+    cleaned = cleaned.strip(" '\"“”‘’")
 
     # On subsequent turns, strip repetitive customer name vocatives (e.g. 'I see, Mohit.' -> 'I see.')
     # BUT NEVER strip the name during identity confirmation or when asking questions ending in '?'
@@ -772,13 +773,19 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
     # Dynamic Hindi Grammar Alignment based on selected voice gender
     if _is_hindi_call:
         if voice_gender == "Female":
+            welcome_text = re.sub(r'(?<!\S)(?:बात\s+)?कर रहा हूँ', 'बात कर रही हूँ', welcome_text)
             welcome_text = re.sub(r'(?<!\S)बोल रहा हूँ', 'बोल रही हूँ', welcome_text)
             welcome_text = re.sub(r'(?<!\S)सकता हूँ', 'सकती हूँ', welcome_text)
             welcome_text = re.sub(r'(?<!\S)समझ गया', 'समझ गई', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)करूँगा', 'करूँगी', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)बताऊँगा', 'बताऊँगी', welcome_text)
         else:
+            welcome_text = re.sub(r'(?<!\S)(?:बात\s+)?कर रही हूँ', 'बात कर रहा हूँ', welcome_text)
             welcome_text = re.sub(r'(?<!\S)बोल रही हूँ', 'बोल रहा हूँ', welcome_text)
             welcome_text = re.sub(r'(?<!\S)सकती हूँ', 'सकता हूँ', welcome_text)
             welcome_text = re.sub(r'(?<!\S)समझ गई', 'समझ गया', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)करूँगी', 'करूँगा', welcome_text)
+            welcome_text = re.sub(r'(?<!\S)बताऊँगी', 'बताऊँगा', welcome_text)
 
     # Collapse an exact word immediately repeated back-to-back ("options
     # options", "program program") - confirmed live, happens whenever a
