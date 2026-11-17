@@ -1250,7 +1250,7 @@ def _openai_session_update_payload(system_prompt: str, transcription_lang: str =
         audio_config["output"] = {
             "format": {"type": "audio/pcmu"},
             "voice": "coral",
-            "speed": 1.0
+            "speed": float(os.environ.get("VOICE_AGENT_SPEED", "0.94"))
         }
 
     session = {

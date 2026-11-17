@@ -58,7 +58,7 @@ class SarvamTTSSession:
         await self._socket.configure(
             target_language_code=self._language_code,
             speaker=self._speaker,
-            pace=1.0,
+            pace=float(os.environ.get("SARVAM_TTS_PACE", "0.93")),
             speech_sample_rate=8000,
             output_audio_codec="mulaw",
             enable_preprocessing=True,  # needed for mixed-language (Hinglish) text
