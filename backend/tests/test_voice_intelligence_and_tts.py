@@ -272,13 +272,13 @@ def test_ci06_gated_qualification_directives():
     from industry_templates import INDUSTRY_TEMPLATES
 
     # Ensure decoupled EN directive contains gated question progression
-    assert "MANDATORY GATED QUESTION PROGRESSION" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+    assert "MANDATORY GATED PROGRESSION & CRISP DISAMBIGUATION" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
     assert "THEY HAVE NOT ANSWERED YOUR QUESTION" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
-    assert "STRICTLY FORBIDDEN from advancing to the next question" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+    assert "DO NOT repeat the full question" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
 
     # Ensure decoupled HI directive contains gated progression
-    assert "अनिवार्य उत्तर सत्यापन और चरणबद्ध प्रगति" in DECOUPLED_FIRST_WORD_DIRECTIVE_HI
-    assert "अगले सवाल या स्टोर विज़िट / डेमो पिच पर जाना सख्त मना है" in DECOUPLED_FIRST_WORD_DIRECTIVE_HI
+    assert "अनिवार्य उत्तर सत्यापन और संक्षिप्त विकल्प" in DECOUPLED_FIRST_WORD_DIRECTIVE_HI
+    assert "पूरा सवाल या उसकी लंबी भूमिका दोबारा मत दोहराइए" in DECOUPLED_FIRST_WORD_DIRECTIVE_HI
 
     # Ensure industry templates mandate gated qualification
     edtech_prompt = INDUSTRY_TEMPLATES["edtech"]["prompt"]
