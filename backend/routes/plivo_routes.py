@@ -1222,24 +1222,10 @@ def _openai_session_update_payload(system_prompt: str, transcription_lang: str =
             "noise_reduction": {"type": "near_field"},
             "turn_detection": {
                 "type": "server_vad",
-                "threshold": 0.65,
-                # Wider than before on purpose: short/fragmented audio
-                # clips are what push Whisper into hallucinating fluent
-                # but unrelated text instead of transcribing accurately.
-                # More lead-in and more silence before cutting a turn
-                # gives it fuller, less ambiguous utterances to work with.
-                "prefix_padding_ms": 500,
-                "silence_duration_ms": 1000,
+                "threshold": float(os.environ.get("VOICE_VAD_THRESHOLD", "0.65")),
+                "prefix_padding_ms": int(os.environ.get("VOICE_PREFIX_PADDING_MS", "300")),
+                "silence_duration_ms": int(os.environ.get("VOICE_SILENCE_DURATION_MS", "600")),
                 "create_response": True,
-                # False on purpose: the agent's current line must always
-                # finish uninterrupted - confirmed live that the customer's
-                # own backchannel ("Hello") firing speech_started while the
-                # agent was still mid-sentence cut the line short and the
-                # next turn started right on top of it, reading as two
-                # sentences spoken on top of each other. Our own
-                # speech_started handler below now does the equivalent
-                # client-side gating (skips response.cancel/clearAudio
-                # while agent_speaking), so this is belt-and-suspenders.
                 "interrupt_response": False
             }
         }

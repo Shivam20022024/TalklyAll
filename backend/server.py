@@ -296,6 +296,17 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
     location = ind_entry.get("location") or (doc.get("location") if doc and doc.get("industry") == active_ind else "")
     if "cyber" in location.lower() or "dlf" in location.lower():
         location = ""
+
+    # Sanitize cross-industry offering leaks (e.g. Edtech courses leaking into BFSI or Real Estate)
+    off_lower = str(offering).lower()
+    if active_ind == "bfsi" and any(w in off_lower for w in ["course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "apartment", "clinic", "doctor", "dental"]):
+        offering = "Personal Loan"
+    elif active_ind == "real_estate" and any(w in off_lower for w in ["loan", "insurance", "course", "bootcamp", "clinic", "doctor"]):
+        offering = ""
+    elif active_ind == "healthcare" and any(w in off_lower for w in ["bhk", "villa", "flat", "loan", "course", "bootcamp"]):
+        offering = ""
+    elif active_ind == "edtech" and any(w in off_lower for w in ["bhk", "villa", "flat", "dental", "clinic"]):
+        offering = ""
     
     # Merge variables so freshest configured variables are never shadowed
     merged_vars = {}
