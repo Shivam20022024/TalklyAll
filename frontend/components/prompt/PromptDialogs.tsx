@@ -47,9 +47,9 @@ export function TestCallDialog(props: {
         </div>
         <Field label="Call voice language">
           <Select value={props.testLanguage} onChange={(e) => props.setTestLanguage(e.target.value)}>
+            <option value="English">Indian English</option>
             <option value="Hindi">Hindi (Urban Indian Accent)</option>
             <option value="Hinglish">Hinglish (Code-mixed Hindi + English)</option>
-            <option value="English">Indian English</option>
           </Select>
         </Field>
         <div className="flex justify-end gap-2 pt-1">
@@ -251,8 +251,8 @@ export function AutoBuildWizard(props: {
                 <Field label="Agent designation / role" required><Input value={f.designation} onChange={(e) => f.setDesignation(e.target.value)} placeholder="e.g. Admissions Advisor" /></Field>
                 <Field label="Spoken language">
                   <Select value={f.language} onChange={(e) => f.setLanguage(e.target.value)}>
-                    <option value="Hindi / Hinglish">Hindi / Hinglish (Code-mixed Natural Indian)</option>
                     <option value="Indian English">Indian English (Professional & Fluent)</option>
+                    <option value="Hindi / Hinglish">Hindi / Hinglish (Code-mixed Natural Indian)</option>
                     <option value="Pure Hindi">Pure Hindi (Polite & Traditional)</option>
                     <option value="Tamil">Tamil (Urban Native)</option>
                     <option value="Telugu">Telugu (Urban Native)</option>

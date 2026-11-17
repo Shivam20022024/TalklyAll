@@ -1412,6 +1412,10 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
     prompt_text = re.sub(r"₹\s*₹", "₹", prompt_text)
     
     bolna_payload["user_data"]["company_name"] = company_name_val
+    # If prompt explicitly enforces strict English, lock campaign_language to English
+    if "converse strictly in english" in prompt_text.lower():
+        campaign_language = "English"
+
     # Add language instructions if not English
     if campaign_language.lower() != "english":
         prompt_text += f"\n\nIMPORTANT: You MUST speak entirely in the {campaign_language} language. Please reply naturally in {campaign_language}."
@@ -1690,6 +1694,10 @@ async def process_bulk_calls(contacts: list, campaign_language: str = "English",
         
         bolna_payload["user_data"]["company_name"] = company_name_val
         
+        # If prompt explicitly enforces strict English, lock campaign_language to English
+        if "converse strictly in english" in prompt_text.lower():
+            campaign_language = "English"
+
         # Add language instructions if not English
         if campaign_language.lower() != "english":
             prompt_text += f"\n\nIMPORTANT: You MUST speak entirely in the {campaign_language} language. Please reply naturally in {campaign_language}."

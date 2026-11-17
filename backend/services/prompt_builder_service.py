@@ -136,9 +136,17 @@ class PromptBuilderService:
         else:
             must_ask_text = str(must_ask).strip() or "Confirm identity, understand current requirement, qualify timeline and budget."
 
-        # Respect user's explicit language choice
+        # Check if the brief or inputs are in English
+        combined_text = f"{sop_or_brief} {must_ask_text} {offerings_and_usps} {knowledge_base} {primary_objective}"
+        has_devanagari = bool(re.search(r'[\u0900-\u097F]', combined_text))
+        has_english_words = bool(re.search(r'\b(the|is|are|and|we|offer|course|program|call|customer|hello|service)\b', combined_text, re.IGNORECASE))
+
+        # Respect user's explicit language choice or auto-detect from English brief
         is_explicit_english = "english" in language.lower()
         if is_explicit_english:
+            language = "Indian English"
+        elif not has_devanagari and has_english_words and not brief.get("language_explicitly_set"):
+            # The user uploaded or typed an English brief without Hindi text; auto-detect English!
             language = "Indian English"
         elif "hindi" in language.lower():
             language = language

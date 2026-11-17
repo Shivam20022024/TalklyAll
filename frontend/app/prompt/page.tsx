@@ -381,7 +381,7 @@ export default function PromptPage() {
   const [showTestModal, setShowTestModal] = useState(false)
   const [showLiveVoicePlayground, setShowLiveVoicePlayground] = useState(false)
   const [testPhone, setTestPhone] = useState('')
-  const [testLanguage, setTestLanguage] = useState('Hindi')
+  const [testLanguage, setTestLanguage] = useState('English')
   const [testCustomerName, setTestCustomerName] = useState('Rahul')
   const [testOffering, setTestOffering] = useState('')
   const [testLocation, setTestLocation] = useState('')
@@ -412,7 +412,7 @@ export default function PromptPage() {
   const [wizardCompanyName, setWizardCompanyName] = useState('')
   const [wizardIndustry, setWizardIndustry] = useState('')
   const [wizardAgentDesignation, setWizardAgentDesignation] = useState('Consultation Specialist')
-  const [wizardLanguage, setWizardLanguage] = useState('Hindi / Hinglish')
+  const [wizardLanguage, setWizardLanguage] = useState('Indian English')
   const [wizardVoiceTone, setWizardVoiceTone] = useState('Warm, consultative, professional')
   const [wizardSopText, setWizardSopText] = useState('')
   const [wizardPrimaryObjective, setWizardPrimaryObjective] = useState('')
@@ -531,6 +531,11 @@ export default function PromptPage() {
         }
         if (data.industry_prompts_summary) {
           setIndustrySummary(data.industry_prompts_summary)
+        }
+        const effectiveWelcome = data.welcome_message || fallback?.welcome_message || ''
+        const isEnglish = /^[a-zA-Z]/.test(effectiveWelcome.trim()) || String(data.language || fallback?.language || '').toLowerCase().includes('english')
+        if (isEnglish) {
+          setTestLanguage('English')
         }
       }
     } catch (e) {
