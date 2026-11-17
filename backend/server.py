@@ -292,47 +292,23 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
     default_inbound_prompt = template_def.get("inbound_prompt", "")
     default_inbound_welcome = template_def.get("inbound_welcome_message", "")
 
-    offering = ind_entry.get("offering") or (doc.get("offering") if doc and doc.get("industry") == active_ind else "")
-    location = ind_entry.get("location") or (doc.get("location") if doc and doc.get("industry") == active_ind else "")
+    # Truly Dynamic Template Scoping:
+    # Every template (custom or standard preset) strictly owns its own offering, location, variables, and knowledge base.
+    # No hardcoded keywords or cross-template assumptions — any company can create any custom offering.
+    offering = ind_entry.get("offering", "")
+    location = ind_entry.get("location", "")
     if "cyber" in location.lower() or "dlf" in location.lower():
         location = ""
-
-    # Sanitize cross-industry offering leaks (e.g. Edtech courses leaking into BFSI, loans into B2B sales)
-    off_lower = str(offering).lower()
-    if active_ind == "bfsi" and any(w in off_lower for w in ["course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "apartment", "clinic", "doctor", "dental"]):
-        offering = "Personal Loan"
-    elif active_ind == "general_sales" and any(w in off_lower for w in ["loan", "emi", "borrower", "course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "clinic", "doctor", "dental"]):
-        offering = ""
-    elif active_ind == "ecommerce" and any(w in off_lower for w in ["loan", "emi", "borrower", "course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "clinic", "doctor", "dental"]):
-        offering = ""
-    elif active_ind == "real_estate" and any(w in off_lower for w in ["loan", "insurance", "course", "bootcamp", "clinic", "doctor"]):
-        offering = ""
-    elif active_ind == "healthcare" and any(w in off_lower for w in ["bhk", "villa", "flat", "loan", "course", "bootcamp"]):
-        offering = ""
-    elif active_ind == "edtech" and any(w in off_lower for w in ["bhk", "villa", "flat", "dental", "clinic"]):
-        offering = ""
     
-    # Merge variables so freshest configured variables are never shadowed
-    merged_vars = {}
-    if doc and isinstance(doc.get("variables"), dict):
-        merged_vars.update(doc["variables"])
-    if ind_entry and isinstance(ind_entry.get("variables"), dict):
-        merged_vars.update(ind_entry["variables"])
-    variables = merged_vars
+    # Merge variables for this specific template
+    variables = ind_entry.get("variables") if isinstance(ind_entry.get("variables"), dict) else {}
 
     kb = (
         ind_entry.get("draft_knowledge_base")
         or ind_entry.get("published_knowledge_base")
         or ind_entry.get("knowledge_base")
-        or template_def.get("knowledge_base")
-        or (doc.get("knowledge_base") if doc and doc.get("industry") == active_ind else "")
-        or ""
+        or template_def.get("knowledge_base", "")
     )
-    kb_lower = str(kb).lower()
-    if active_ind in ("general_sales", "ecommerce", "real_estate") and any(w in kb_lower for w in ["personal loans up to", "loan amount", "cibil", "course fee", "curriculum", "placement assurance"]):
-        kb = ""
-    elif active_ind == "healthcare" and any(w in kb_lower for w in ["personal loans up to", "course fee", "curriculum", "bhk"]):
-        kb = ""
 
     return {
         "status": "success",
@@ -411,31 +387,11 @@ async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(re
     if variables is not None and isinstance(variables, dict):
         ind_update[f"industry_prompts.{industry}.variables"] = variables
 
-    # Also keep top-level draft in sync
+    # Keep top-level active industry pointer
     ind_update.update({
-        "draft_prompt": prompt,
-        "draft_welcome_message": welcome_message,
-        "prompt": prompt,
-        "welcome_message": welcome_message,
-        "status": "Draft",
         "industry": industry,
         "updated_at": now,
     })
-    if offering is not None:
-        ind_update["offering"] = str(offering).strip()
-    if location is not None:
-        ind_update["location"] = str(location).strip()
-    if variables is not None and isinstance(variables, dict):
-        ind_update["variables"] = variables
-    if inbound_prompt is not None:
-        ind_update["draft_inbound_prompt"] = inbound_prompt
-        ind_update["inbound_prompt"] = inbound_prompt
-    if inbound_welcome_message is not None:
-        ind_update["draft_inbound_welcome_message"] = inbound_welcome_message
-        ind_update["inbound_welcome_message"] = inbound_welcome_message
-    if knowledge_base is not None:
-        ind_update["draft_knowledge_base"] = str(knowledge_base).strip()
-        ind_update["knowledge_base"] = str(knowledge_base).strip()
 
     await db.prompts.update_one(
         {"company_id": current_user["company_id"]},
@@ -545,23 +501,6 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
         f"industry_prompts.{industry}.published_at": now,
         f"industry_prompts.{industry}.updated_at": now,
 
-        "published_prompt": prompt,
-        "published_welcome_message": welcome,
-        "draft_prompt": prompt,
-        "draft_welcome_message": welcome,
-        "prompt": prompt,
-        "welcome_message": welcome,
-        "published_inbound_prompt": inbound_prompt,
-        "published_inbound_welcome_message": inbound_welcome,
-        "draft_inbound_prompt": inbound_prompt,
-        "draft_inbound_welcome_message": inbound_welcome,
-        "inbound_prompt": inbound_prompt,
-        "inbound_welcome_message": inbound_welcome,
-        "knowledge_base": str(knowledge_base).strip(),
-        "published_knowledge_base": str(knowledge_base).strip(),
-        "offering": str(offering).strip() if offering else "",
-        "location": str(location).strip() if location else "",
-        "variables": variables,
         "status": "Published",
         "industry": industry,
         "published_at": now,
@@ -1305,50 +1244,20 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         if camp:
             offering_val = str(camp.get("offering") or camp.get("property") or "").strip()
 
-    # 4. Cross-industry sanity filter
-    if offering_val and call_industry:
-        off_lower = offering_val.lower()
-        cross_mismatched = False
-        if call_industry == "real_estate" and any(w in off_lower for w in ["certification", "course", "curriculum", "scholarship", "degree", "doctor", "clinic", "patient", "loan emi"]):
-            cross_mismatched = True
-        elif call_industry == "edtech" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "doctor", "clinic", "patient"]):
-            cross_mismatched = True
-        elif call_industry == "healthcare" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "course", "certification", "degree", "curriculum"]):
-            cross_mismatched = True
-        elif call_industry == "bfsi" and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "curriculum", "doctor", "clinic"]):
-            cross_mismatched = True
-        if cross_mismatched:
-            offering_val = ""
-
+    # Dynamic Offering Resolution:
     ind_entry = (prompt_doc.get("industry_prompts") or {}).get(call_industry, {}) if prompt_doc else {}
+    if not offering_val and ind_entry and ind_entry.get("offering"):
+        offering_val = str(ind_entry.get("offering")).strip()
 
-    # 5. Prompt document offering
-    if not offering_val and prompt_doc:
-        if ind_entry and ind_entry.get("offering"):
-            offering_val = str(ind_entry.get("offering")).strip()
-        elif prompt_doc.get("industry") == call_industry and prompt_doc.get("offering"):
-            prompt_off = str(prompt_doc.get("offering")).strip()
-            if prompt_off and not (call_industry == "real_estate" and any(w in prompt_off.lower() for w in ["certification", "course", "degree"])):
-                offering_val = prompt_off
-
-    # 6. Industry fallback
     if not offering_val:
-        industry_fallbacks = {
-            "real_estate": "property",
-            "healthcare": "consultation",
-            "edtech": "program",
-            "bfsi": "loan",
-            "general_sales": "solution"
-        }
         custom_templates = (prompt_doc.get("custom_templates") or []) if prompt_doc else []
         custom_map = {t["id"]: t for t in custom_templates if isinstance(t, dict) and t.get("id")}
-        template_def = custom_map.get(call_industry, {})
+        template_def = custom_map.get(call_industry, {}) or INDUSTRY_TEMPLATES.get(call_industry, {})
         offering_val = (
-            industry_fallbacks.get(call_industry)
-            or template_def.get("offering")
-            or template_def.get("offering_placeholder")
+            template_def.get("offering")
+            or str(template_def.get("offering_placeholder") or "").replace("e.g. ", "").strip()
             or template_def.get("default_offering_label")
-            or "service"
+            or "our services"
         )
 
     location_val = str(lead_dict.get("location") or payload.get("location") or "")

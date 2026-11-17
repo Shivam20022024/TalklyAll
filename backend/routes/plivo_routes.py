@@ -529,55 +529,29 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         if not lead_ind or lead_ind == "general_sales" or lead_ind == call_industry:
             offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
 
-    # 3. Sanity check: discard stale cross-industry contaminated offerings
-    if offering and call_industry:
-        off_lower = offering.lower()
-        cross_mismatched = False
-        if call_industry == "real_estate" and any(w in off_lower for w in ["certification", "course", "curriculum", "scholarship", "degree", "doctor", "clinic", "patient", "loan emi"]):
-            cross_mismatched = True
-        elif call_industry == "edtech" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "doctor", "clinic", "patient"]):
-            cross_mismatched = True
-        elif call_industry == "healthcare" and any(w in off_lower for w in ["villa", "bhk", "flat", "apartment", "course", "certification", "degree", "curriculum"]):
-            cross_mismatched = True
-        elif call_industry == "bfsi" and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "curriculum", "doctor", "clinic"]):
-            cross_mismatched = True
-        elif call_industry in ("general_sales", "ecommerce") and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "doctor", "clinic", "personal loan", "loan"]):
-            cross_mismatched = True
-        if cross_mismatched:
-            offering = ""
+    # Truly Dynamic Offering Resolution (Template-Scoped & User-Defined):
+    # 1. Check if call_doc explicitly carries an offering override
+    if call_doc and call_doc.get("offering"):
+        offering = str(call_doc.get("offering")).strip()
 
-    # 4. Check industry-specific prompt offering
+    # 2. Check lead_doc - only if this is NOT a test call
+    if not offering and lead_doc and not is_test_call:
+        offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
+
+    # 3. Check industry-specific prompt offering (saved specifically for this template)
     if not offering and specific_ind_prompt and specific_ind_prompt.get("offering"):
         offering = str(specific_ind_prompt.get("offering")).strip()
 
-    # 5. Check active prompt template offering
-    if not offering and prompt_doc and prompt_doc.get("industry") == call_industry and prompt_doc.get("offering"):
-        prompt_off = str(prompt_doc.get("offering")).strip()
-        # Ensure prompt offering also doesn't carry cross-industry mismatch
-        if prompt_off and not (call_industry == "real_estate" and any(w in prompt_off.lower() for w in ["certification", "course", "degree"])):
-            offering = prompt_off
-
-    # 6. Company default offering
-    if not offering and company and company.get("offering") and company.get("industry") == call_industry:
-        offering = str(company.get("offering")).strip()
-
-    # 7. Industry-tailored fallback
-    if not offering:
-        industry_fallbacks = {
-            "real_estate": "luxury property",
-            "healthcare": "doctor appointment consultation",
-            "edtech": "online certification",
-            "bfsi": "loan",
-            "general_sales": "AI calling services",
-            "collections": "loan EMI payment"
-        }
+    # 4. Dynamic Fallback to template definition or clean generic label
+    if not offering and isinstance(template_def, dict):
         offering = (
-            industry_fallbacks.get(call_industry)
-            or (template_def.get("offering") if isinstance(template_def, dict) and template_def.get("offering") else None)
-            or (template_def.get("offering_placeholder") if isinstance(template_def, dict) and template_def.get("offering_placeholder") else None)
-            or (template_def.get("default_offering_label") if isinstance(template_def, dict) and template_def.get("default_offering_label") else None)
+            template_def.get("offering")
+            or str(template_def.get("offering_placeholder") or "").replace("e.g. ", "").strip()
+            or template_def.get("default_offering_label")
             or "our services"
         )
+    if not offering:
+        offering = "our services"
 
     # Collect dynamic variables from all configuration sources
     dyn_vars = {}

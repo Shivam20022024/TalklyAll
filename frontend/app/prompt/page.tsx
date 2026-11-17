@@ -794,7 +794,7 @@ export default function PromptPage() {
   // Live preview helpers
   const sampleCompanyName = user?.company_name || 'Talkly'
   const sampleCustomerName = 'Rahul Sharma'
-  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'ecommerce' ? 'Wireless Earbuds' : selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
+  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || currentTemplate?.default_offering_label || 'our services'
   const sampleLocation = location.trim() || 'Connaught Place, New Delhi'
 
   const computeSimulatedGreeting = (raw: string) => {
@@ -803,30 +803,28 @@ export default function PromptPage() {
     out = out.replace(/\{\{company_name\}\}|\{company_name\}/g, sampleCompanyName)
     out = out.replace(/\{\{offering\}\}|\{offering\}|\{\{property_name\}\}/g, sampleOffering)
     out = out.replace(/\{\{location\}\}|\{location\}|\{\{property_location\}\}/g, sampleLocation)
-    out = out.replace(/\{\{budget\}\}/g, industryVariables.budget || '₹80 Lakhs')
-    out = out.replace(/\{\{doctor_name\}\}/g, industryVariables.doctor_name || 'Dr. Priya Sharma')
-    out = out.replace(/\{\{preferred_time\}\}/g, industryVariables.preferred_time || 'Tomorrow 5 PM')
-    out = out.replace(/\{\{batch_time\}\}/g, industryVariables.batch_time || 'Weekend Batch')
-    out = out.replace(/\{\{current_role\}\}/g, industryVariables.current_role || 'Working Professional')
-    out = out.replace(/\{\{loan_amount\}\}/g, industryVariables.loan_amount || '₹10,00,000')
-    out = out.replace(/\{\{tenure\}\}/g, industryVariables.tenure || '5 Years')
-    const rawAmt = industryVariables.amount_due || '₹15,000'
-    const cleanAmt = rawAmt.replace(/^₹\s*/, '')
-    out = out.replace(/₹\s*\{\{amount_due\}\}/g, `₹${cleanAmt}`)
-    out = out.replace(/\{\{amount_due\}\}/g, rawAmt)
-    const rawOrderAmt = industryVariables.order_amount || '₹2,199'
-    const cleanOrderAmt = rawOrderAmt.replace(/^₹\s*/, '')
-    out = out.replace(/₹\s*\{\{order_amount\}\}/g, `₹${cleanOrderAmt}`)
-    out = out.replace(/\{\{order_amount\}\}/g, rawOrderAmt)
-    out = out.replace(/\{\{order_id\}\}/g, industryVariables.order_id || 'ORD-98241')
-    out = out.replace(/\{\{delivery_address\}\}/g, industryVariables.delivery_address || 'Flat 402, Sector 62, Noida')
-    out = out.replace(/\{\{due_date\}\}/g, industryVariables.due_date || '10 November 2026')
-    out = out.replace(/\{\{company_size\}\}/g, industryVariables.company_size || '25 employees')
-    out = out.replace(/\{\{shop_address\}\}/g, industryVariables.shop_address || 'our store')
-    out = out.replace(/\{\{landmark\}\}/g, industryVariables.landmark || '')
-    out = out.replace(/\{\{city\}\}/g, industryVariables.city || '')
-    out = out.replace(/\{\{shop_timings\}\}/g, industryVariables.shop_timings || '')
-    out = out.replace(/\{\{contact_number\}\}/g, industryVariables.contact_number || '')
+
+    // Dynamically replace any variable configured in industryVariables
+    if (industryVariables && typeof industryVariables === 'object') {
+      for (const [k, v] of Object.entries(industryVariables)) {
+        if (v !== undefined && v !== null && v !== '') {
+          const reg = new RegExp(`\\{\\{${k}\\}\\}|\\{${k}\\}`, 'g')
+          out = out.replace(reg, String(v))
+        }
+      }
+    }
+
+    // Dynamic fallbacks for any remaining template-specific placeholder tags
+    if (currentTemplate?.specific_variables && Array.isArray(currentTemplate.specific_variables)) {
+      for (const sv of currentTemplate.specific_variables) {
+        if (sv?.key && sv?.placeholder) {
+          const reg = new RegExp(`\\{\\{${sv.key}\\}\\}|\\{${sv.key}\\}`, 'g')
+          out = out.replace(reg, sv.placeholder.replace(/^e\.g\.\s*/i, ''))
+        }
+      }
+    }
+
+    // Clean up any double currency signs
     out = out.replace(/₹\s*₹/g, '₹')
     return out
   }
