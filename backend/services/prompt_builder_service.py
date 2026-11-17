@@ -60,6 +60,10 @@ CRITICAL VOICE AGENT RULES THAT MUST BE ENFORCED IN THE GENERATED PROMPT:
    - If the prospect gives an ambiguous or unclear number (e.g. 'Fox Five', 'forty five') when asked about bills or amounts, NEVER automatically assume eligibility or guess the value. Ask for polite clarification: 'माफ कीजिए, क्या आपका मासिक बिल ₹5,000 है या कुछ और? कृपया राशि स्पष्ट करें।'
 9. APPOINTMENT CONFIRMATION VALIDATION:
    - Customer agreement to a slot is not a confirmed booking until backend validation. The agent must verify availability, submit the booking, and confirm the specific time slot with a warm wrap-up.
+10. CLARIFY AMBIGUOUS ANSWERS & DO NOT RUSH:
+   - When asking qualification questions (e.g. studying vs working, personal vs business loan, preferred timings), if the prospect gives a vague one-word answer ('Yes', 'Okay', 'Haan'), instruct the agent to politely clarify ('Got it! And which one are you currently...') rather than skipping ahead to the next question or demo pitch.
+11. PATIENCE ON FILLER WORDS:
+   - When the prospect says 'Okay', 'Yeah', 'Hmm', instruct the agent never to dump the sales pitch or booking request immediately; give them space to finish their thought.
 
 Return your response strictly as a valid JSON object matching the requested schema.
 """

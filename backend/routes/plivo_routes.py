@@ -922,6 +922,12 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
         "\n   - The mandatory workflow is: (1) Customer selects slot -> (2) Invoke 'book_appointment_slot' tool -> (3) Verify backend success -> (4) Confirm appointment to customer with warm 1-sentence wrap-up -> (5) Conclude goodbye and invoke 'end_call'."
         "\n   - If booking fails, politely explain the conflict and offer an alternative slot."
         "\n19. ZERO-HARDCODING POLICY: Never hardcode or invent subsidy amounts, eligibility rules, installation prices, or warranty periods. Always derive verified details from the Knowledge Base or clearly designate them as estimates ('लगभग ... अनुमानित'), subject to engineering site assessment."
+        "\n20. MANDATORY CLARIFICATION ON AMBIGUOUS ANSWERS (NEVER SKIP AHEAD):"
+        "\n   - When asking an either/or, multi-choice, or category qualification question (e.g. studying vs working, personal vs business loan, weekday vs weekend), if the customer gives a vague 1-word answer like 'Yes', 'No', 'Okay', 'Haan', 'Ji', or 'Sure', do NOT treat it as answered and do NOT rush to the next question or demo pitch!"
+        "\n   - Politely clarify: 'Got it! And which one are you currently — [Option A] or [Option B]?' (Hindi: 'जी! और आप अभी क्या कर रहे हैं — [Option A] या [Option B]?') and wait for their answer."
+        "\n21. PATIENCE ON THINKING FILLERS (NO IMMEDIATE SALES PITCH DUMPING):"
+        "\n   - If the customer says 'Okay', 'Yeah', 'Hmm', 'Acha', or 'Well' right after you ask an open-ended question, they are pausing to think before speaking. Do NOT immediately blurt out the next topic, pitch, or demo booking!"
+        "\n   - Give them space or gently prompt: 'Take your time, what are you hoping to achieve?' or 'I am listening, go ahead!'"
     )
 
     # Collections compliance directive - opt-in only (companies.collections_mode),
