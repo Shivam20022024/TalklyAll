@@ -931,16 +931,23 @@ async def get_calls_stats(direction: str = None, current_user: dict = Depends(re
 
 @app.get("/api/v1/calls/export")
 async def export_calls_excel(direction: str = None, current_user: dict = Depends(require_company_access)):
-    """Properly formatted, single-direction .xlsx export - separate files for
-    inbound vs outbound so the two don't get mixed into one messy sheet."""
+    """Executive-grade .xlsx export with customer details for
+    inbound, outbound, and omnichannel management reporting."""
     db = mongodb.get_db()
     base_filter = {"direction": direction} if direction else None
     cursor = db.calls.find(tenant_filter(current_user, base_filter)).sort("created_at", -1)
     calls = await cursor.to_list(length=None)
 
+    # Fetch company leads to enrich customer details (email, location, budget, company, etc.)
+    leads_cursor = db.leads.find(tenant_filter(current_user))
+    leads = await leads_cursor.to_list(length=None)
+
+    comp = await db.companies.find_one({"company_id": current_user["company_id"]})
+    company_name = comp.get("name") if comp else "Talkly AI"
+
     from report_service import generate_calls_export
     direction_label = (direction or "all").title()
-    file_path = await run_in_threadpool(generate_calls_export, calls, direction_label)
+    file_path = await run_in_threadpool(generate_calls_export, calls, direction_label, leads=leads, company_name=company_name)
 
     filename = f"talkly_{direction or 'all'}_calls_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
 

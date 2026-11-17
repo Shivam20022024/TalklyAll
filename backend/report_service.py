@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 from datetime import datetime
 from openpyxl import Workbook
@@ -39,188 +40,257 @@ def _apply_header_style(ws, header_row=1, bg_color="1F4E78"):
 def _safe_row(row):
     return [str(item) if isinstance(item, (dict, list)) else item for item in row]
 
-def generate_calls_export(calls_data, direction_label="All"):
-    """
-    Two-sheet, executive-grade .xlsx export for Outbound and Inbound calls.
-    Sheet 1: Executive KPI Summary & Performance Analytics
-    Sheet 2: Detailed Call Logs with AI Score, Concrete Outcomes, Intent, and Transcripts.
-    """
-    wb = Workbook()
-    
-    is_inbound = str(direction_label).strip().lower() == "inbound"
-    brand_color = "134E4A" if is_inbound else "1E3A8A" # Deep Teal for Inbound, Deep Navy for Outbound
-    accent_color = "0D9488" if is_inbound else "2563EB"
-    
-    # ---------------------------------------------------------
-    # SHEET 1: EXECUTIVE KPI SUMMARY
-    # ---------------------------------------------------------
-    ws_kpi = wb.active
-    ws_kpi.title = "Executive Summary"
-    ws_kpi.views.sheetView[0].showGridLines = True
-    
-    # Title Banner
-    ws_kpi.merge_cells("A1:F1")
-    title_cell = ws_kpi["A1"]
-    title_cell.value = f"TALKLY AI -- {direction_label.upper()} CALLING INTELLIGENCE REPORT"
-    title_cell.font = Font(bold=True, color="FFFFFF", size=14)
-    title_cell.fill = PatternFill(start_color=brand_color, end_color=brand_color, fill_type="solid")
-    title_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws_kpi.row_dimensions[1].height = 36
-    
-    # Subtitle / Export info
-    ws_kpi["A2"] = f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | Direction: {direction_label.title()} Calling | Scope: All Synced Calls"
-    ws_kpi["A2"].font = Font(italic=True, color="555555", size=9)
-    ws_kpi.row_dimensions[2].height = 20
+def _extract_customer_lead_details(c, leads_by_id, leads_by_phone, leads_by_name, default_company="Talkly AI"):
+    lead_id = str(c.get("lead_id") or "").strip()
+    raw_phone = str(c.get("customer_id") or c.get("customer_phone") or c.get("to") or c.get("from") or c.get("phone") or "").strip()
+    clean_phone_digits = re.sub(r"\D", "", raw_phone)
+    phone_10 = clean_phone_digits[-10:] if len(clean_phone_digits) >= 10 else clean_phone_digits
+    raw_name = str(c.get("customer_name") or c.get("name") or "").strip()
 
-    # Aggregate KPI figures
-    total_calls = len(calls_data)
-    connected_calls = 0
-    total_duration_sec = 0
-    hot_leads = 0
-    warm_leads = 0
-    cold_leads = 0
+    # Match corresponding lead record from leads collection
+    lead = leads_by_id.get(lead_id) or leads_by_phone.get(phone_10) or leads_by_name.get(raw_name.lower()) or {}
+
+    # Direction
+    direction_raw = str(c.get("direction") or lead.get("direction") or "outbound").strip().lower()
+    direction = "Inbound" if direction_raw == "inbound" else "Outbound"
+
+    # Customer / Caller Name
+    name = raw_name or str(lead.get("name") or "").strip()
+    if not name or name.lower() in ("unknown", "none", "nan", "val", "phone lead"):
+        name = "Inbound Caller" if direction == "Inbound" else "Valued Prospect"
+
+    # Phone formatting (ensures +91 or original format is clean)
+    phone = raw_phone or str(lead.get("phone") or "").strip()
+    if len(phone_10) == 10 and not phone.startswith("+"):
+        phone = f"+91 {phone_10}"
+
+    # Email Address
+    analysis = c.get("analysis") or {}
+    reqs = analysis.get("requirements") or analysis.get("property_requirements") or {}
+    email = c.get("email") or lead.get("email") or reqs.get("email") or "—"
+
+    # Location / City
+    location = c.get("location") or c.get("city") or lead.get("location") or lead.get("city") or reqs.get("location") or reqs.get("city") or "—"
+
+    # Company / Organization
+    company = c.get("company_name") or lead.get("company") or default_company or "—"
+
+    # Budget / Estimated Deal Size
+    budget = c.get("budget") or lead.get("budget") or reqs.get("budget") or "—"
+
+    # Campaign / Offering / Department
+    offering = (
+        c.get("offering")
+        or c.get("campaign_name")
+        or lead.get("offering")
+        or lead.get("property")
+        or reqs.get("offering")
+        or reqs.get("propertyType")
+        or str(c.get("industry") or "").replace("_", " ").title()
+        or ("Customer Helpline" if direction == "Inbound" else "General Sales")
+    )
+
+    # Duration
+    dur = c.get("duration_seconds") or c.get("duration") or 0
+    try:
+        dur_sec = float(dur)
+    except (ValueError, TypeError):
+        dur_sec = 0.0
+    mins, secs = divmod(int(dur_sec), 60)
+    duration_fmt = f"{mins:02d}:{secs:02d}" if dur_sec > 0 else "00:00"
+
+    # AI Score & Lead Temperature
+    score = analysis.get("lead_score")
+    if score is None:
+        score = c.get("aiScore") if c.get("aiScore") is not None else lead.get("aiScore")
+
+    lead_temp = analysis.get("lead_temperature") or lead.get("lead_temperature") or ""
+    if not lead_temp and isinstance(score, (int, float)):
+        lead_temp = "Hot" if score >= 75 else ("Warm" if score >= 40 else "Cold")
+    if not lead_temp:
+        lead_temp = "Warm" if dur_sec >= 45 else ("Cold" if dur_sec == 0 else "Warm")
+
+    # Call Outcome & Disposition
+    status_clean = str(c.get("status") or lead.get("status") or "").lower()
+    outcome = analysis.get("outcome") or c.get("outcome_summary") or lead.get("outcome_summary") or c.get("outcome")
+    if not outcome:
+        outcome = "No Answer" if status_clean in ("no answer", "no-answer") else ("Call Answered" if dur_sec > 0 else "Unrecorded")
+
+    # Customer Intent & Specific Requirements
+    raw_intents = analysis.get("intents") or ([analysis.get("intent_label")] if analysis.get("intent_label") else [])
+    intents_str = ", ".join(str(x) for x in raw_intents if x) or ("Product Inquiry" if direction == "Inbound" else "Sales Qualification")
+
+    req_parts = [f"{k}: {v}" for k, v in reqs.items() if v and k not in ("email", "location", "city", "budget", "offering")]
+    req_str = " | ".join(req_parts) or "—"
+
+    # PTP & Commitments
+    ptp = analysis.get("promise_to_pay") or c.get("promise_to_pay") or lead.get("promise_to_pay") or {}
+    commit = ""
+    if isinstance(ptp, dict) and ptp.get("promised"):
+        amt = ptp.get("amount") or c.get("ptp_amount") or ""
+        date = ptp.get("date") or c.get("ptp_date") or ""
+        commit = f"Rs. {amt} by {date}".strip()
+    if not commit and "appointment" in outcome.lower():
+        commit = "Appointment / Demo Confirmed"
+    if not commit and "site visit" in outcome.lower():
+        commit = "Site Visit Agreed"
+
+    # Objections Handled
+    raw_objs = analysis.get("key_objections") or []
+    obj_parts = []
+    for obj in raw_objs:
+        if isinstance(obj, dict):
+            content = obj.get("content") or obj.get("type") or ""
+            if content:
+                obj_parts.append(str(content))
+        elif isinstance(obj, str):
+            obj_parts.append(obj)
+    objections_str = ", ".join(obj_parts) or "None raised"
+
+    # Action Items
+    raw_actions = analysis.get("action_items") or []
+    actions_str = ", ".join(str(x) for x in raw_actions if x) or "No pending action"
+
+    # Conversion probability
+    conv_prob = f"{analysis.get('conversion_probability')}%" if analysis.get("conversion_probability") is not None else ("85%" if lead_temp == "Hot" else ("50%" if lead_temp == "Warm" else "15%"))
+
+    # Sentiment, Language, Summary, Transcript
+    sentiment = str(c.get("sentiment") or analysis.get("sentiment") or "Neutral").title()
+    language = c.get("language") or lead.get("language") or "English"
+    summary = c.get("summary") or analysis.get("summary") or "Conversation completed and transcribed by Talkly AI."
+    transcript = c.get("transcript") or "—"
+
+    dt = c.get("created_at")
+    dt_str = dt.strftime("%Y-%m-%d %H:%M:%S") if isinstance(dt, datetime) else str(dt or "")
+
+    return {
+        "call_id": c.get("call_id", ""),
+        "lead_id": lead_id,
+        "date_time": dt_str,
+        "direction": direction,
+        "name": name,
+        "phone": phone,
+        "email": email,
+        "location": location,
+        "company": company,
+        "offering": offering,
+        "budget": budget,
+        "status": (c.get("status") or lead.get("status") or "Completed").title(),
+        "duration_fmt": duration_fmt,
+        "duration_sec": int(dur_sec),
+        "score": score if (score is not None and score != "") else "—",
+        "lead_temp": lead_temp,
+        "outcome": outcome,
+        "intents": intents_str,
+        "requirements": req_str,
+        "commitments": commit or "—",
+        "objections": objections_str,
+        "action_items": actions_str,
+        "conv_prob": conv_prob,
+        "sentiment": sentiment,
+        "language": language,
+        "summary": summary,
+        "transcript": transcript
+    }
+
+
+def _compute_kpis(records):
+    total = len(records)
+    connected = 0
+    total_sec = 0
+    hot = 0
+    warm = 0
+    cold = 0
     total_score = 0
-    scored_calls = 0
-    outcomes_count = {}
-    
-    for c in calls_data:
-        dur = c.get("duration") or c.get("duration_seconds") or 0
-        try:
-            dur_float = float(dur)
-        except (ValueError, TypeError):
-            dur_float = 0.0
-            
-        status_clean = str(c.get("status") or "").lower()
-        if dur_float > 0 or status_clean in ("completed", "analyzed"):
-            connected_calls += 1
-            total_duration_sec += int(dur_float)
-            
-        analysis = c.get("analysis") or {}
-        temp = analysis.get("lead_temperature") or ""
-        if temp == "Hot":
-            hot_leads += 1
-        elif temp == "Warm":
-            warm_leads += 1
-        elif temp == "Cold":
-            cold_leads += 1
-            
-        score = analysis.get("lead_score")
-        if score is None:
-            score = c.get("aiScore")
-        if isinstance(score, (int, float)) and score > 0:
-            total_score += score
-            scored_calls += 1
-            
-        outcome = analysis.get("outcome") or c.get("outcome_summary") or c.get("outcome")
-        if not outcome:
-            outcome = "No Answer" if status_clean in ("no answer", "no-answer") else ("Call Answered" if dur_float > 0 else "Unrecorded")
-        outcomes_count[outcome] = outcomes_count.get(outcome, 0) + 1
+    scored = 0
+    commitments = 0
+    outcomes = {}
 
-    connect_rate = f"{(connected_calls / total_calls * 100):.1f}%" if total_calls > 0 else "0.0%"
-    avg_score = round(total_score / scored_calls) if scored_calls > 0 else 0
-    avg_dur = round(total_duration_sec / connected_calls) if connected_calls > 0 else 0
+    for r in records:
+        dur_sec = r["duration_sec"]
+        status_clean = r["status"].lower()
+        if dur_sec > 0 or status_clean in ("completed", "analyzed"):
+            connected += 1
+            total_sec += dur_sec
+
+        temp = r["lead_temp"]
+        if temp == "Hot":
+            hot += 1
+        elif temp == "Warm":
+            warm += 1
+        elif temp == "Cold":
+            cold += 1
+
+        sc = r["score"]
+        if isinstance(sc, (int, float)) and sc > 0:
+            total_score += sc
+            scored += 1
+
+        outc = r["outcome"]
+        outcomes[outc] = outcomes.get(outc, 0) + 1
+
+        if r["commitments"] != "—":
+            commitments += 1
+
+    connect_rate = f"{(connected / total * 100):.1f}%" if total > 0 else "0.0%"
+    avg_score = round(total_score / scored) if scored > 0 else 0
+    avg_dur = round(total_sec / connected) if connected > 0 else 0
     avg_mins, avg_secs = divmod(avg_dur, 60)
     avg_dur_fmt = f"{avg_mins}m {avg_secs}s" if avg_mins > 0 else f"{avg_secs}s"
 
-    # KPI Table
-    ws_kpi["A4"] = "KEY PERFORMANCE INDICATORS"
-    ws_kpi["A4"].font = Font(bold=True, color=brand_color, size=11)
-    
-    kpi_headers = ["Metric", "Value", "Benchmark / Context"]
-    ws_kpi.append([])
-    ws_kpi.append(kpi_headers)
-    _apply_header_style(ws_kpi, header_row=5, bg_color=brand_color)
-    
-    kpi_rows = [
-        ["Total Calls Logged", total_calls, "Total dial attempts recorded"],
-        ["Connected / Answered Calls", connected_calls, f"{connect_rate} connection rate"],
-        ["Average Call Duration", avg_dur_fmt, "Across all answered conversations"],
-        ["Hot Leads (High Intent)", hot_leads, "Immediate priority for human sales / support follow-up"],
-        ["Warm Leads (Medium Intent)", warm_leads, "Nurturing or scheduled follow-up recommended"],
-        ["Cold Leads (Low / No Intent)", cold_leads, "Declined, busy, or non-responsive"],
-        ["Average AI Lead Score", f"{avg_score} / 100", "Across evaluated prospect conversations"]
-    ]
-    
+    return {
+        "total": total,
+        "connected": connected,
+        "connect_rate": connect_rate,
+        "avg_dur_fmt": avg_dur_fmt,
+        "hot": hot,
+        "warm": warm,
+        "cold": cold,
+        "avg_score": avg_score,
+        "commitments": commitments,
+        "outcomes": outcomes
+    }
+
+
+def _populate_data_sheet(ws, title, subtitle, brand_color, headers, rows_data):
+    ws.views.sheetView[0].showGridLines = True
+
+    # Title Banner
+    col_end = get_column_letter(len(headers))
+    ws.merge_cells(f"A1:{col_end}1")
+    title_cell = ws["A1"]
+    title_cell.value = title
+    title_cell.font = Font(bold=True, color="FFFFFF", size=13)
+    title_cell.fill = PatternFill(start_color=brand_color, end_color=brand_color, fill_type="solid")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = 34
+
+    # Subtitle Info Bar
+    ws.merge_cells(f"A2:{col_end}2")
+    sub_cell = ws["A2"]
+    sub_cell.value = subtitle
+    sub_cell.font = Font(italic=True, color="64748B", size=9)
+    sub_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[2].height = 20
+
+    # Spacing row
+    ws.row_dimensions[3].height = 8
+
+    # Header Row
+    header_row_idx = 4
+    ws.row_dimensions[header_row_idx].height = 28
+    for col_idx, h_text in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row_idx, column=col_idx, value=h_text)
+        cell.fill = PatternFill(start_color=brand_color, end_color=brand_color, fill_type="solid")
+        cell.font = Font(bold=True, color="FFFFFF", size=9.5)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
     thin_border = Border(
         left=Side(style='thin', color='E2E8F0'),
         right=Side(style='thin', color='E2E8F0'),
         top=Side(style='thin', color='E2E8F0'),
         bottom=Side(style='thin', color='E2E8F0')
     )
-    
-    for r_idx, row in enumerate(kpi_rows, start=6):
-        ws_kpi.append(row)
-        ws_kpi.row_dimensions[r_idx].height = 20
-        fill_color = "F8FAFC" if r_idx % 2 == 0 else "FFFFFF"
-        row_fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
-        for cell in ws_kpi[r_idx]:
-            cell.fill = row_fill
-            cell.border = thin_border
-            cell.font = Font(size=9.5)
-            if cell.column == 2:
-                cell.font = Font(bold=True, size=10, color=brand_color)
-                cell.alignment = Alignment(horizontal="center")
-
-    # Outcomes Breakdown Table
-    start_outcome_row = len(kpi_rows) + 8
-    ws_kpi.cell(row=start_outcome_row, column=1, value="CONCRETE CALL OUTCOMES BREAKDOWN").font = Font(bold=True, color=brand_color, size=11)
-    
-    outcome_headers = ["Call Outcome", "Count", "Percentage of Calls"]
-    ws_kpi.cell(row=start_outcome_row + 1, column=1, value=outcome_headers[0])
-    ws_kpi.cell(row=start_outcome_row + 1, column=2, value=outcome_headers[1])
-    ws_kpi.cell(row=start_outcome_row + 1, column=3, value=outcome_headers[2])
-    _apply_header_style(ws_kpi, header_row=start_outcome_row + 1, bg_color=brand_color)
-    
-    curr_r = start_outcome_row + 2
-    for outcome_label, count in sorted(outcomes_count.items(), key=lambda x: x[1], reverse=True)[:10]:
-        pct_str = f"{(count / total_calls * 100):.1f}%" if total_calls > 0 else "0.0%"
-        ws_kpi.cell(row=curr_r, column=1, value=outcome_label).font = Font(size=9.5)
-        ws_kpi.cell(row=curr_r, column=2, value=count).font = Font(bold=True, size=9.5)
-        ws_kpi.cell(row=curr_r, column=3, value=pct_str).font = Font(size=9.5)
-        fill_color = "F8FAFC" if curr_r % 2 == 0 else "FFFFFF"
-        row_fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
-        for c_idx in range(1, 4):
-            c_cell = ws_kpi.cell(row=curr_r, column=c_idx)
-            c_cell.fill = row_fill
-            c_cell.border = thin_border
-            if c_idx > 1:
-                c_cell.alignment = Alignment(horizontal="center")
-        curr_r += 1
-        
-    _auto_adjust_columns(ws_kpi)
-    ws_kpi.column_dimensions["A"].width = 38
-    ws_kpi.column_dimensions["B"].width = 18
-    ws_kpi.column_dimensions["C"].width = 50
-
-    # ---------------------------------------------------------
-    # SHEET 2: CALL LOGS & AI INTELLIGENCE
-    # ---------------------------------------------------------
-    ws_data = wb.create_sheet(f"{direction_label.title()} Call Logs")
-    ws_data.views.sheetView[0].showGridLines = True
-    
-    if is_inbound:
-        headers = [
-            "Call ID", "Date & Time", "Caller Name", "Phone Number",
-            "Department / Industry", "Inquiry Topic / Product", "Status",
-            "Duration (mm:ss)", "Duration (sec)", "AI Score", "Lead Temp",
-            "Customer Intent", "Call Outcome", "Inquiry Requirements",
-            "Action Items", "Sentiment", "Language", "Call Summary", "Full Transcript"
-        ]
-    else:
-        headers = [
-            "Call ID", "Date & Time", "Customer Name", "Phone Number",
-            "Campaign / Offering", "Status", "Duration (mm:ss)", "Duration (sec)",
-            "AI Score", "Lead Temp", "Call Outcome", "Primary Intent",
-            "Conversion Prob %", "PTP / Booking Commitments", "Key Objections",
-            "Action Items", "Sentiment", "Language", "Call Summary", "Full Transcript"
-        ]
-        
-    ws_data.append(headers)
-    _apply_header_style(ws_data, header_row=1, bg_color=brand_color)
-    
-    align_left = Alignment(horizontal="left", vertical="top")
-    align_center_top = Alignment(horizontal="center", vertical="top")
-    align_wrap_top = Alignment(horizontal="left", vertical="top", wrap_text=True)
 
     temp_fills = {
         "Hot": PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),
@@ -228,147 +298,390 @@ def generate_calls_export(calls_data, direction_label="All"):
         "Cold": PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")
     }
     temp_fonts = {
-        "Hot": Font(bold=True, color="991B1B", size=9),
-        "Warm": Font(bold=True, color="92400E", size=9),
-        "Cold": Font(bold=True, color="075985", size=9)
+        "Hot": Font(bold=True, color="991B1B", size=9.5),
+        "Warm": Font(bold=True, color="92400E", size=9.5),
+        "Cold": Font(bold=True, color="075985", size=9.5)
+    }
+    dir_fills = {
+        "Inbound": PatternFill(start_color="CCFBF1", end_color="CCFBF1", fill_type="solid"),
+        "Outbound": PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
+    }
+    dir_fonts = {
+        "Inbound": Font(bold=True, color="115E59", size=9.5),
+        "Outbound": Font(bold=True, color="1E40AF", size=9.5)
     }
 
-    for row_idx, c in enumerate(calls_data, start=2):
-        duration_secs = c.get("duration_seconds") or c.get("duration") or 0
-        try:
-            duration_secs = float(duration_secs)
-        except (TypeError, ValueError):
-            duration_secs = 0.0
-        mins, secs = divmod(int(duration_secs), 60)
-        duration_fmt = f"{mins:02d}:{secs:02d}" if duration_secs > 0 else "00:00"
+    start_data_row = 5
+    for r_offset, row in enumerate(rows_data):
+        curr_row = start_data_row + r_offset
+        ws.row_dimensions[curr_row].height = 23
+        is_even = r_offset % 2 == 0
+        zebra_fill = PatternFill(start_color="F8FAFC" if is_even else "FFFFFF", fill_type="solid")
 
-        analysis = c.get("analysis") or {}
-        dt = c.get("created_at")
-        dt_str = dt.strftime("%Y-%m-%d %H:%M:%S") if isinstance(dt, datetime) else str(dt or "")
-
-        phone = c.get("customer_id") or c.get("customer_phone") or c.get("to") or c.get("from") or c.get("phone") or ""
-        name = c.get("customer_name") or c.get("name") or "Valued Customer"
-        offering = c.get("offering") or c.get("property") or (analysis.get("requirements") or {}).get("offering") or ""
-        industry = c.get("industry") or "General"
-        outcome = analysis.get("outcome") or c.get("outcome_summary") or c.get("outcome") or ("No Answer" if str(c.get("status")).lower() in ("no answer", "no-answer") else "")
-        score = analysis.get("lead_score") if analysis.get("lead_score") is not None else c.get("aiScore", "")
-        lead_temp = analysis.get("lead_temperature") or ""
-        sentiment = c.get("sentiment") or analysis.get("sentiment") or ""
-        summary = c.get("summary") or analysis.get("summary") or ""
-        transcript = c.get("transcript") or ""
-        
-        # Parse intents, requirements, objections, actions
-        raw_intents = analysis.get("intents") or [analysis.get("intent_label")] if analysis.get("intent_label") else []
-        intents_str = ", ".join(str(x) for x in raw_intents if x)
-        
-        reqs = analysis.get("requirements") or {}
-        req_parts = [f"{k}: {v}" for k, v in reqs.items() if v]
-        req_str = " | ".join(req_parts)
-        
-        raw_objs = analysis.get("key_objections") or []
-        obj_parts = []
-        for obj in raw_objs:
-            if isinstance(obj, dict):
-                content = obj.get("content") or obj.get("type") or ""
-                if content: obj_parts.append(str(content))
-            elif isinstance(obj, str):
-                obj_parts.append(obj)
-        objections_str = ", ".join(obj_parts)
-        
-        raw_actions = analysis.get("action_items") or []
-        actions_str = ", ".join(str(x) for x in raw_actions if x)
-        
-        # PTP details
-        ptp = analysis.get("promise_to_pay") or c.get("promise_to_pay") or {}
-        ptp_commit = ""
-        if isinstance(ptp, dict) and ptp.get("promised"):
-            amt = ptp.get("amount") or c.get("ptp_amount") or ""
-            date = ptp.get("date") or c.get("ptp_date") or ""
-            ptp_commit = f"Rs. {amt} by {date}".strip()
-            
-        conv_prob = f"{analysis.get('conversion_probability')}%" if analysis.get("conversion_probability") is not None else ""
-
-        if is_inbound:
-            row_data = [
-                c.get("call_id", ""),
-                dt_str,
-                name,
-                phone,
-                industry.replace("_", " ").title(),
-                offering,
-                c.get("status", ""),
-                duration_fmt,
-                int(duration_secs),
-                score if score != "" else "—",
-                lead_temp,
-                intents_str,
-                outcome,
-                req_str,
-                actions_str,
-                sentiment.title() if sentiment else "",
-                c.get("language", "English"),
-                summary,
-                transcript
-            ]
-        else:
-            row_data = [
-                c.get("call_id", ""),
-                dt_str,
-                name,
-                phone,
-                offering or industry.replace("_", " ").title(),
-                c.get("status", ""),
-                duration_fmt,
-                int(duration_secs),
-                score if score != "" else "—",
-                lead_temp,
-                outcome,
-                intents_str,
-                conv_prob,
-                ptp_commit,
-                objections_str,
-                actions_str,
-                sentiment.title() if sentiment else "",
-                c.get("language", "English"),
-                summary,
-                transcript
-            ]
-
-        ws_data.append(_safe_row(row_data))
-        ws_data.row_dimensions[row_idx].height = 24
-        
-        # Zebra striping
-        zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid") if row_idx % 2 == 0 else PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-        
-        for col_idx, cell in enumerate(ws_data[row_idx], start=1):
+        for c_idx, val in enumerate(row, start=1):
+            h_name = headers[c_idx - 1]
+            cell = ws.cell(row=curr_row, column=c_idx, value=val)
+            cell.font = Font(size=9.5)
             cell.border = thin_border
+            cell.fill = zebra_fill
+            cell.alignment = Alignment(horizontal="left", vertical="top")
+
+            # Center align numbers, scores, dates, status, phone
+            if any(k in h_name for k in ("ID", "Date", "Phone", "Duration", "Score", "Prob", "Status", "Direction")):
+                cell.alignment = Alignment(horizontal="center", vertical="top")
+
+            # Phone as explicit string format
+            if "Phone" in h_name:
+                cell.number_format = '@'
+
+            # Temperature badge
+            if h_name == "Lead Temp" and str(val) in temp_fills:
+                cell.fill = temp_fills[str(val)]
+                cell.font = temp_fonts[str(val)]
+                cell.alignment = Alignment(horizontal="center", vertical="top")
+
+            # Direction badge
+            if h_name == "Call Direction" and str(val) in dir_fills:
+                cell.fill = dir_fills[str(val)]
+                cell.font = dir_fonts[str(val)]
+                cell.alignment = Alignment(horizontal="center", vertical="top")
+
+    # Freeze header pane & enable Excel filters
+    ws.freeze_panes = "A5"
+    if rows_data:
+        ws.auto_filter.ref = f"A4:{col_end}{start_data_row + len(rows_data) - 1}"
+    _auto_adjust_columns(ws, max_cap=45)
+
+    # Special widths for long textual content
+    for h_idx, h in enumerate(headers, start=1):
+        col_letter = get_column_letter(h_idx)
+        if h == "Full Transcript":
+            ws.column_dimensions[col_letter].width = 65
+        elif h == "Executive Call Summary":
+            ws.column_dimensions[col_letter].width = 45
+        elif h in ("Next Action Items", "Specific Inquiry Details & Requirements", "Key Objections Handled"):
+            ws.column_dimensions[col_letter].width = 35
+        elif "Phone" in h:
+            ws.column_dimensions[col_letter].width = 18
+        elif "Name" in h:
+            ws.column_dimensions[col_letter].width = 22
+
+
+def generate_calls_export(calls_data, direction_label="All", leads=None, company_name=None):
+    """
+    Executive Management Grade Multi-Sheet Excel Workbook for Inbound & Outbound Calling Intelligence.
+    Designed specifically for CEO, VP of Sales, and Company Leadership to review leads and performance:
+    - Sheet 1: Executive KPI Summary & Side-by-Side Inbound vs Outbound Comparison
+    - Sheet 2: Outbound Leads & Pipeline (Full Customer Profile, Intent, Budget, AI Score, Transcript)
+    - Sheet 3: Inbound Leads & Customer Inquiries (Full Caller Profile, Inquiry Topic, Resolution, Transcript)
+    - Sheet 4: All Leads Master Directory (Unified Customer Follow-Up Directory for Sales Teams)
+    """
+    wb = Workbook()
+
+    leads = leads or []
+    leads_by_id = {}
+    leads_by_phone = {}
+    leads_by_name = {}
+    for l in leads:
+        if not isinstance(l, dict):
+            continue
+        lid = str(l.get("lead_id") or "").strip()
+        if lid:
+            leads_by_id[lid] = l
+        p_raw = re.sub(r"\D", "", str(l.get("phone") or ""))
+        if len(p_raw) >= 10:
+            leads_by_phone[p_raw[-10:]] = l
+        nm = str(l.get("name") or "").strip().lower()
+        if nm and nm not in ("unknown", "none", "nan"):
+            leads_by_name[nm] = l
+
+    comp_name = company_name or "Talkly AI"
+    enriched_calls = [
+        _extract_customer_lead_details(c, leads_by_id, leads_by_phone, leads_by_name, comp_name)
+        for c in (calls_data or [])
+        if isinstance(c, dict)
+    ]
+
+    outbound_records = [r for r in enriched_calls if r["direction"].lower() != "inbound"]
+    inbound_records = [r for r in enriched_calls if r["direction"].lower() == "inbound"]
+
+    mode = str(direction_label).strip().lower()
+    is_inbound_only = mode == "inbound"
+    is_outbound_only = mode == "outbound"
+    is_omnichannel = not is_inbound_only and not is_outbound_only
+
+    brand_primary = "0F172A" if is_omnichannel else ("134E4A" if is_inbound_only else "1E3A8A")
+    outbound_brand = "1E3A8A" # Deep Navy
+    inbound_brand = "134E4A"  # Deep Teal
+    master_brand = "0F172A"   # Slate Charcoal
+
+    # ---------------------------------------------------------
+    # SHEET 1: EXECUTIVE KPI SUMMARY
+    # ---------------------------------------------------------
+    ws_kpi = wb.active
+    ws_kpi.title = "Executive Summary"
+    ws_kpi.views.sheetView[0].showGridLines = True
+
+    kpi_all = _compute_kpis(enriched_calls)
+    kpi_out = _compute_kpis(outbound_records)
+    kpi_in = _compute_kpis(inbound_records)
+
+    # Banner
+    ws_kpi.merge_cells("A1:G1")
+    title_cell = ws_kpi["A1"]
+    title_cell.value = f"TALKLY AI -- EXECUTIVE CALLING & LEAD INTELLIGENCE REPORT"
+    title_cell.font = Font(bold=True, color="FFFFFF", size=14)
+    title_cell.fill = PatternFill(start_color=brand_primary, fill_type="solid")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws_kpi.row_dimensions[1].height = 36
+
+    ws_kpi.merge_cells("A2:G2")
+    sub_cell = ws_kpi["A2"]
+    sub_cell.value = (
+        f"Company: {comp_name} | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | "
+        f"Pipeline Scope: {'Complete Omnichannel (Inbound & Outbound)' if is_omnichannel else f'{direction_label.title()} Calls'} | "
+        f"Total Leads Handled: {len(enriched_calls)}"
+    )
+    sub_cell.font = Font(italic=True, color="64748B", size=9)
+    sub_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws_kpi.row_dimensions[2].height = 20
+
+    thin_border = Border(
+        left=Side(style='thin', color='E2E8F0'),
+        right=Side(style='thin', color='E2E8F0'),
+        top=Side(style='thin', color='E2E8F0'),
+        bottom=Side(style='thin', color='E2E8F0')
+    )
+
+    if is_omnichannel:
+        ws_kpi.cell(row=4, column=1, value="EXECUTIVE PIPELINE COMPARISON: INBOUND VS OUTBOUND").font = Font(bold=True, color=brand_primary, size=11)
+        headers_kpi = [
+            "Executive Performance Metric",
+            "Total Pipeline (Combined)",
+            "Outbound Campaigns",
+            "Inbound Helplines",
+            "Executive Context & Benchmark"
+        ]
+        ws_kpi.row_dimensions[5].height = 26
+        for c_idx, h_text in enumerate(headers_kpi, start=1):
+            cell = ws_kpi.cell(row=5, column=c_idx, value=h_text)
+            cell.fill = PatternFill(start_color=brand_primary, fill_type="solid")
+            cell.font = Font(bold=True, color="FFFFFF", size=9.5)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        kpi_table_rows = [
+            ["Total Calls & Inquiries Logged", kpi_all["total"], kpi_out["total"], kpi_in["total"], "Total dial attempts and incoming calls recorded"],
+            ["Connected / Answered Calls", kpi_all["connected"], kpi_out["connected"], kpi_in["connected"], f"{kpi_all['connect_rate']} overall connection rate"],
+            ["Connection / Answer Rate", kpi_all["connect_rate"], kpi_out["connect_rate"], kpi_in["connect_rate"], "Inbound vs Outbound pickup efficiency"],
+            ["Average Call Duration", kpi_all["avg_dur_fmt"], kpi_out["avg_dur_fmt"], kpi_in["avg_dur_fmt"], "Mean conversation handling time across calls"],
+            ["Hot Leads (High Intent 🔥)", kpi_all["hot"], kpi_out["hot"], kpi_in["hot"], "Immediate priority for sales closing / specialist follow-up"],
+            ["Warm Leads (Nurture ⚡)", kpi_all["warm"], kpi_out["warm"], kpi_in["warm"], "Scheduled demo, consultation, or site visit recommended"],
+            ["Cold Leads (Low Intent ❄️)", kpi_all["cold"], kpi_out["cold"], kpi_in["cold"], "Declined, price-sensitive, or quick drop-off"],
+            ["Average AI Lead Qualification Score", f"{kpi_all['avg_score']} / 100", f"{kpi_out['avg_score']} / 100", f"{kpi_in['avg_score']} / 100", "AI qualification score across conversations"],
+            ["Appointments & Commitments Secured", kpi_all["commitments"], kpi_out["commitments"], kpi_in["commitments"], "Demos, visits, bookings, or payment promises"]
+        ]
+
+        for r_offset, r_vals in enumerate(kpi_table_rows, start=6):
+            ws_kpi.row_dimensions[r_offset].height = 21
+            zebra_fill = PatternFill(start_color="F8FAFC" if r_offset % 2 == 0 else "FFFFFF", fill_type="solid")
+            for c_idx, val in enumerate(r_vals, start=1):
+                cell = ws_kpi.cell(row=r_offset, column=c_idx, value=val)
+                cell.font = Font(size=9.5)
+                cell.fill = zebra_fill
+                cell.border = thin_border
+                if c_idx in (2, 3, 4):
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.font = Font(bold=(c_idx == 2), size=9.5, color=brand_primary if c_idx == 2 else "0F172A")
+                elif c_idx == 1:
+                    cell.font = Font(bold=True, size=9.5)
+
+        next_section_row = len(kpi_table_rows) + 8
+    else:
+        # Single direction summary
+        target_kpi = kpi_in if is_inbound_only else kpi_out
+        ws_kpi.cell(row=4, column=1, value=f"{direction_label.upper()} PIPELINE KEY PERFORMANCE INDICATORS").font = Font(bold=True, color=brand_primary, size=11)
+        headers_kpi = ["Metric", "Value", "Executive Benchmark / Context"]
+        ws_kpi.row_dimensions[5].height = 26
+        for c_idx, h_text in enumerate(headers_kpi, start=1):
+            cell = ws_kpi.cell(row=5, column=c_idx, value=h_text)
+            cell.fill = PatternFill(start_color=brand_primary, fill_type="solid")
+            cell.font = Font(bold=True, color="FFFFFF", size=9.5)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        kpi_table_rows = [
+            ["Total Calls Logged", target_kpi["total"], f"Total {direction_label.lower()} calls recorded"],
+            ["Connected / Answered Calls", target_kpi["connected"], f"{target_kpi['connect_rate']} connection rate"],
+            ["Average Call Duration", target_kpi["avg_dur_fmt"], "Across all answered conversations"],
+            ["Hot Leads (High Intent 🔥)", target_kpi["hot"], "Immediate priority for human sales follow-up"],
+            ["Warm Leads (Medium Intent ⚡)", target_kpi["warm"], "Nurturing or scheduled follow-up recommended"],
+            ["Cold Leads (Low / No Intent ❄️)", target_kpi["cold"], "Declined, busy, or non-responsive"],
+            ["Average AI Lead Score", f"{target_kpi['avg_score']} / 100", "Across evaluated prospect conversations"],
+            ["Appointments & Commitments", target_kpi["commitments"], "Confirmed bookings or promises to pay"]
+        ]
+
+        for r_offset, r_vals in enumerate(kpi_table_rows, start=6):
+            ws_kpi.row_dimensions[r_offset].height = 21
+            zebra_fill = PatternFill(start_color="F8FAFC" if r_offset % 2 == 0 else "FFFFFF", fill_type="solid")
+            for c_idx, val in enumerate(r_vals, start=1):
+                cell = ws_kpi.cell(row=r_offset, column=c_idx, value=val)
+                cell.font = Font(size=9.5)
+                cell.fill = zebra_fill
+                cell.border = thin_border
+                if c_idx == 2:
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.font = Font(bold=True, size=10, color=brand_primary)
+
+        next_section_row = len(kpi_table_rows) + 8
+
+    # Top Outcomes Breakdown Table
+    ws_kpi.cell(row=next_section_row, column=1, value="CONCRETE CALL OUTCOMES & CONVERSATIONAL DISPOSITIONS").font = Font(bold=True, color=brand_primary, size=11)
+    outcome_headers = ["Call Outcome", "Count", "Percentage of Pipeline", "Action Recommended"]
+    ws_kpi.row_dimensions[next_section_row + 1].height = 26
+    for c_idx, h_text in enumerate(outcome_headers, start=1):
+        cell = ws_kpi.cell(row=next_section_row + 1, column=c_idx, value=h_text)
+        cell.fill = PatternFill(start_color=brand_primary, fill_type="solid")
+        cell.font = Font(bold=True, color="FFFFFF", size=9.5)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    curr_r = next_section_row + 2
+    total_calls_cnt = len(enriched_calls)
+    sorted_outcomes = sorted(kpi_all["outcomes"].items(), key=lambda x: x[1], reverse=True)[:10] if is_omnichannel else sorted((kpi_in if is_inbound_only else kpi_out)["outcomes"].items(), key=lambda x: x[1], reverse=True)[:10]
+
+    for outcome_label, count in sorted_outcomes:
+        pct_str = f"{(count / total_calls_cnt * 100):.1f}%" if total_calls_cnt > 0 else "0.0%"
+        action_rec = (
+            "Immediate specialist callback" if "appointment" in outcome_label.lower() or "demo" in outcome_label.lower() or "visit" in outcome_label.lower()
+            else ("Schedule follow-up dial" if "callback" in outcome_label.lower()
+            else ("Nurture on WhatsApp" if "info" in outcome_label.lower() or "inquiry" in outcome_label.lower()
+            else "Retarget later"))
+        )
+        ws_kpi.row_dimensions[curr_r].height = 20
+        zebra_fill = PatternFill(start_color="F8FAFC" if curr_r % 2 == 0 else "FFFFFF", fill_type="solid")
+        for c_idx, val in enumerate([outcome_label, count, pct_str, action_rec], start=1):
+            cell = ws_kpi.cell(row=curr_r, column=c_idx, value=val)
             cell.font = Font(size=9.5)
             cell.fill = zebra_fill
-            cell.alignment = align_left
-            
-            # Center dates, status, numbers
-            if col_idx in (1, 2, 4, 7, 8, 9, 13, 17):
-                cell.alignment = align_center_top
-                
-            # Lead Temperature colored badge
-            if headers[col_idx - 1] == "Lead Temp" and lead_temp in temp_fills:
-                cell.fill = temp_fills[lead_temp]
-                cell.font = temp_fonts[lead_temp]
-                cell.alignment = align_center_top
+            cell.border = thin_border
+            if c_idx in (2, 3):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if c_idx == 2:
+                    cell.font = Font(bold=True, size=9.5)
+        curr_r += 1
 
-    ws_data.auto_filter.ref = ws_data.dimensions
-    ws_data.freeze_panes = "A2"
-    _auto_adjust_columns(ws_data)
-    
-    # Transcript & summary column width cap
-    for col_letter in ("A", "B", "C", "D", "E", "F", "G"):
-        current_w = ws_data.column_dimensions[col_letter].width or 15
-        ws_data.column_dimensions[col_letter].width = max(current_w, 14)
-        
-    summary_col_idx = headers.index("Call Summary") + 1
-    transcript_col_idx = headers.index("Full Transcript") + 1
-    ws_data.column_dimensions[get_column_letter(summary_col_idx)].width = 45
-    ws_data.column_dimensions[get_column_letter(transcript_col_idx)].width = 65
+    _auto_adjust_columns(ws_kpi)
+    ws_kpi.column_dimensions["A"].width = 38
+    ws_kpi.column_dimensions["B"].width = 24
+    ws_kpi.column_dimensions["C"].width = 22
+    ws_kpi.column_dimensions["D"].width = 22
+    ws_kpi.column_dimensions["E"].width = 45
+
+    # ---------------------------------------------------------
+    # DATA SHEETS CREATION
+    # ---------------------------------------------------------
+
+    headers_outbound = [
+        "Lead / Call ID", "Date & Time", "Customer Name", "Phone Number", "Email Address",
+        "City / Location", "Company / Org", "Campaign / Offering", "Budget / Deal Value",
+        "Call Status", "Duration (mm:ss)", "Duration (sec)", "AI Lead Score", "Lead Temp",
+        "Call Outcome", "Customer Intent", "Conversion Prob %", "PTP / Commitments",
+        "Key Objections Handled", "Next Action Items", "Sentiment", "Language", "Executive Call Summary", "Full Transcript"
+    ]
+
+    headers_inbound = [
+        "Inbound Call ID", "Date & Time", "Caller / Customer Name", "Phone Number", "Email Address",
+        "City / Branch Location", "Company / Org", "Department / Service Requested", "Inquiry Topic / Offering",
+        "Budget / Requirements", "Call Status", "Duration (mm:ss)", "Duration (sec)", "AI Lead Score", "Lead Temp",
+        "Inquiry Resolution / Outcome", "Customer Intent", "Specific Inquiry Details & Requirements", "Next Action Items / Callback",
+        "Sentiment", "Language", "Executive Call Summary", "Full Transcript"
+    ]
+
+    headers_master = [
+        "Customer / Lead Name", "Phone Number", "Email Address", "Call Direction",
+        "City / Location", "Company / Organization", "Offering / Inquired Product", "Budget / Deal Value",
+        "Call Status", "Duration (mm:ss)", "AI Lead Score", "Lead Temp", "Call Outcome",
+        "Commitments / Follow-up", "Next Action Items", "Customer Sentiment", "Last Contact Date", "Call ID"
+    ]
+
+    def _make_outbound_row(r):
+        return [
+            r["call_id"], r["date_time"], r["name"], r["phone"], r["email"],
+            r["location"], r["company"], r["offering"], r["budget"],
+            r["status"], r["duration_fmt"], r["duration_sec"], r["score"], r["lead_temp"],
+            r["outcome"], r["intents"], r["conv_prob"], r["commitments"],
+            r["objections"], r["action_items"], r["sentiment"], r["language"], r["summary"], r["transcript"]
+        ]
+
+    def _make_inbound_row(r):
+        return [
+            r["call_id"], r["date_time"], r["name"], r["phone"], r["email"],
+            r["location"], r["company"], r["offering"], r["offering"],
+            r["budget"], r["status"], r["duration_fmt"], r["duration_sec"], r["score"], r["lead_temp"],
+            r["outcome"], r["intents"], r["requirements"], r["action_items"],
+            r["sentiment"], r["language"], r["summary"], r["transcript"]
+        ]
+
+    def _make_master_row(r):
+        return [
+            r["name"], r["phone"], r["email"], r["direction"],
+            r["location"], r["company"], r["offering"], r["budget"],
+            r["status"], r["duration_fmt"], r["score"], r["lead_temp"], r["outcome"],
+            r["commitments"], r["action_items"], r["sentiment"], r["date_time"], r["call_id"]
+        ]
+
+    if is_omnichannel:
+        # Sheet 2: Outbound Leads
+        ws_out = wb.create_sheet("Outbound Leads & Calls")
+        _populate_data_sheet(
+            ws_out,
+            title=f"TALKLY AI -- OUTBOUND LEADS & PROSPECT PIPELINE ({comp_name})",
+            subtitle=f"Total Outbound Records: {len(outbound_records)} | Direction: Outbound Campaigns | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            brand_color=outbound_brand,
+            headers=headers_outbound,
+            rows_data=[_make_outbound_row(r) for r in outbound_records]
+        )
+
+        # Sheet 3: Inbound Leads
+        ws_in = wb.create_sheet("Inbound Leads & Inquiries")
+        _populate_data_sheet(
+            ws_in,
+            title=f"TALKLY AI -- INBOUND LEADS & CUSTOMER INQUIRIES ({comp_name})",
+            subtitle=f"Total Inbound Records: {len(inbound_records)} | Direction: Inbound Helplines | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            brand_color=inbound_brand,
+            headers=headers_inbound,
+            rows_data=[_make_inbound_row(r) for r in inbound_records]
+        )
+
+        # Sheet 4: All Leads Master Directory
+        ws_master = wb.create_sheet("All Leads Master Directory")
+        _populate_data_sheet(
+            ws_master,
+            title=f"TALKLY AI -- ALL LEADS MASTER DIRECTORY ({comp_name})",
+            subtitle=f"Unified Directory of All Leads Across Inbound & Outbound Channels | Total Contacts: {len(enriched_calls)}",
+            brand_color=master_brand,
+            headers=headers_master,
+            rows_data=[_make_master_row(r) for r in enriched_calls]
+        )
+    elif is_inbound_only:
+        ws_in = wb.create_sheet("Inbound Leads & Inquiries")
+        _populate_data_sheet(
+            ws_in,
+            title=f"TALKLY AI -- INBOUND LEADS & CUSTOMER INQUIRIES ({comp_name})",
+            subtitle=f"Total Inbound Records: {len(inbound_records)} | Direction: Inbound Helplines | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            brand_color=inbound_brand,
+            headers=headers_inbound,
+            rows_data=[_make_inbound_row(r) for r in inbound_records]
+        )
+    else:
+        # Outbound only
+        ws_out = wb.create_sheet("Outbound Leads & Calls")
+        _populate_data_sheet(
+            ws_out,
+            title=f"TALKLY AI -- OUTBOUND LEADS & PROSPECT PIPELINE ({comp_name})",
+            subtitle=f"Total Outbound Records: {len(outbound_records)} | Direction: Outbound Campaigns | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            brand_color=outbound_brand,
+            headers=headers_outbound,
+            rows_data=[_make_outbound_row(r) for r in outbound_records]
+        )
 
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     wb.save(temp_file.name)
