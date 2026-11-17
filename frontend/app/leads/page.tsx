@@ -355,18 +355,6 @@ function LeadsContent() {
     }
   }
 
-  const handleDownload = () => {
-    if (leads.length === 0) return alert('No data to download')
-    const csv = ['Name,Phone,Offering,Location,Status,AI Score']
-    leads.forEach(l => csv.push(`${l.name},${l.phone},${l.offering || l.property || ''},${l.location || ''},${l.status},${l.aiScore}`))
-    const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'leads_export.csv'
-    a.click()
-  }
-
   // ── sort & page (unchanged) ─────────────────────────────────────────────────
   const PAGE_SIZE = 10
   const [sortKey, setSortKey] = useState<'name' | 'status' | 'aiScore' | null>(null)
@@ -440,6 +428,60 @@ function LeadsContent() {
 
   // campaign label
   const campaignLabel = (lead: any): string => lead.campaign_name || lead.campaign || '—'
+
+  const handleDownload = () => {
+    if (leads.length === 0) return alert('No data to download')
+    const escapeCsv = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const headers = [
+      'Name',
+      'Phone',
+      'Offering / Product',
+      'Location',
+      'Status',
+      'AI Lead Score',
+      'Lead Temperature',
+      'Primary Intent',
+      'Call Outcome',
+      'PTP Status',
+      'PTP Amount',
+      'PTP Date',
+      'Last Activity'
+    ]
+    const rows = [headers.join(',')]
+    leads.forEach(l => {
+      const score = l.aiScore ?? ''
+      const numScore = Number(score)
+      const temp = l.lead_temperature || (!isNaN(numScore) && numScore > 0 ? (numScore >= 75 ? 'Hot' : numScore >= 40 ? 'Warm' : 'Cold') : '')
+      const intent = intentLabel(l) !== '—' ? intentLabel(l) : (l.intent || l.offering || '')
+      const outcome = leadOutcome(l)
+      const ptpStatus = l.promise_to_pay?.promised ? 'Promised' : 'None'
+      const ptpAmt = l.promise_to_pay?.amount ? formatINR(l.promise_to_pay.amount) : (l.amount_due ? formatINR(l.amount_due) : '')
+      const ptpDate = l.promise_to_pay?.date || l.due_date || ''
+      const lastAct = l.lastContact || l.last_called_at || l.updated_at || l.created_at || ''
+
+      rows.push([
+        escapeCsv(l.name || 'Unknown'),
+        escapeCsv(l.phone || ''),
+        escapeCsv(l.offering || l.property || ''),
+        escapeCsv(l.location || ''),
+        escapeCsv(l.status || 'New'),
+        escapeCsv(score),
+        escapeCsv(temp),
+        escapeCsv(intent),
+        escapeCsv(outcome),
+        escapeCsv(ptpStatus),
+        escapeCsv(ptpAmt),
+        escapeCsv(ptpDate),
+        escapeCsv(lastAct)
+      ].join(','))
+    })
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `talkly_leads_export_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+  }
 
   // ── tabs definition ─────────────────────────────────────────────────────────
   const TABS: { key: TabKey; label: string }[] = [
