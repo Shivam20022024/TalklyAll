@@ -52,7 +52,7 @@ export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
     }
     throw err;
   }
-  
+
   if ((response.status === 401 || response.status === 403) && requireAuth) {
     removeAuthToken();
     if (typeof window !== 'undefined') {
@@ -127,7 +127,7 @@ export async function fetchBlob(endpoint: string, options: FetchOptions = {}): P
     try {
       const data = await response.json();
       message = data.detail || data.message || message;
-    } catch {}
+    } catch { }
     throw new Error(message);
   }
 
