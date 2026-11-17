@@ -297,10 +297,14 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
     if "cyber" in location.lower() or "dlf" in location.lower():
         location = ""
 
-    # Sanitize cross-industry offering leaks (e.g. Edtech courses leaking into BFSI or Real Estate)
+    # Sanitize cross-industry offering leaks (e.g. Edtech courses leaking into BFSI, loans into B2B sales)
     off_lower = str(offering).lower()
     if active_ind == "bfsi" and any(w in off_lower for w in ["course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "apartment", "clinic", "doctor", "dental"]):
         offering = "Personal Loan"
+    elif active_ind == "general_sales" and any(w in off_lower for w in ["loan", "emi", "borrower", "course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "clinic", "doctor", "dental"]):
+        offering = ""
+    elif active_ind == "ecommerce" and any(w in off_lower for w in ["loan", "emi", "borrower", "course", "certification", "track", "python", "bootcamp", "bhk", "villa", "flat", "clinic", "doctor", "dental"]):
+        offering = ""
     elif active_ind == "real_estate" and any(w in off_lower for w in ["loan", "insurance", "course", "bootcamp", "clinic", "doctor"]):
         offering = ""
     elif active_ind == "healthcare" and any(w in off_lower for w in ["bhk", "villa", "flat", "loan", "course", "bootcamp"]):
@@ -324,6 +328,11 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
         or (doc.get("knowledge_base") if doc and doc.get("industry") == active_ind else "")
         or ""
     )
+    kb_lower = str(kb).lower()
+    if active_ind in ("general_sales", "ecommerce", "real_estate") and any(w in kb_lower for w in ["personal loans up to", "loan amount", "cibil", "course fee", "curriculum", "placement assurance"]):
+        kb = ""
+    elif active_ind == "healthcare" and any(w in kb_lower for w in ["personal loans up to", "course fee", "curriculum", "bhk"]):
+        kb = ""
 
     return {
         "status": "success",

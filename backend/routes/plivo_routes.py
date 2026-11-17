@@ -541,6 +541,8 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             cross_mismatched = True
         elif call_industry == "bfsi" and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "curriculum", "doctor", "clinic"]):
             cross_mismatched = True
+        elif call_industry in ("general_sales", "ecommerce") and any(w in off_lower for w in ["villa", "flat", "bhk", "course", "certification", "doctor", "clinic", "personal loan", "loan"]):
+            cross_mismatched = True
         if cross_mismatched:
             offering = ""
 
