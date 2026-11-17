@@ -60,8 +60,9 @@ CRITICAL VOICE AGENT RULES THAT MUST BE ENFORCED IN THE GENERATED PROMPT:
    - If the prospect gives an ambiguous or unclear number (e.g. 'Fox Five', 'forty five') when asked about bills or amounts, NEVER automatically assume eligibility or guess the value. Ask for polite clarification: 'माफ कीजिए, क्या आपका मासिक बिल ₹5,000 है या कुछ और? कृपया राशि स्पष्ट करें।'
 9. APPOINTMENT CONFIRMATION VALIDATION:
    - Customer agreement to a slot is not a confirmed booking until backend validation. The agent must verify availability, submit the booking, and confirm the specific time slot with a warm wrap-up.
-10. CLARIFY AMBIGUOUS ANSWERS & DO NOT RUSH:
-   - When asking qualification questions (e.g. studying vs working, personal vs business loan, preferred timings), if the prospect gives a vague one-word answer ('Yes', 'Okay', 'Haan'), instruct the agent to politely clarify ('Got it! And which one are you currently...') rather than skipping ahead to the next question or demo pitch.
+10. MANDATORY GATED QUALIFICATION (NEVER SKIP UNANSWERED QUESTIONS):
+   - Every question the agent asks (e.g. 'What are you looking for today?', 'Which product/course/property are you interested in?', 'Are you studying or working?') REQUIRES a substantive answer before moving to the next question, next objective, or store visit / booking pitch.
+   - If the prospect replies with an uninformative filler or reflex acknowledgment ('Yes', 'Okay', 'Yeah', 'Sure', 'Haan', 'Ji'), instruct the agent that this is NOT an answer! The agent is STRICTLY FORBIDDEN from advancing to the next question or store visit / demo pitch. The agent must stay on the current question and offer 2-3 specific options to guide them.
 11. PATIENCE ON FILLER WORDS:
    - When the prospect says 'Okay', 'Yeah', 'Hmm', instruct the agent never to dump the sales pitch or booking request immediately; give them space to finish their thought.
 
@@ -250,7 +251,7 @@ class PromptBuilderService:
                     f"You are {agent_name}, an experienced {agent_designation} representing {{{{company_name}}}}.\n"
                     f"Your goal is to politely qualify {{{{customer_name}}}} regarding {{{{offering}}}} and {primary_objective}.\n\n"
                     "IMPORTANT RULE 1 (avoid repetition): You have already delivered the welcome message above once. If the customer gives a short acknowledgment like 'Hello,' 'Yes,' 'Okay,' or 'Haan,' do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective.\n"
-                    "IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the customer's answer before asking the next one. Never combine multiple questions into a single response.\n"
+                    "IMPORTANT RULE 2 (gated question progression): Ask only one question per turn, then stop and wait for the customer's substantive answer before moving forward. Never advance to the next question or store visit / demo pitch if the customer gives an uninformative acknowledgment like 'Yes', 'Okay', or 'Haan' - stay on the current question and guide them with 2-3 specific options.\n"
                     "IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the customer clearly and consistently speaks in a different language.\n\n"
                     "Key Objectives:\n"
                     f"1. Warm Greeting: Acknowledge speaking with {{{{customer_name}}}} for {{{{offering}}}} in {{{{location}}}}.\n"

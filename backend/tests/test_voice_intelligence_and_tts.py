@@ -267,6 +267,26 @@ def test_ci05_singular_plural_repeated_words_deduplication():
     print("✓ CI05: Singular/Plural & Hindi Repeated Words Deduplication PASSED")
 
 
+def test_ci06_gated_qualification_directives():
+    from routes.plivo_decoupled import DECOUPLED_FIRST_WORD_DIRECTIVE_EN, DECOUPLED_FIRST_WORD_DIRECTIVE_HI
+    from industry_templates import INDUSTRY_TEMPLATES
+
+    # Ensure decoupled EN directive contains gated question progression
+    assert "MANDATORY GATED QUESTION PROGRESSION" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+    assert "THEY HAVE NOT ANSWERED YOUR QUESTION" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+    assert "STRICTLY FORBIDDEN from advancing to the next question" in DECOUPLED_FIRST_WORD_DIRECTIVE_EN
+
+    # Ensure decoupled HI directive contains gated progression
+    assert "अनिवार्य उत्तर सत्यापन और चरणबद्ध प्रगति" in DECOUPLED_FIRST_WORD_DIRECTIVE_HI
+    assert "अगले सवाल या स्टोर विज़िट / डेमो पिच पर जाना सख्त मना है" in DECOUPLED_FIRST_WORD_DIRECTIVE_HI
+
+    # Ensure industry templates mandate gated qualification
+    edtech_prompt = INDUSTRY_TEMPLATES["edtech"]["prompt"]
+    assert "Mandatory Gated Qualification" in edtech_prompt
+
+    print("✓ CI06: Gated Qualification Directives PASSED")
+
+
 if __name__ == "__main__":
     print("\nRunning Talkly AI Voice Intelligence & TTS Normalization Test Suite...\n")
     test_tn01_currency_normalization()
