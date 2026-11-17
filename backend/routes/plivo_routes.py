@@ -859,15 +859,13 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "- ACCENT: Speak in natural, everyday Hindi / Hinglish.\n"
             "- STRICT LANGUAGE LOCK (HINDI / HINGLISH): This call is configured in HINDI / HINGLISH and your opening greeting was in Hindi/Hinglish. You MUST speak and converse in natural Hindi/Hinglish throughout the entire call. "
             "Even when the customer gives short responses, mixed terms, or common English words like 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'Okay', 'Hello', 'Sure', 'Noida', you MUST continue speaking in Hindi/Hinglish. "
-            "NEVER switch to English unless the customer explicitly demands English (e.g. 'talk in English' or 'speak in English').\n"
-            "- LANGUAGE LIMIT: You speak Hindi and English. If the customer speaks a different regional language, politely say in Hindi that you can continue in Hindi or English.\n\n"
+            "NEVER switch to English unless the customer explicitly demands English (e.g. 'talk in English', 'speak in English', 'please talk in English', 'English mein baat karo', 'प्लीज टॉक इन इंग्लिश').\n"
+            "- LANGUAGE CAPABILITY & COMPLIANCE: You speak both Hindi and English fluently. If the customer asks to speak in English ('please talk in English', 'speak in English', 'talk in English', 'English please'), you MUST IMMEDIATELY switch to English and converse fluently in English for the rest of the call! NEVER claim 'I can only speak in Hindi or Hinglish' (मुझे खेद है, लेकिन मैं हिंदी या हिंग्लिश में ही बात कर सकती हूँ) - you are completely fluent in English.\n\n"
         )
         rule_10_language = (
-            "\n10. ABSOLUTE LANGUAGE CONTINUITY (DO NOT SWITCH TO ENGLISH): Your opening greeting was in Hindi/Hinglish. You MUST continue speaking and asking questions in natural Hindi/Hinglish for the entire conversation. "
-            "When the customer answers in Hindi, Hinglish, or short common words (e.g. 'Haan kar rahe hain', 'Mobile phone', 'Tomorrow', 'Morning', 'Yes', 'Yeah', 'OK', 'Haan', 'Ji', 'Boliye', 'Bataiye', 'Theek hai'), "
-            "this is standard conversational Indian response — it is NOT a request to switch to English! "
-            "You MUST continue your next responses in Hindi/Hinglish (e.g. 'बहुत बढ़िया! क्या कल सुबह आना सही रहेगा?' or 'Great! Kya kal subah aana theek rahega?'). "
-            "NEVER switch to English unless the customer explicitly commands you to speak in English (e.g. 'talk in English', 'speak in English') — not otherwise."
+            "\n10. ABSOLUTE LANGUAGE CONTINUITY: Your opening greeting was in Hindi/Hinglish. You MUST continue speaking and asking questions in natural Hindi/Hinglish for the conversation. "
+            "However, if the customer explicitly asks to speak in English (e.g. 'talk in English', 'speak in English', 'please talk in English', 'English mein boliye', 'प्लीज टॉक इन इंग्लिश'), "
+            "you MUST immediately switch to English and continue smoothly in English. Never reject speaking in English."
         )
         natural_speech_directive = (
             "\n\nNATURAL HUMAN CONVERSATION STYLE (HINDI / HINGLISH):"
@@ -890,11 +888,11 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
             "- ACCENT: Speak with an authentic, natural urban Indian English accent (Indian English cadence, syllable-timing, and clear intonation).\n"
             "- PHONETICS: Use distinct Indian English articulation (crisp dental 't' and 'd' stops, clear vowels, NO American rhotic 'r' drawl, NO American slang or valley-girl inflection).\n"
             "- PROHIBITED: NEVER speak in an American, British, or foreign Western accent. Avoid American filler sounds like 'gonna', 'wanna', 'kinda'.\n"
-            "- STRICT LANGUAGE LOCK (ENGLISH): This call is configured in ENGLISH and your opening greeting was in English. You MUST speak entirely and exclusively in English throughout the entire call. Even when the customer gives a short confirmation like 'Yes', 'Okay', 'Sure', 'Hello', or 'Tell me', you MUST continue in English. NEVER speak in Hindi or Hinglish unless the customer explicitly demands Hindi (e.g. 'हिंदी में बात करो' or 'speak in Hindi').\n"
+            "- STRICT LANGUAGE LOCK (ENGLISH): This call is configured in ENGLISH and your opening greeting was in English. You MUST speak entirely and exclusively in English throughout the entire call. Even when the customer gives a short confirmation like 'Yes', 'यस', 'Okay', 'Sure', 'Hello', 'हेलो', 'हलो', or 'Tell me', you MUST continue in English. NEVER speak in Hindi or Hinglish unless the customer explicitly demands Hindi (e.g. 'हिंदी में बात करो' or 'speak in Hindi').\n"
             "- LANGUAGE LIMIT: You speak English and Hindi. If the customer speaks a different regional language, politely say in English that you can continue in English or Hindi.\n\n"
         )
         rule_10_language = (
-            "\n10. STRICT ENGLISH CONTINUATION (NO HINDI SWITCH): Your opening greeting was in English. When the customer's reply is a short acknowledgment like 'Hello', 'Hi', 'Yes', 'Yeah', 'OK', 'Sure', 'Tell me', 'Haan', 'Boliye', this is them confirming they are listening. You MUST continue your very next response in English. Do NOT switch to Hindi or Hinglish on your own. ONLY switch to Hindi if the customer explicitly commands you to speak in Hindi (e.g. 'हिंदी में बात करो', 'speak in Hindi')."
+            "\n10. STRICT ENGLISH CONTINUATION (NO HINDI SWITCH): Your opening greeting was in English. When the customer's reply is a short acknowledgment like 'Hello', 'हेलो', 'हलो', 'Hi', 'Yes', 'यस', 'Yeah', 'OK', 'Sure', 'Tell me', 'Haan', 'Boliye', this is them confirming they are listening. You MUST continue your very next response in English. Do NOT switch to Hindi or Hinglish on your own. ONLY switch to Hindi if the customer explicitly commands you to speak in Hindi (e.g. 'हिंदी में बात करो', 'speak in Hindi')."
         )
         # Clean any stale Hindi language instructions from English prompts
         system_prompt = re.sub(r"(?i)Converse in Hindi/?Hinglish naturally", "Converse strictly in English naturally", system_prompt)

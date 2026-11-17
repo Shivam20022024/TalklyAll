@@ -1963,7 +1963,7 @@ async def trigger_campaign_calls(
     if not contacts:
         raise HTTPException(status_code=400, detail="No new leads found in selected campaigns.")
         
-    campaign_language = "Hinglish"
+    campaign_language = "English"
     ai_voice = "Default"
     voice_gender = "Female"
     regional_accent = "Default"

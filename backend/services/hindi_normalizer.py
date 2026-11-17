@@ -513,28 +513,40 @@ def is_hindi_or_hinglish(text: str = "", prompt: str = "", metadata_lang: str = 
     clean_prompt = (prompt or "").strip()
     clean_meta = str(metadata_lang or "").lower().strip()
 
+    # Rule 0: If prompt explicitly enforces strict English, it is NEVER a Hindi call
+    if "converse strictly in english" in clean_prompt.lower() or "strict language lock (english)" in clean_prompt.lower():
+        return False
+
+    # Check for actual Hindi content in greeting and prompt
+    has_devanagari_greeting = bool(re.search(r"[\u0900-\u097F]", clean_text))
+    has_hinglish_greeting = bool(clean_text and len(HINGLISH_KEYWORDS_REGEX.findall(clean_text)) >= 1)
+    has_devanagari_prompt = len(re.findall(r"[\u0900-\u097F]", clean_prompt)) >= 10
+    has_hinglish_prompt = len(HINGLISH_KEYWORDS_REGEX.findall(clean_prompt)) >= 2
+
+    # If the opening greeting is clearly English (starts with English greeting, no Hindi)
+    is_greeting_clearly_english = bool(re.match(r"^(?:hello|hi|good\s+morning|good\s+afternoon|good\s+evening|welcome|dear|this\s+is)\b", clean_text, re.IGNORECASE)) and not has_devanagari_greeting and not has_hinglish_greeting
+
     # 1. Check explicit metadata language
     if clean_meta:
         if any(h in clean_meta for h in ("hi", "hindi", "hinglish")):
+            # If the agent has a full English prompt and English greeting, do not let stray Hinglish metadata override it
+            if is_greeting_clearly_english and len(clean_prompt) > 100 and not has_devanagari_prompt and not has_hinglish_prompt:
+                return False
             return True
         if clean_meta in ("en", "english", "en-in", "en-us"):
             # Only override explicit English metadata if the greeting itself is Hindi/Hinglish
-            if re.search(r"[\u0900-\u097F]", clean_text) or len(HINGLISH_KEYWORDS_REGEX.findall(clean_text)) >= 1:
+            if has_devanagari_greeting or has_hinglish_greeting:
                 return True
             return False
 
     # 2. Check welcome greeting text
     if clean_text:
-        if re.search(r"[\u0900-\u097F]", clean_text):
-            return True
-        if len(HINGLISH_KEYWORDS_REGEX.findall(clean_text)) >= 1:
+        if has_devanagari_greeting or has_hinglish_greeting:
             return True
 
     # 3. Check prompt body (require substantial Devanagari or multiple Hinglish keywords)
     if clean_prompt:
-        if len(re.findall(r"[\u0900-\u097F]", clean_prompt)) >= 10:
-            return True
-        if len(HINGLISH_KEYWORDS_REGEX.findall(clean_prompt)) >= 2:
+        if has_devanagari_prompt or has_hinglish_prompt:
             return True
 
     return False

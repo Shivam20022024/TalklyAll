@@ -331,7 +331,7 @@ function LeadsContent() {
     try {
       const SARVAM_SUPPORTED_LANGUAGES = ['english', 'hindi', 'hinglish']
       const leadLanguage = (lead.language || '').trim()
-      const safeLanguage = SARVAM_SUPPORTED_LANGUAGES.includes(leadLanguage.toLowerCase()) ? leadLanguage : 'Hinglish'
+      const safeLanguage = SARVAM_SUPPORTED_LANGUAGES.includes(leadLanguage.toLowerCase()) ? leadLanguage : ''
       alert(`Initiating call to ${lead.name || 'Lead'} (${lead.phone})...`)
       await fetchApi('/api/v1/calls/trigger', {
         method: 'POST',
@@ -339,7 +339,7 @@ function LeadsContent() {
           phone_number: lead.phone,
           customer_name: lead.name,
           lead_id: lead.lead_id || lead._id || 'manual-lead',
-          campaign_language: safeLanguage,
+          ...(safeLanguage ? { campaign_language: safeLanguage } : {}),
           industry: activeIndustry !== 'all' ? activeIndustry : (lead.industry || user?.industry || 'general_sales'),
           offering: (lead.industry && activeIndustry !== 'all' && activeIndustry !== lead.industry) ? '' : (lead.offering || lead.property || ''),
           location: lead.location || '',
