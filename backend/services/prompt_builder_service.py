@@ -136,6 +136,10 @@ class PromptBuilderService:
         else:
             must_ask_text = str(must_ask).strip() or "Confirm identity, understand current requirement, qualify timeline and budget."
 
+        offerings_and_usps = brief.get("offerings_and_usps", "").strip() or "High quality services, quick turnaround, and dedicated support."
+        objections_playbook = brief.get("objections_playbook", "").strip() or "If busy, offer a callback time. If price-conscious, explain flexible options and return on investment."
+        closing_cta = brief.get("closing_call_to_action", "").strip() or "Propose two convenient upcoming timeslots for a specialist consultation."
+
         # Check if the brief or inputs are in English
         combined_text = f"{sop_or_brief} {must_ask_text} {offerings_and_usps} {knowledge_base} {primary_objective}"
         has_devanagari = bool(re.search(r'[\u0900-\u097F]', combined_text))
@@ -150,10 +154,6 @@ class PromptBuilderService:
             language = "Indian English"
         elif "hindi" in language.lower():
             language = language
-
-        offerings_and_usps = brief.get("offerings_and_usps", "").strip() or "High quality services, quick turnaround, and dedicated support."
-        objections_playbook = brief.get("objections_playbook", "").strip() or "If busy, offer a callback time. If price-conscious, explain flexible options and return on investment."
-        closing_cta = brief.get("closing_call_to_action", "").strip() or "Propose two convenient upcoming timeslots for a specialist consultation."
 
         prompt_content = USER_BUILDER_TEMPLATE.format(
             agent_name=agent_name,
