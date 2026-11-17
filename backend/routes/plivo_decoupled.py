@@ -462,6 +462,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
         asyncio.create_task(prewarm_bakbak_connection(tts_session._client))
 
     agent_speaking_until = 0.0
+    last_ai_dispatch_time = 0.0
     welcome_duration = 0.0
 
     try:
@@ -551,6 +552,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
 
         if welcome_text:
             # Add a 0.5s network buffer to ensure Plivo carrier has finished playing out the audio
+            last_ai_dispatch_time = time.time()
             agent_speaking_until = time.time() + welcome_duration + 0.5
             safe_print(f"[DECOUPLED]: Welcome audio sent ({welcome_duration:.2f}s). Plivo playback will complete at {agent_speaking_until:.2f} (in {welcome_duration:.2f}s).")
             transcript_parts.append(f"AI: {welcome_text}")
@@ -633,8 +635,8 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             except Exception as e:
                 safe_print(f"[DECOUPLED DB ERROR]: {e}")
 
-        async def handle_final_transcript(customer_text: str) -> None:
-            nonlocal agent_speaking_until
+        async def handle_final_transcript(customer_text: str, speech_end_time: float = 0.0) -> None:
+            nonlocal agent_speaking_until, last_ai_dispatch_time
             try:
                 customer_text = (customer_text or "").strip()
                 if not customer_text or len(customer_text) <= 1:
@@ -654,30 +656,48 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                     safe_print(f"[DECOUPLED]: Dropped likely hallucinated/degenerate STT text: '{customer_text}'")
                     return
 
-                # If customer speaks during welcome message, buffer until welcome audio completes
-                now = time.time()
-                is_welcome_turn = len(transcript_parts) <= 1
-                if is_welcome_turn and now < agent_speaking_until:
-                    wait_rem = agent_speaking_until - now
-                    safe_print(
-                        f"[DECOUPLED PICKUP BUFFER]: Buffered customer speech '{customer_text}' during welcome line "
-                        f"({wait_rem:.2f}s remaining). Processing immediately upon welcome completion..."
-                    )
-                    await asyncio.sleep(wait_rem)
-                elif not is_welcome_turn and now < agent_speaking_until:
-                    # Customer spoke while AI was still audibly playing on Plivo line - execute clean barge-in
-                    safe_print(
-                        f"[DECOUPLED BARGE-IN]: Customer spoke ('{customer_text}') while AI was audibly speaking "
-                        f"({agent_speaking_until - now:.2f}s remaining). Clearing Plivo audio buffer immediately..."
-                    )
-                    try:
-                        await websocket.send_text(json.dumps({"event": "clearAudio"}))
-                    except Exception as ce:
-                        safe_print(f"[DECOUPLED BARGE-IN ERROR]: Failed to send clearAudio: {ce}")
-                    agent_speaking_until = time.time()
-                    await asyncio.sleep(0.12)
-
                 async with turn_lock:
+                    # 1. Stale Speech Guard: Drop customer speech that finished BEFORE or right as the AI's current
+                    # question was dispatched. If customer spoke at t=2.0s while welcome or prior question was playing,
+                    # and AI dispatched question at t=7.0s, the customer has NOT yet heard the question! Feeding this
+                    # stale speech to the LLM causes rapid-fire back-to-back questions.
+                    if speech_end_time and speech_end_time < (last_ai_dispatch_time + 0.35):
+                        safe_print(
+                            f"[DECOUPLED STALE SPEECH]: Dropped stale customer speech '{customer_text}' "
+                            f"(ended at {speech_end_time:.2f}, AI line was dispatched at {last_ai_dispatch_time:.2f}). "
+                            f"Customer has not yet heard current question."
+                        )
+                        return
+
+                    # 2. Audio playback / barge-in handling
+                    now = time.time()
+                    is_welcome_turn = len(transcript_parts) <= 1
+                    if is_welcome_turn and now < agent_speaking_until:
+                        wait_rem = agent_speaking_until - now
+                        safe_print(
+                            f"[DECOUPLED PICKUP BUFFER]: Buffered customer speech '{customer_text}' during welcome line "
+                            f"({wait_rem:.2f}s remaining). Waiting for welcome completion..."
+                        )
+                        await asyncio.sleep(wait_rem)
+                    elif not is_welcome_turn and now < agent_speaking_until:
+                        # Check if this speech finished right at dispatch time (echo / bleed / overlap)
+                        if speech_end_time and speech_end_time < (last_ai_dispatch_time + 0.5):
+                            safe_print(
+                                f"[DECOUPLED STALE OVERLAP]: Dropped customer speech '{customer_text}' "
+                                f"spoken right as AI began speaking (ended at {speech_end_time:.2f}, AI started at {last_ai_dispatch_time:.2f})."
+                            )
+                            return
+                        # Customer spoke genuinely while AI was audibly speaking on Plivo line - execute clean barge-in
+                        safe_print(
+                            f"[DECOUPLED BARGE-IN]: Customer spoke ('{customer_text}') while AI was audibly speaking "
+                            f"({agent_speaking_until - now:.2f}s remaining). Clearing Plivo audio buffer immediately..."
+                        )
+                        try:
+                            await websocket.send_text(json.dumps({"event": "clearAudio"}))
+                        except Exception as ce:
+                            safe_print(f"[DECOUPLED BARGE-IN ERROR]: Failed to send clearAudio: {ce}")
+                        agent_speaking_until = time.time()
+                        await asyncio.sleep(0.12)
                     turn_start = time.time()
                     safe_print(f"[CUSTOMER SPEECH][DECOUPLED]: {customer_text}")
                     transcript_parts.append(f"Customer: {customer_text}")
@@ -746,14 +766,17 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
 
                     if first_audio_task:
                         dur1 = await first_audio_task
+                        last_ai_dispatch_time = time.time()
                         agent_speaking_until = max(agent_speaking_until, time.time()) + dur1 + 0.1
                         safe_print(f"[DECOUPLED LATENCY]: TTS first-clause audio sent ({dur1:.2f}s), total latency={time.time() - turn_start:.2f}s")
                         remaining_text = full_reply[remainder_start:].strip()
                         if remaining_text:
                             dur2 = await _speak_and_forward(websocket, tts_session, remaining_text, customer_name, is_subsequent=True, language=call_lang)
+                            last_ai_dispatch_time = time.time()
                             agent_speaking_until = max(agent_speaking_until, time.time()) + dur2 + 0.1
                     else:
                         dur3 = await _speak_and_forward(websocket, tts_session, clean_full_reply, customer_name, is_subsequent=True, language=call_lang)
+                        last_ai_dispatch_time = time.time()
                         agent_speaking_until = max(agent_speaking_until, time.time()) + dur3 + 0.1
 
                     reply_lower = clean_full_reply.lower()
@@ -820,7 +843,8 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                             continue
                     if speech_stopped_at is not None:
                         safe_print(f"[DECOUPLED LATENCY]: Sarvam final transcript {time.time() - speech_stopped_at:.2f}s after speech_stopped")
-                    t = asyncio.create_task(handle_final_transcript(txt))
+                    curr_speech_end = speech_stopped_at or time.time()
+                    t = asyncio.create_task(handle_final_transcript(txt, curr_speech_end))
                     turn_tasks.add(t)
                     t.add_done_callback(turn_tasks.discard)
                 elif ev["type"] == "error":
@@ -829,7 +853,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
             safe_print(f"[DECOUPLED]: stt_to_gemini loop ended for call_id={call_id} (events() generator finished)")
 
         async def check_welcome_silence():
-            nonlocal agent_speaking_until
+            nonlocal agent_speaking_until, last_ai_dispatch_time
             # Wait until the welcome message finishes playing + 5.0s buffer
             wait_for_finish = max(0.0, agent_speaking_until - time.time())
             await asyncio.sleep(wait_for_finish + 5.0)
@@ -853,6 +877,7 @@ async def run_decoupled_pipeline(websocket: WebSocket, call_id: str, company_id:
                         transcript_parts.append(f"AI: {prompt_line}")
                         messages.append({"role": "assistant", "content": prompt_line})
                         dur = await _speak_and_forward(websocket, tts_session, prompt_line, cname, is_subsequent=True, language=call_lang)
+                        last_ai_dispatch_time = time.time()
                         agent_speaking_until = max(agent_speaking_until, time.time()) + dur + 0.3
                         await db.calls.update_one({"call_id": call_id}, {"$set": {"transcript": "\n".join(transcript_parts)}})
 

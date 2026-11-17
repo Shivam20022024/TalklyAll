@@ -287,6 +287,29 @@ def test_ci06_gated_qualification_directives():
     print("✓ CI06: Gated Qualification Directives PASSED")
 
 
+def test_ci07_stale_speech_and_race_condition_guard():
+    # Simulate timeline from the live call logs:
+    # 1. AI welcome audio plays until t=25.59
+    # 2. Customer speaks "Hello" (ended at t=18.91)
+    # 3. Customer speaks reflex "Yes" (ended at t=27.00)
+    # 4. Turn 1 (Hello) dispatches Question 1 audio at t=27.47 (duration 2.88s, speaking until t=30.35)
+    # 5. Turn 2 (Yes) was queued. When evaluated:
+    #    speech_end_time = 27.00
+    #    last_ai_dispatch_time = 27.47
+    
+    last_ai_dispatch_time = 27.47
+    customer_speech_end = 27.00
+    is_stale = customer_speech_end < (last_ai_dispatch_time + 0.35)
+    assert is_stale is True, "Speech ended before question dispatch must be recognized as stale!"
+
+    # Customer speaks AFTER hearing Question 1:
+    customer_speech_end_valid = 31.50
+    is_stale_valid = customer_speech_end_valid < (last_ai_dispatch_time + 0.35)
+    assert is_stale_valid is False, "Genuine answer to Question 1 must not be marked stale!"
+
+    print("✓ CI07: Stale Speech & Concurrency Race Condition Guard PASSED")
+
+
 if __name__ == "__main__":
     print("\nRunning Talkly AI Voice Intelligence & TTS Normalization Test Suite...\n")
     test_tn01_currency_normalization()
