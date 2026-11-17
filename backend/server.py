@@ -226,6 +226,13 @@ def _effective_prompt(doc: dict | None, industry: str | None = None):
     return prompt, welcome
 
 
+def normalize_template_brackets(text: str) -> str:
+    """Standardize single-bracket {variable} to canonical double-bracket {{variable}}."""
+    if not text:
+        return ""
+    return re.sub(r'(?<!\{)\{([a-zA-Z0-9_]+)\}(?!\})', r'{{\1}}', str(text))
+
+
 def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
     """Present a prompt doc for a specific industry or the active one, supporting
     independent per-industry custom prompts across all verticals + company custom templates."""
@@ -237,13 +244,23 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
         if not isinstance(ct, dict):
             continue
         c_copy = dict(ct)
+        c_copy["welcome_message"] = normalize_template_brackets(c_copy.get("welcome_message", ""))
+        c_copy["inbound_welcome_message"] = normalize_template_brackets(c_copy.get("inbound_welcome_message", ""))
+        c_copy["prompt"] = normalize_template_brackets(c_copy.get("prompt", ""))
+        c_copy["inbound_prompt"] = normalize_template_brackets(c_copy.get("inbound_prompt", ""))
+        c_copy["knowledge_base"] = normalize_template_brackets(c_copy.get("knowledge_base", ""))
         raw_v = c_copy.get("variables")
         v_tags = ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}"]
         if isinstance(raw_v, list):
-            v_tags = [str(x) for x in raw_v]
+            for x in raw_v:
+                clean_k = str(x).replace("{", "").replace("}", "").strip()
+                if clean_k:
+                    tag = f"{{{{{clean_k}}}}}"
+                    if tag not in v_tags:
+                        v_tags.append(tag)
         elif isinstance(raw_v, dict):
             for k in raw_v.keys():
-                clean_k = k.replace("{", "").replace("}", "")
+                clean_k = k.replace("{", "").replace("}", "").strip()
                 tag = f"{{{{{clean_k}}}}}"
                 if tag not in v_tags:
                     v_tags.append(tag)
@@ -318,15 +335,15 @@ def _prompt_view(doc: dict | None, industry: str | None = None) -> dict:
         "default_offering_label": template_def.get("default_offering_label", "Product / Offering"),
         "offering_placeholder": template_def.get("offering_placeholder", ""),
         "specific_variables": template_def.get("specific_variables", []),
-        "prompt": draft or published or default_prompt,
-        "welcome_message": draft_welcome or published_welcome or default_welcome,
-        "published_prompt": published,
-        "published_welcome_message": published_welcome,
-        "inbound_prompt": draft_inbound or published_inbound or default_inbound_prompt,
-        "inbound_welcome_message": draft_inbound_welcome or published_inbound_welcome or default_inbound_welcome,
-        "published_inbound_prompt": published_inbound,
-        "published_inbound_welcome_message": published_inbound_welcome,
-        "knowledge_base": kb,
+        "prompt": normalize_template_brackets(draft or published or default_prompt),
+        "welcome_message": normalize_template_brackets(draft_welcome or published_welcome or default_welcome),
+        "published_prompt": normalize_template_brackets(published),
+        "published_welcome_message": normalize_template_brackets(published_welcome),
+        "inbound_prompt": normalize_template_brackets(draft_inbound or published_inbound or default_inbound_prompt),
+        "inbound_welcome_message": normalize_template_brackets(draft_inbound_welcome or published_inbound_welcome or default_inbound_welcome),
+        "published_inbound_prompt": normalize_template_brackets(published_inbound),
+        "published_inbound_welcome_message": normalize_template_brackets(published_inbound_welcome),
+        "knowledge_base": normalize_template_brackets(kb),
         "prompt_status": status or ("Published" if published else "Draft"),
         "published_at": ind_entry.get("published_at") or (doc.get("published_at") if doc else None),
         "offering": offering,
@@ -352,15 +369,15 @@ async def get_prompt(industry: str | None = None, current_user: dict = Depends(r
 async def save_prompt(payload: dict = Body(...), current_user: dict = Depends(require_company_access)):
     enforce_no_foreign_company(current_user, payload)
     db = mongodb.get_db()
-    prompt = payload.get("prompt")
-    welcome_message = payload.get("welcome_message")
-    inbound_prompt = payload.get("inbound_prompt")
-    inbound_welcome_message = payload.get("inbound_welcome_message")
+    prompt = normalize_template_brackets(payload.get("prompt"))
+    welcome_message = normalize_template_brackets(payload.get("welcome_message"))
+    inbound_prompt = normalize_template_brackets(payload.get("inbound_prompt"))
+    inbound_welcome_message = normalize_template_brackets(payload.get("inbound_welcome_message"))
     industry = payload.get("industry") or "real_estate"
     offering = payload.get("offering")
     location = payload.get("location")
     variables = payload.get("variables")
-    knowledge_base = payload.get("knowledge_base")
+    knowledge_base = normalize_template_brackets(payload.get("knowledge_base"))
 
     now = datetime.utcnow()
     ind_update = {
@@ -437,14 +454,14 @@ async def publish_prompt(payload: dict | None = Body(None), current_user: dict =
     
     ind_entry = ((doc or {}).get("industry_prompts") or {}).get(industry, {})
 
-    prompt = payload.get("prompt") or ind_entry.get("draft_prompt") or ind_entry.get("prompt") or (doc or {}).get("draft_prompt") or (doc or {}).get("prompt")
-    welcome = payload.get("welcome_message") or ind_entry.get("draft_welcome_message") or ind_entry.get("welcome_message") or (doc or {}).get("draft_welcome_message") or (doc or {}).get("welcome_message")
-    inbound_prompt = payload.get("inbound_prompt") or ind_entry.get("draft_inbound_prompt") or ind_entry.get("inbound_prompt") or (doc or {}).get("draft_inbound_prompt") or (doc or {}).get("inbound_prompt")
-    inbound_welcome = payload.get("inbound_welcome_message") or ind_entry.get("draft_inbound_welcome_message") or ind_entry.get("inbound_welcome_message") or (doc or {}).get("draft_inbound_welcome_message") or (doc or {}).get("inbound_welcome_message")
+    prompt = normalize_template_brackets(payload.get("prompt") or ind_entry.get("draft_prompt") or ind_entry.get("prompt") or (doc or {}).get("draft_prompt") or (doc or {}).get("prompt"))
+    welcome = normalize_template_brackets(payload.get("welcome_message") or ind_entry.get("draft_welcome_message") or ind_entry.get("welcome_message") or (doc or {}).get("draft_welcome_message") or (doc or {}).get("welcome_message"))
+    inbound_prompt = normalize_template_brackets(payload.get("inbound_prompt") or ind_entry.get("draft_inbound_prompt") or ind_entry.get("inbound_prompt") or (doc or {}).get("draft_inbound_prompt") or (doc or {}).get("inbound_prompt"))
+    inbound_welcome = normalize_template_brackets(payload.get("inbound_welcome_message") or ind_entry.get("draft_inbound_welcome_message") or ind_entry.get("inbound_welcome_message") or (doc or {}).get("draft_inbound_welcome_message") or (doc or {}).get("inbound_welcome_message"))
     offering = payload.get("offering") or ind_entry.get("offering") or (doc or {}).get("offering") or ""
     location = payload.get("location") or ind_entry.get("location") or (doc or {}).get("location") or ""
     variables = payload.get("variables") or ind_entry.get("variables") or (doc or {}).get("variables") or {}
-    knowledge_base = (
+    knowledge_base = normalize_template_brackets(
         payload.get("knowledge_base")
         or ind_entry.get("draft_knowledge_base")
         or ind_entry.get("knowledge_base")
@@ -563,6 +580,11 @@ async def auto_build_agent_prompt(payload: dict = Body(...), current_user: dict 
     generated = await prompt_builder_service.build_custom_agent_prompt(payload)
     if not generated:
         raise HTTPException(status_code=500, detail="Failed to generate agent prompt")
+
+    # Normalize brackets in generated fields for 100% consistency across all companies
+    for f in ["welcome_message", "inbound_welcome_message", "prompt", "inbound_prompt", "knowledge_base"]:
+        if f in generated and isinstance(generated[f], str):
+            generated[f] = normalize_template_brackets(generated[f])
 
     save_immediately = bool(payload.get("save_immediately", True))
     if save_immediately:

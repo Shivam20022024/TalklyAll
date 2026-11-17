@@ -104,19 +104,25 @@ Closing Call-to-Action:
   "template_id": "snake_case_unique_identifier (e.g. solar_energy_sales)",
   "template_name": "Short Display Name (e.g. Solar Consultation Advisor)",
   "description": "1 concise sentence explaining what this voice agent does",
-  "welcome_message": "The exact first spoken sentence when customer answers. If Language is English: 'Hello {{customer_name}}, this is {agent_name} with {{company_name}} regarding {{offering}}. Do you have a brief moment to chat?' If Language is Hindi: 'नमस्ते {{customer_name}}, मैं {agent_name} हूँ {{company_name}} से। क्या अभी 2 मिनट बात करना convenient है?'",
-  "prompt": "Full outbound system prompt following Talkly's standard structure (Role, Goal, IMPORTANT RULE 1, IMPORTANT RULE 2, IMPORTANT RULE 3 [language lock matching Primary Language], Key Objectives 1 to 6/7, Objections Playbook, Tone Guidelines, Wrap-up & end_call tool).",
-  "inbound_welcome_message": "First greeting when customer calls company helpline (in matching language).",
+  "welcome_message": "The exact first spoken sentence when customer answers. If Language is English: 'Hello {{{{customer_name}}}}, this is {agent_name} with {{{{company_name}}}} regarding {{{{offering}}}}. Do you have a brief moment to chat?' If Language is Hindi: 'नमस्ते {{{{customer_name}}}}, मैं {agent_name} हूँ {{{{company_name}}}} से। क्या अभी 2 मिनट बात करना convenient है?' Note: ALWAYS use double curly brackets {{{{customer_name}}}}, NEVER single brackets.",
+  "prompt": "Full outbound system prompt following Talkly's standard structure (Role, Goal, IMPORTANT RULE 1, IMPORTANT RULE 2, IMPORTANT RULE 3 [language lock matching Primary Language], Key Objectives 1 to 6/7, Objections Playbook, Tone Guidelines, Wrap-up & end_call tool). Use {{{{tag}}}} with double curly braces for all placeholders.",
+  "inbound_welcome_message": "First greeting when customer calls company helpline (in matching language, using double curly braces {{{{customer_name}}}}).",
   "inbound_prompt": "Full inbound system prompt matching company's offerings and helpline workflow (in matching language).",
   "default_offering_label": "Label for the offering field (e.g. Solar System Capacity, Vehicle Model, Course Track)",
   "offering_placeholder": "Placeholder text for the offering (e.g. 5kW Rooftop Solar)",
   "knowledge_base": "Curated FAQs, policies, pricing, and key verified facts (Q&A format or bullet points)",
-  "suggested_variables": ["{{company_name}}", "{{customer_name}}", "{{offering}}", "{{location}}", ...additional vertical variables],
+  "suggested_variables": ["{{{{company_name}}}}", "{{{{customer_name}}}}", "{{{{offering}}}}", "{{{{location}}}}"],
   "specific_variables": [
     {{"key": "variable_name", "label": "Human Label", "placeholder": "Example value"}}
   ]
 }}
 """
+
+def normalize_all_brackets(text: str) -> str:
+    """Standardize single-bracket {variable} to double-bracket {{variable}}."""
+    if not text:
+        return ""
+    return re.sub(r'(?<!\{)\{([a-zA-Z0-9_]+)\}(?!\})', r'{{\1}}', str(text))
 
 class PromptBuilderService:
     async def build_custom_agent_prompt(self, brief: dict) -> dict:
@@ -333,6 +339,23 @@ class PromptBuilderService:
                 result["prompt"] = re.sub(r"(?i)Converse in the selected language[^\n.]*", "Converse strictly in English naturally, keeping spoken turns concise.", result["prompt"])
         else:
             result["language"] = "Hindi / Hinglish"
+
+        # Standardize all brackets to {{tag}} across all fields for 100% uniformity
+        for field in ["welcome_message", "inbound_welcome_message", "prompt", "inbound_prompt", "knowledge_base"]:
+            if field in result and isinstance(result[field], str):
+                result[field] = normalize_all_brackets(result[field])
+
+        # Standardize suggested_variables to {{tag}} and eliminate duplicates
+        raw_suggested = result.get("suggested_variables") or []
+        seen_vars = set()
+        clean_suggested = []
+        for v in raw_suggested:
+            clean_k = re.sub(r"[^{}a-zA-Z0-9_]", "", str(v)).strip("{}").strip()
+            if not clean_k or clean_k in seen_vars:
+                continue
+            seen_vars.add(clean_k)
+            clean_suggested.append(f"{{{{{clean_k}}}}}")
+        result["suggested_variables"] = clean_suggested
 
         return result
 

@@ -507,6 +507,8 @@ export default function PromptPage() {
     loadIndustryPrompt(finalInd)
   }, [user])
 
+  const normalizeTagBrackets = (text: string) => (text || '').replace(/(?<!\{)\{([a-zA-Z0-9_]+)\}(?!\})/g, '{{$1}}')
+
   const loadIndustryPrompt = async (industryKey: string) => {
     setLoadingIndustry(true)
     setSelectedIndustry(industryKey)
@@ -520,10 +522,10 @@ export default function PromptPage() {
         const customDef = (data.custom_templates || []).find((ct: any) => ct.id === industryKey)
         const fallback = customDef || CLIENT_TEMPLATES[industryKey]
 
-        setPromptText(data.prompt || fallback?.prompt || '')
-        setWelcomeMessage(data.welcome_message || fallback?.welcome_message || '')
-        setInboundPromptText(data.inbound_prompt || fallback?.inbound_prompt || '')
-        setInboundWelcomeMessage(data.inbound_welcome_message || fallback?.inbound_welcome_message || '')
+        setPromptText(normalizeTagBrackets(data.prompt || fallback?.prompt || ''))
+        setWelcomeMessage(normalizeTagBrackets(data.welcome_message || fallback?.welcome_message || ''))
+        setInboundPromptText(normalizeTagBrackets(data.inbound_prompt || fallback?.inbound_prompt || ''))
+        setInboundWelcomeMessage(normalizeTagBrackets(data.inbound_welcome_message || fallback?.inbound_welcome_message || ''))
         setKnowledgeBase(data.knowledge_base || fallback?.knowledge_base || '')
         setOffering(data.offering || '')
         setLocation(data.location || '')
@@ -611,6 +613,15 @@ export default function PromptPage() {
       if (res && res.template) {
         const t = res.template
         // Add to customTemplates state
+        const normWelcome = normalizeTagBrackets(t.welcome_message || '')
+        const normInboundWelcome = normalizeTagBrackets(t.inbound_welcome_message || '')
+        const normPrompt = normalizeTagBrackets(t.prompt || '')
+        const normInboundPrompt = normalizeTagBrackets(t.inbound_prompt || '')
+        const cleanVarsList = Array.from(new Set(
+          (t.suggested_variables || ["company_name", "customer_name", "offering", "location"])
+            .map((v: any) => `{{${String(v).replace(/[{}]/g, '').trim()}}}`)
+        ))
+
         setCustomTemplates(prev => {
           const filtered = prev.filter(item => item.id !== t.template_id)
           return [
@@ -622,12 +633,12 @@ export default function PromptPage() {
               icon: 'Sparkles',
               default_offering_label: t.default_offering_label || 'Offering',
               offering_placeholder: t.offering_placeholder || '',
-              welcome_message: t.welcome_message,
-              prompt: t.prompt,
-              inbound_welcome_message: t.inbound_welcome_message,
-              inbound_prompt: t.inbound_prompt,
+              welcome_message: normWelcome,
+              prompt: normPrompt,
+              inbound_welcome_message: normInboundWelcome,
+              inbound_prompt: normInboundPrompt,
               knowledge_base: t.knowledge_base || wizardKnowledgeBase.trim() || '',
-              variables: t.suggested_variables || ["{{company_name}}", "{{customer_name}}", "{{offering}}"],
+              variables: cleanVarsList,
               specific_variables: t.specific_variables || []
             }
           ]
@@ -643,10 +654,10 @@ export default function PromptPage() {
             window.history.replaceState({}, '', url.toString())
           } catch { }
         }
-        setPromptText(t.prompt)
-        setWelcomeMessage(t.welcome_message)
-        setInboundPromptText(t.inbound_prompt || '')
-        setInboundWelcomeMessage(t.inbound_welcome_message || '')
+        setPromptText(normPrompt)
+        setWelcomeMessage(normWelcome)
+        setInboundPromptText(normInboundPrompt)
+        setInboundWelcomeMessage(normInboundWelcome)
         setKnowledgeBase(t.knowledge_base || wizardKnowledgeBase.trim() || '')
         setOffering(t.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || '')
         setPromptStatus('Draft')
