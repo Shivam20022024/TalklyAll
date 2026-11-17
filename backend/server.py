@@ -1074,14 +1074,8 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
         resolved_lead_id = quick_lead_id
         
         # Resolve offering: if payload provides an explicit offering, use it.
-        # If payload offering is omitted (e.g. quick call from modal), only retain
-        # existing lead's offering if their stored industry matches call_industry.
-        # If switching industries, purge stale cross-industry offering.
+        # Otherwise leave empty so the selected agent template resolves dynamically.
         resolved_offering = str(payload.get("offering") or "").strip()
-        if not resolved_offering and existing_quick_lead:
-            ex_ind = (existing_quick_lead.get("industry") or "").strip().lower()
-            if not ex_ind or ex_ind == call_industry:
-                resolved_offering = str(existing_quick_lead.get("offering") or existing_quick_lead.get("property") or "").strip()
         
         await db.leads.update_one(
             {"lead_id": quick_lead_id, "company_id": current_user["company_id"]},
@@ -1232,10 +1226,15 @@ async def trigger_bolna_call(payload: dict = Body(...), current_user: dict = Dep
     if payload.get("offering"):
         offering_val = str(payload.get("offering")).strip()
 
-    # 2. Lead offering (only if not a test call and industry matches)
-    if not offering_val and not is_test_call:
+    # 2. Template-configured offering from Prompt Studio
+    ind_entry = (prompt_doc.get("industry_prompts") or {}).get(call_industry, {}) if prompt_doc else {}
+    if not offering_val and ind_entry and ind_entry.get("offering"):
+        offering_val = str(ind_entry.get("offering")).strip()
+
+    # 3. Lead offering (only for real CRM leads with explicit inquiry offering, not quick calls)
+    if not offering_val and not is_test_call and not str(lead_dict.get("lead_id") or "").startswith("quick-call-"):
         lead_ind = (lead_dict.get("industry") or "").strip().lower()
-        if not lead_ind or lead_ind == "general_sales" or lead_ind == call_industry:
+        if not lead_ind or lead_ind == call_industry:
             offering_val = str(lead_dict.get("offering") or lead_dict.get("property") or "").strip()
 
     # 3. Campaign offering

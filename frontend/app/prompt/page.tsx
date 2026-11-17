@@ -965,9 +965,8 @@ export default function PromptPage() {
                   tabIndex={active ? 0 : -1}
                   onClick={() => setActiveTab(key)}
                   onKeyDown={(e) => onTabKey(e, i)}
-                  className={`flex min-h-[68px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[15px] font-semibold leading-tight transition-colors ${
-                    active ? 'bg-blue-50 text-ds-primary ring-1 ring-ds-primary/30' : 'text-ds-ink-2 hover:bg-ds-surface hover:text-ds-ink'
-                  }`}
+                  className={`flex min-h-[68px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[15px] font-semibold leading-tight transition-colors ${active ? 'bg-blue-50 text-ds-primary ring-1 ring-ds-primary/30' : 'text-ds-ink-2 hover:bg-ds-surface hover:text-ds-ink'
+                    }`}
                 >
                   <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                   {label}

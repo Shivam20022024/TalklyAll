@@ -518,31 +518,23 @@ async def resolve_call_voice_context(db, call_id: str, company_id: str = None) -
 
     specific_ind_prompt = ind_prompts.get(call_industry, {})
 
-    offering = ""
-    # 1. Check if call_doc explicitly carries an offering override
-    if call_doc and call_doc.get("offering"):
-        offering = str(call_doc.get("offering")).strip()
-
-    # 2. Check lead_doc - only if this is NOT a test call and industry matches
-    if not offering and lead_doc and not is_test_call:
-        lead_ind = (lead_doc.get("industry") or "").strip().lower()
-        if not lead_ind or lead_ind == "general_sales" or lead_ind == call_industry:
-            offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
-
     # Truly Dynamic Offering Resolution (Template-Scoped & User-Defined):
-    # 1. Check if call_doc explicitly carries an offering override
+    offering = ""
+    # 1. Explicit override from call_doc (e.g. test call modal or trigger payload)
     if call_doc and call_doc.get("offering"):
         offering = str(call_doc.get("offering")).strip()
 
-    # 2. Check lead_doc - only if this is NOT a test call
-    if not offering and lead_doc and not is_test_call:
-        offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
-
-    # 3. Check industry-specific prompt offering (saved specifically for this template)
+    # 2. Template-specific offering configured by company in Prompt Studio
     if not offering and specific_ind_prompt and specific_ind_prompt.get("offering"):
         offering = str(specific_ind_prompt.get("offering")).strip()
 
-    # 4. Dynamic Fallback to template definition or clean generic label
+    # 3. Lead-specific product/offering (for CRM leads with explicit inquiry offering)
+    if not offering and lead_doc and not is_test_call and not str(lead_doc.get("lead_id") or "").startswith("quick-call-"):
+        lead_ind = (lead_doc.get("industry") or "").strip().lower()
+        if not lead_ind or lead_ind == call_industry:
+            offering = str(lead_doc.get("offering") or lead_doc.get("property") or "").strip()
+
+    # 4. Dynamic Fallback to template definition placeholder or clean generic label
     if not offering and isinstance(template_def, dict):
         offering = (
             template_def.get("offering")
