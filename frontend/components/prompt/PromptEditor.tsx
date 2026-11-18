@@ -14,22 +14,19 @@ export function greetingTags(template: any): string[] {
   const rawVars = template?.variables
   if (Array.isArray(rawVars)) {
     rawVars.forEach((v: any) => {
-      if (typeof v === 'string') {
-        const clean = v.replace(/^\{\{|\}\}$|^\{|\}$/g, '').trim()
-        if (clean) tagList.push(`{{${clean}}}`)
-      }
+      if (typeof v === 'string') tagList.push(v)
     })
   } else if (rawVars && typeof rawVars === 'object') {
     Object.keys(rawVars).forEach((k: string) => {
-      const clean = k.replace(/^\{\{|\}\}$|^\{|\}$/g, '').trim()
-      if (clean) tagList.push(`{{${clean}}}`)
+      const clean = k.replace(/^\{\{|\}\}$/g, '')
+      tagList.push(`{{${clean}}}`)
     })
   }
   if (Array.isArray(template?.specific_variables)) {
     template.specific_variables.forEach((sv: any) => {
       if (sv?.key) {
-        const clean = sv.key.replace(/^\{\{|\}\}$|^\{|\}$/g, '').trim()
-        if (clean) tagList.push(`{{${clean}}}`)
+        const clean = sv.key.replace(/^\{\{|\}\}$/g, '')
+        tagList.push(`{{${clean}}}`)
       }
     })
   }

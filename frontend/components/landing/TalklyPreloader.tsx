@@ -2,17 +2,16 @@
 
 import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { hideForIntro, introShouldPlay, markIntroSeen, revealPage } from '@/lib/intro'
 import { LogoMark } from './Logo'
 import './TalklyPreloader.css'
 
-const REDUCED_MIN_MS = 500
-const FONT_WAIT_MS = 400
-const REVEAL_LEAD_MS = 180
-const CURTAIN_SECONDS = 0.85
-const curtainEase = [0.76, 0, 0.24, 1] as const
-const softEase = [0.16, 1, 0.3, 1] as const
+// Total on screen is about 1.5-2s: ~0.1s font hold, 1.05-1.5s of waveform + logo, then a 0.45s fade.
+const REDUCED_MIN_MS = 250
+const FONT_WAIT_MS = 120
+const REVEAL_LEAD_MS = 60
+const CURTAIN_SECONDS = 0.45
+const curtainEase = [0.4, 0, 0.2, 1] as const
 const SCROLL_KEYS = new Set([' ', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
 
 const BAR_COUNT = 31
@@ -92,8 +91,10 @@ function usePageLock(locked: boolean) {
 }
 
 export default function TalklyPreloader({
-  minDuration = 2000,
-  maxDuration = 4500,
+  // Both measured from the start of the page load (performance.now()), not from when scripts ran,
+  // so slow script loading never makes the intro longer.
+  minDuration = 1200,
+  maxDuration = 1500,
   onReveal,
   onComplete,
 }: {
@@ -102,26 +103,30 @@ export default function TalklyPreloader({
   onReveal?: () => void
   onComplete?: () => void
 }) {
-  const reduce = useReducedMotion()
-  const [enabled, setEnabled] = useState(false)
-  const [phase, setPhase] = useState<'intro' | 'leaving' | 'done'>('done')
+  const liveReduce = useReducedMotion()
+  // useReducedMotion() is unknown during SSR; use `false` until mounted so the markup matches.
+  const [mounted, setMounted] = useState(false)
+  const reduce = mounted ? Boolean(liveReduce) : false
+  // The curtain is part of the server-rendered HTML, so it is the very first thing painted on a
+  // direct visit or refresh (no flash of the page underneath). After a client-side navigation the
+  // layout may remount without a server render; then introShouldPlay() is false and nothing shows.
+  const [initialPhase] = useState<'intro' | 'done'>(() => (typeof window === 'undefined' || introShouldPlay() ? 'intro' : 'done'))
+  const enabled = initialPhase === 'intro'
+  const [phase, setPhase] = useState<'intro' | 'leaving' | 'done'>(initialPhase)
   const [started, setStarted] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
   const callbacks = useRef({ onReveal, onComplete })
   callbacks.current = { onReveal, onComplete }
 
-  // Decided once, after mount, so the server-rendered markup and the
-  // client's first paint always agree (both show nothing here) - see
-  // frontend/lib/intro.ts. Hiding content and showing the curtain happen in
-  // this same effect, never as two separate updates that could land a frame
-  // apart.
+  // Claim the intro for this page load at once (so a remount can never start a second one), and set the
+  // page's entrance animations to their starting state while the curtain still covers them.
   useEffect(() => {
-    if (introShouldPlay()) {
+    setMounted(true)
+    if (initialPhase === 'intro') {
+      markIntroSeen()
       hideForIntro()
-      setEnabled(true)
-      setPhase('intro')
     }
-  }, [])
+  }, [initialPhase])
 
   usePageLock(phase !== 'done')
 
@@ -138,7 +143,9 @@ export default function TalklyPreloader({
   useEffect(() => {
     if (phase !== 'intro' || !started) return undefined
     const minimum = reduce ? REDUCED_MIN_MS : minDuration
-    const startTime = performance.now()
+    // With reduced motion the intro is only a brief static frame, so it never waits long for assets.
+    const ceiling = reduce ? REDUCED_MIN_MS + 350 : maxDuration
+    const startTime = 0 // page-load start
     let real = 0
     let shown = 0
     let frame: number
@@ -150,7 +157,7 @@ export default function TalklyPreloader({
 
     const tick = (now: number) => {
       const elapsed = now - startTime
-      if (elapsed >= maxDuration) real = 1
+      if (elapsed >= ceiling) real = 1
       shown += (Math.min(real, elapsed / minimum) - shown) * 0.12
       if (barRef.current) barRef.current.style.transform = `scaleX(${shown})`
       if (real === 1 && elapsed >= minimum) {
@@ -163,7 +170,7 @@ export default function TalklyPreloader({
     frame = requestAnimationFrame(tick)
 
     // Animation frames stop in background tabs, so a timer guarantees the exit.
-    const failsafe = setTimeout(leave, maxDuration + 500)
+    const failsafe = setTimeout(leave, Math.max(0, ceiling - performance.now()) + 400)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(failsafe)
@@ -192,20 +199,22 @@ export default function TalklyPreloader({
   if (phase === 'done') return null
 
   const leaving = phase === 'leaving'
-  const curtain = reduce ? { opacity: leaving ? 0 : 1 } : { y: leaving ? '-100%' : '0%' }
-  const enter = (delay: number, from: Record<string, number | string> = { opacity: 0, y: 10 }) => ({
-    initial: reduce ? { opacity: 0 } : from,
-    animate: started ? { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' } : undefined,
-    transition: { duration: reduce ? 0.3 : 0.7, delay: reduce ? 0 : delay, ease: softEase },
-  })
+  // A clean fade (no sliding curtain); the content lifts slightly as it goes.
+  const curtain = { opacity: leaving ? 0 : 1 }
 
-  return createPortal(
+
+  return (
+    <>
+      {/* Without JavaScript the curtain could never lift, so it is simply not shown. */}
+      <noscript>
+        <style>{'.talkly-preloader{display:none!important}'}</style>
+      </noscript>
     <motion.div
       className="talkly-preloader"
       role="status"
       aria-label="Loading TalklyAI"
       animate={curtain}
-      transition={{ duration: reduce ? 0.3 : CURTAIN_SECONDS, ease: curtainEase }}
+      transition={{ duration: reduce ? 0.2 : CURTAIN_SECONDS, ease: curtainEase }}
       onAnimationComplete={() => {
         if (leaving) setPhase('done')
       }}
@@ -216,20 +225,17 @@ export default function TalklyPreloader({
       <motion.div
         aria-hidden="true"
         className="talkly-preloader-content"
-        animate={leaving ? { opacity: 0, y: reduce ? 0 : -28 } : { opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
+        animate={leaving ? { opacity: 0, y: reduce ? 0 : -12, scale: reduce ? 1 : 1.02 } : { opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: reduce ? 0.2 : 0.4, ease: 'easeOut' }}
       >
         <div className="talkly-preloader-center">
-          <motion.div
-            className="talkly-preloader-logo"
-            {...enter(0, { opacity: 0, scale: 0.92, filter: 'blur(10px)' })}
-            transition={{ duration: reduce ? 0.3 : 0.9, ease: softEase }}
-          >
+          {/* Entrance order (CSS, runs from first paint): waveform, then the logo, then the bar and credit. */}
+          <div className="talkly-preloader-logo">
             <LogoMark className="talkly-preloader-mark" />
             <span translate="no" className="talkly-preloader-name">TalklyAI</span>
-          </motion.div>
+          </div>
 
-          <motion.div className="talkly-preloader-wave" {...enter(0.35)}>
+          <div className="talkly-preloader-wave">
             {bars.map((bar, index) => (
               <span
                 key={index}
@@ -241,22 +247,22 @@ export default function TalklyPreloader({
                 }}
               />
             ))}
-          </motion.div>
+          </div>
 
-          <motion.div className="talkly-preloader-track" {...enter(0.5, { opacity: 0 })}>
+          <div className="talkly-preloader-track">
             <div ref={barRef} className="talkly-preloader-bar" />
-          </motion.div>
+          </div>
         </div>
 
-        <motion.div className="talkly-preloader-powered" {...enter(0.7)}>
+        <div className="talkly-preloader-powered">
           <span className="talkly-preloader-label">Powered by</span>
           <span className="talkly-preloader-brand">
             <span className="talkly-preloader-dot" />
             <span translate="no" className="talkly-preloader-word">Novalantis</span>
           </span>
-        </motion.div>
+        </div>
       </motion.div>
-    </motion.div>,
-    document.body,
+    </motion.div>
+    </>
   )
 }

@@ -127,23 +127,20 @@ Key Objectives:
     default_offering_label: "Course / Program Name",
     offering_placeholder: "e.g. Full-Stack AI & Data Science Certification",
     welcome_message: "Hi {{customer_name}}, this is {{company_name}} calling regarding your inquiry for our {{offering}} program. Do you have a quick minute to chat?",
-    prompt: `You are an enthusiastic, consultative educational counselor representing {{company_name}}.
-Your goal is to understand {{customer_name}}'s background and invite them to an upcoming live demo session for {{offering}}.
+    prompt: `You are an enthusiastic educational counselor representing {{company_name}}.
+Your goal is to understand {{customer_name}}'s learning background and invite them to an upcoming live demo session for {{offering}}.
 
-CONVERSATIONAL RULES:
-1. One Question at a Time: Ask strictly ONE question per turn. Never combine multiple questions.
-2. Mandatory Gated Qualification (Never Skip Unanswered Questions): Every discovery or qualification question requires a substantive answer before moving to the next step. If the customer gives an uninformative acknowledgment like "Yes", "No", "Okay", "Sure", "Yeah", or "Tell me", they have NOT answered your question! Do NOT move to the next question or demo pitch! Stay on the question and guide them with specific options (e.g. "Got it! And which one are you currently — studying or working?").
-3. Never Jump on Filler Words: If the customer says "Okay", "Yeah", "Hmm", or "Well" after an open question, they are thinking. Do not immediately pitch or move to the next topic!
-4. Step-by-Step Flow: Never jump ahead to the demo pitch until you have genuinely qualified their background.
-5. No Identity Re-asking: You already addressed {{customer_name}} in the opening greeting. Never ask 'am I speaking with {{customer_name}}?'.
+IMPORTANT RULE 1 (avoid repetition): You have already delivered the welcome message above once. If the customer gives a short acknowledgment like "Hello," "Yes," "Okay," or "Haan," do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective, as if the conversation is already underway.
+IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the customer's answer before asking the next one. Never combine multiple questions into a single response.
+IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the customer clearly and consistently speaks in a different language. A single short word like "Hello," "Yes," or "OK" from the customer is not a signal to switch languages - continue naturally in the language you started with.
 
-Key Conversation Flow:
-1. Background Discovery: Ask whether they are currently studying in college or working ({{current_role}}). (If they answer "Yes", clarify which one).
-2. Prior Experience: Once you know their background, ask if they have any prior coding experience or are starting fresh from scratch.
-3. Schedule / Batch Preference: Ask whether they prefer weekday evening batches or weekend morning batches ({{batch_time}}).
-4. Program Value: Highlight industry-led projects, placement support, and mentor guidance.
-5. Free Demo / Counseling: Propose attending a free live workshop or 1-on-1 counseling call this weekend, name a specific day/time, and ask if that works.
-6. Tone: Motivating, encouraging, informative, and professional (1 to 2 short sentences per turn).`,
+Key Objectives:
+1. Connect: Acknowledge their recent inquiry for the {{offering}} curriculum.
+2. Direct Qualification (No Identity Re-asking): You already addressed {{customer_name}} by name in the opening greeting. When the customer acknowledges, replies, or says yes/yeah/haan/yeh, their identity is confirmed. NEVER ask 'am I speaking with {{customer_name}}?' or 'is this {{customer_name}}?'. Proceed directly to Background Discovery.
+3. Background Discovery: Ask whether they are currently a college student, working professional, or career switcher ({{current_role}}).
+4. Program Value: Highlight industry-led projects, guaranteed placement support, flexible weekend batches ({{batch_time}}), and mentor guidance.
+5. Free Demo / Counseling: Invite them to attend a free live workshop or schedule a 1-on-1 career roadmap call this week.
+6. Tone: Motivating, encouraging, informative, and professional.`,
     inbound_welcome_message: "Hi {{customer_name}}, thanks for calling {{company_name}}! How can I help you today?",
     inbound_prompt: `You are a friendly admissions counselor for {{company_name}}, answering an inbound call from a prospective student or parent.
 
@@ -184,7 +181,7 @@ Key Objectives:
 मुख्य बातचीत का प्रवाह:
 1. पहचान की पुष्टि: अगर ग्राहक के पहले जवाब में पहचान स्पष्ट न हो, तो विनम्रता से पुष्टि करें: "क्या मेरी बात {{customer_name}} जी से ही हो रही है?" और स्पष्ट "हाँ" का इंतज़ार करें।
 2. लोन की आवश्यकता समझें: पूछें कि उन्हें लगभग कितनी राशि की आवश्यकता है (जैसे {{loan_amount}} तक)।
-3. रोजगार का प्रकार जानें: पूछें: "क्या आप अभी Salaried हैं या अपना कोई Business/Self-employed काम करते हैं?" अगर ग्राहक सिर्फ "हाँ" या "यस" कहे, तो स्पष्टीकरण माँगें: "जी! और आप नौकरी करते हैं या अपना व्यवसाय?"
+3. रोजगार का प्रकार जानें: पूछें: "क्या आप अभी Salaried हैं या अपना कोई Business/Self-employed काम करते हैं?"
 4. अनुमानित मासिक आय: पूछें: "आपकी अनुमानित मंथली टेक-होम इनकम कितनी है?"
 5. खास खूबियां बताएं: बताएं कि उनके लिए मिनिमम डॉक्यूमेंटेशन, आकर्षक ब्याज दर, और {{tenure}} तक के आसान ईएमआई ऑप्शन्स उपलब्ध हैं।
 6. अगला कदम: पूछें कि क्या आज दोपहर या कल सुबह डॉक्यूमेंटेशन वेरिफिकेशन कॉल के लिए सही समय रहेगा।
@@ -219,13 +216,13 @@ Key Objectives:
 Your goal is to understand {{customer_name}}'s needs and interest regarding {{offering}} specifically, and move them toward a clear next step (e.g. a demo, trial, or purchase decision) for {{offering}}.
 
 IMPORTANT RULE 1 (avoid repetition): You have already delivered the welcome message above once. If the customer gives a short acknowledgment like "Hello," "Yes," "Okay," or "Haan," do not reintroduce yourself or restate the company name/purpose again - move straight to the next objective, as if the conversation is already underway.
-IMPORTANT RULE 2 (gated question progression): Ask only one question per turn, then stop and wait for the customer's substantive answer before moving forward. Never advance to the next question or store visit / demo pitch if the customer gives an uninformative acknowledgment like 'Yes', 'Okay', or 'Haan' - stay on the current question and guide them with specific options.
+IMPORTANT RULE 2 (one question at a time): Ask only one question per turn, then stop and wait for the customer's answer before asking the next one. Never combine multiple questions into a single response.
 IMPORTANT RULE 3 (language consistency): Reply in the same language you opened with, unless the customer clearly and consistently speaks in a different language. A single short word like "Hello," "Yes," or "OK" from the customer is not a signal to switch languages - continue naturally in the language you started with.
 
 Key Questions and Flow to ask in order:
 1. Warm Introduction: Acknowledge speaking with {{customer_name}} and confirm if they have a quick minute.
 2. Direct Discovery (No Identity Re-asking): You already addressed {{customer_name}} by name in the opening greeting. Once the customer acknowledges or replies, their identity is confirmed. NEVER ask 'am I speaking with {{customer_name}}?'. Proceed directly to Discovery.
-3. Discovery (Mandatory Gated Qualification): Ask ONE open question about their current situation or needs related to {{offering}} - e.g. what they use today, what matters most to them, or what prompted their interest. If the customer gives an ambiguous single-word reply like 'Yes', 'Okay', 'Sure', or 'Tell me', do NOT jump ahead to the pitch or next question — they did not answer your question! Politely clarify: 'Could you share what specific needs or goals you have for {{offering}}?' and wait for their answer.
+3. Discovery: Ask ONE open question about their current situation or needs related to {{offering}} - e.g. what they use today, what matters most to them, or what prompted their interest.
 4. Qualification: Based on their answer, ask ONE relevant follow-up question that digs into what matters most to them specifically about {{offering}} and their team size ({{company_size}}).
 5. Value Pitch: Highlight 2-3 benefits of {{offering}} that are relevant to what they just told you matters to them.
 6. Call to Action: Propose a 15-minute live screen-share demo with your specialist. Offer two concrete upcoming days and ask which works better.
@@ -507,8 +504,6 @@ export default function PromptPage() {
     loadIndustryPrompt(finalInd)
   }, [user])
 
-  const normalizeTagBrackets = (text: string) => (text || '').replace(/(?<!\{)\{([a-zA-Z0-9_]+)\}(?!\})/g, '{{$1}}')
-
   const loadIndustryPrompt = async (industryKey: string) => {
     setLoadingIndustry(true)
     setSelectedIndustry(industryKey)
@@ -522,10 +517,10 @@ export default function PromptPage() {
         const customDef = (data.custom_templates || []).find((ct: any) => ct.id === industryKey)
         const fallback = customDef || CLIENT_TEMPLATES[industryKey]
 
-        setPromptText(normalizeTagBrackets(data.prompt || fallback?.prompt || ''))
-        setWelcomeMessage(normalizeTagBrackets(data.welcome_message || fallback?.welcome_message || ''))
-        setInboundPromptText(normalizeTagBrackets(data.inbound_prompt || fallback?.inbound_prompt || ''))
-        setInboundWelcomeMessage(normalizeTagBrackets(data.inbound_welcome_message || fallback?.inbound_welcome_message || ''))
+        setPromptText(data.prompt || fallback?.prompt || '')
+        setWelcomeMessage(data.welcome_message || fallback?.welcome_message || '')
+        setInboundPromptText(data.inbound_prompt || fallback?.inbound_prompt || '')
+        setInboundWelcomeMessage(data.inbound_welcome_message || fallback?.inbound_welcome_message || '')
         setKnowledgeBase(data.knowledge_base || fallback?.knowledge_base || '')
         setOffering(data.offering || '')
         setLocation(data.location || '')
@@ -613,15 +608,6 @@ export default function PromptPage() {
       if (res && res.template) {
         const t = res.template
         // Add to customTemplates state
-        const normWelcome = normalizeTagBrackets(t.welcome_message || '')
-        const normInboundWelcome = normalizeTagBrackets(t.inbound_welcome_message || '')
-        const normPrompt = normalizeTagBrackets(t.prompt || '')
-        const normInboundPrompt = normalizeTagBrackets(t.inbound_prompt || '')
-        const cleanVarsList = Array.from(new Set(
-          (t.suggested_variables || ["company_name", "customer_name", "offering", "location"])
-            .map((v: any) => `{{${String(v).replace(/[{}]/g, '').trim()}}}`)
-        ))
-
         setCustomTemplates(prev => {
           const filtered = prev.filter(item => item.id !== t.template_id)
           return [
@@ -633,12 +619,12 @@ export default function PromptPage() {
               icon: 'Sparkles',
               default_offering_label: t.default_offering_label || 'Offering',
               offering_placeholder: t.offering_placeholder || '',
-              welcome_message: normWelcome,
-              prompt: normPrompt,
-              inbound_welcome_message: normInboundWelcome,
-              inbound_prompt: normInboundPrompt,
+              welcome_message: t.welcome_message,
+              prompt: t.prompt,
+              inbound_welcome_message: t.inbound_welcome_message,
+              inbound_prompt: t.inbound_prompt,
               knowledge_base: t.knowledge_base || wizardKnowledgeBase.trim() || '',
-              variables: cleanVarsList,
+              variables: t.suggested_variables || ["{{company_name}}", "{{customer_name}}", "{{offering}}"],
               specific_variables: t.specific_variables || []
             }
           ]
@@ -654,10 +640,10 @@ export default function PromptPage() {
             window.history.replaceState({}, '', url.toString())
           } catch { }
         }
-        setPromptText(normPrompt)
-        setWelcomeMessage(normWelcome)
-        setInboundPromptText(normInboundPrompt)
-        setInboundWelcomeMessage(normInboundWelcome)
+        setPromptText(t.prompt)
+        setWelcomeMessage(t.welcome_message)
+        setInboundPromptText(t.inbound_prompt || '')
+        setInboundWelcomeMessage(t.inbound_welcome_message || '')
         setKnowledgeBase(t.knowledge_base || wizardKnowledgeBase.trim() || '')
         setOffering(t.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || '')
         setPromptStatus('Draft')
@@ -808,7 +794,7 @@ export default function PromptPage() {
   // Live preview helpers
   const sampleCompanyName = user?.company_name || 'Talkly'
   const sampleCustomerName = 'Rahul Sharma'
-  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || currentTemplate?.default_offering_label || 'our services'
+  const sampleOffering = offering.trim() || currentTemplate?.offering_placeholder?.replace(/^e\.g\.\s*/i, '') || (selectedIndustry === 'ecommerce' ? 'Wireless Earbuds' : selectedIndustry === 'real_estate' ? 'Green Valley Heights' : selectedIndustry === 'healthcare' ? 'Dental Checkup' : selectedIndustry === 'edtech' ? 'AI Certification' : selectedIndustry === 'bfsi' ? 'Personal Loan' : selectedIndustry === 'collections' ? 'Personal Loan EMI' : 'AI Voice Solution')
   const sampleLocation = location.trim() || 'Connaught Place, New Delhi'
 
   const computeSimulatedGreeting = (raw: string) => {
@@ -817,28 +803,30 @@ export default function PromptPage() {
     out = out.replace(/\{\{company_name\}\}|\{company_name\}/g, sampleCompanyName)
     out = out.replace(/\{\{offering\}\}|\{offering\}|\{\{property_name\}\}/g, sampleOffering)
     out = out.replace(/\{\{location\}\}|\{location\}|\{\{property_location\}\}/g, sampleLocation)
-
-    // Dynamically replace any variable configured in industryVariables
-    if (industryVariables && typeof industryVariables === 'object') {
-      for (const [k, v] of Object.entries(industryVariables)) {
-        if (v !== undefined && v !== null && v !== '') {
-          const reg = new RegExp(`\\{\\{${k}\\}\\}|\\{${k}\\}`, 'g')
-          out = out.replace(reg, String(v))
-        }
-      }
-    }
-
-    // Dynamic fallbacks for any remaining template-specific placeholder tags
-    if (currentTemplate?.specific_variables && Array.isArray(currentTemplate.specific_variables)) {
-      for (const sv of currentTemplate.specific_variables) {
-        if (sv?.key && sv?.placeholder) {
-          const reg = new RegExp(`\\{\\{${sv.key}\\}\\}|\\{${sv.key}\\}`, 'g')
-          out = out.replace(reg, sv.placeholder.replace(/^e\.g\.\s*/i, ''))
-        }
-      }
-    }
-
-    // Clean up any double currency signs
+    out = out.replace(/\{\{budget\}\}/g, industryVariables.budget || '₹80 Lakhs')
+    out = out.replace(/\{\{doctor_name\}\}/g, industryVariables.doctor_name || 'Dr. Priya Sharma')
+    out = out.replace(/\{\{preferred_time\}\}/g, industryVariables.preferred_time || 'Tomorrow 5 PM')
+    out = out.replace(/\{\{batch_time\}\}/g, industryVariables.batch_time || 'Weekend Batch')
+    out = out.replace(/\{\{current_role\}\}/g, industryVariables.current_role || 'Working Professional')
+    out = out.replace(/\{\{loan_amount\}\}/g, industryVariables.loan_amount || '₹10,00,000')
+    out = out.replace(/\{\{tenure\}\}/g, industryVariables.tenure || '5 Years')
+    const rawAmt = industryVariables.amount_due || '₹15,000'
+    const cleanAmt = rawAmt.replace(/^₹\s*/, '')
+    out = out.replace(/₹\s*\{\{amount_due\}\}/g, `₹${cleanAmt}`)
+    out = out.replace(/\{\{amount_due\}\}/g, rawAmt)
+    const rawOrderAmt = industryVariables.order_amount || '₹2,199'
+    const cleanOrderAmt = rawOrderAmt.replace(/^₹\s*/, '')
+    out = out.replace(/₹\s*\{\{order_amount\}\}/g, `₹${cleanOrderAmt}`)
+    out = out.replace(/\{\{order_amount\}\}/g, rawOrderAmt)
+    out = out.replace(/\{\{order_id\}\}/g, industryVariables.order_id || 'ORD-98241')
+    out = out.replace(/\{\{delivery_address\}\}/g, industryVariables.delivery_address || 'Flat 402, Sector 62, Noida')
+    out = out.replace(/\{\{due_date\}\}/g, industryVariables.due_date || '10 November 2026')
+    out = out.replace(/\{\{company_size\}\}/g, industryVariables.company_size || '25 employees')
+    out = out.replace(/\{\{shop_address\}\}/g, industryVariables.shop_address || 'our store')
+    out = out.replace(/\{\{landmark\}\}/g, industryVariables.landmark || '')
+    out = out.replace(/\{\{city\}\}/g, industryVariables.city || '')
+    out = out.replace(/\{\{shop_timings\}\}/g, industryVariables.shop_timings || '')
+    out = out.replace(/\{\{contact_number\}\}/g, industryVariables.contact_number || '')
     out = out.replace(/₹\s*₹/g, '₹')
     return out
   }
@@ -979,8 +967,9 @@ export default function PromptPage() {
                   tabIndex={active ? 0 : -1}
                   onClick={() => setActiveTab(key)}
                   onKeyDown={(e) => onTabKey(e, i)}
-                  className={`flex min-h-[68px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[15px] font-semibold leading-tight transition-colors ${active ? 'bg-blue-50 text-ds-primary ring-1 ring-ds-primary/30' : 'text-ds-ink-2 hover:bg-ds-surface hover:text-ds-ink'
-                    }`}
+                  className={`flex min-h-[68px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[15px] font-semibold leading-tight transition-colors ${
+                    active ? 'bg-blue-50 text-ds-primary ring-1 ring-ds-primary/30' : 'text-ds-ink-2 hover:bg-ds-surface hover:text-ds-ink'
+                  }`}
                 >
                   <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                   {label}

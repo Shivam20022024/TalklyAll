@@ -35,7 +35,8 @@ const columns = [
   },
 ]
 
-const linkClass = 'text-[0.9375rem] transition-colors hover:text-brand-dark'
+// Below lg the links get a 40px-tall hit area so they are easy to tap; desktop spacing is unchanged.
+const linkClass = 'inline-flex min-h-10 items-center text-[0.9375rem] transition-colors hover:text-brand-dark lg:min-h-0'
 
 export default function Footer() {
   return (
@@ -51,7 +52,7 @@ export default function Footer() {
         {columns.map((column) => (
           <nav key={column.title} aria-label={column.title}>
             <h2 className="font-sans text-sm font-semibold tracking-normal text-ink">{column.title}</h2>
-            <ul className="mt-4 space-y-2.5">
+            <ul className="mt-3 space-y-0.5 lg:mt-4 lg:space-y-2.5">
               {column.links.map((link) => (
                 <li key={link.label}>
                   <SmartLink to={link.to} className={linkClass}>{link.label}</SmartLink>
@@ -65,14 +66,14 @@ export default function Footer() {
           <h2 className="font-sans text-sm font-semibold tracking-normal text-ink">Contact</h2>
           <ul className="mt-4 space-y-3 text-[0.9375rem]">
             <li className="flex gap-2.5">
-              <Mail size={17} className="mt-0.5 flex-none text-muted" aria-hidden="true" />
-              <a href={`mailto:${contact.email}`} className="break-all transition-colors hover:text-brand-dark">{contact.email}</a>
+              <Mail size={17} className="mt-[11px] flex-none text-muted lg:mt-0.5" aria-hidden="true" />
+              <a href={`mailto:${contact.email}`} className="inline-flex min-h-10 items-center break-all transition-colors hover:text-brand-dark lg:min-h-0">{contact.email}</a>
             </li>
             <li className="flex gap-2.5">
-              <Phone size={17} className="mt-0.5 flex-none text-muted" aria-hidden="true" />
-              <span className="grid gap-1">
+              <Phone size={17} className="mt-[11px] flex-none text-muted lg:mt-0.5" aria-hidden="true" />
+              <span className="grid lg:gap-1">
                 {contact.phones.map((phone) => (
-                  <a key={phone.href} href={phone.href} className="tabular-nums transition-colors hover:text-brand-dark">{phone.label}</a>
+                  <a key={phone.href} href={phone.href} className="inline-flex min-h-10 items-center tabular-nums transition-colors hover:text-brand-dark lg:min-h-0">{phone.label}</a>
                 ))}
               </span>
             </li>
@@ -88,8 +89,8 @@ export default function Footer() {
         <div className="wrap flex flex-col gap-3 py-5 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} {company.name}. All rights reserved.</p>
           <ul className="flex gap-5">
-            <li><SmartLink to={company.privacy} className="transition-colors hover:text-brand-dark">Privacy Policy</SmartLink></li>
-            <li><SmartLink to={company.terms} className="transition-colors hover:text-brand-dark">Terms and Conditions</SmartLink></li>
+            <li><SmartLink to={company.privacy} className="inline-flex min-h-10 items-center transition-colors hover:text-brand-dark lg:min-h-0">Privacy Policy</SmartLink></li>
+            <li><SmartLink to={company.terms} className="inline-flex min-h-10 items-center transition-colors hover:text-brand-dark lg:min-h-0">Terms and Conditions</SmartLink></li>
           </ul>
         </div>
       </div>

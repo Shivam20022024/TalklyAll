@@ -39,16 +39,10 @@ export default function HowItWorks() {
           { ...(desktop ? { scaleX: 1 } : { scaleY: 1 }), duration: steps.length - 1 },
           0,
         )
+        // Only the connecting line and the step dots follow the scroll. The step text stays fully
+        // readable at all times (it used to be scrubbed down to 28% opacity, which failed contrast).
         steps.forEach((step: any, index: number) => {
           timeline.fromTo(step.querySelector('[data-dot]'), { opacity: 0 }, { opacity: 1, duration: 0.25 }, index)
-          if (desktop) {
-            timeline.fromTo(
-              step.querySelector('[data-copy]'),
-              { opacity: 0.28, y: 14 },
-              { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' },
-              Math.max(index - 0.2, 0),
-            )
-          }
         })
       },
     )

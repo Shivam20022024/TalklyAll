@@ -2,17 +2,14 @@
 
 import { useSyncExternalStore } from 'react'
 
-const STORAGE_KEY = 'talkly-intro-seen'
+// The intro plays once per full page load: on a direct visit and on every browser
+// refresh, but not again when the visitor moves between pages client-side (this
+// module, and so this flag, survives client-side navigation; a reload resets it).
+let playedThisLoad = false
 
-// Add ?intro=replay to any URL to see it again.
 function decide(): boolean {
   if (typeof window === 'undefined') return false
-  if (new URLSearchParams(window.location.search).get('intro') === 'replay') return true
-  try {
-    return !window.sessionStorage.getItem(STORAGE_KEY)
-  } catch {
-    return true // Storage can be blocked. Playing the intro is the safe fallback.
-  }
+  return !playedThisLoad
 }
 
 // Starts "revealed" so server-rendered markup and the client's first paint
@@ -25,11 +22,7 @@ const listeners = new Set<() => void>()
 export const introShouldPlay = decide
 
 export function markIntroSeen() {
-  try {
-    window.sessionStorage.setItem(STORAGE_KEY, '1')
-  } catch {
-    // Without storage the intro simply plays again on the next full page load.
-  }
+  playedThisLoad = true
 }
 
 export function hideForIntro() {

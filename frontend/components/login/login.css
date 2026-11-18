@@ -1,0 +1,124 @@
+/* Login page only. Every class here is prefixed `login-` and used solely by
+   app/login/page.tsx and components/login/*, so nothing else is affected.
+   Entrance animations are plain CSS, so they run from the first paint and the
+   form is never hidden waiting for JavaScript. */
+
+.login-root {
+  font-family: 'Inter Variable', 'Noto Sans Devanagari', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #111827;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.login-root a:focus-visible,
+.login-root button:focus-visible {
+  outline: 2px solid #2463eb;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.login-root input:focus-visible {
+  outline: none; /* replaced by the field's own border + ring */
+}
+
+/* Brand panel background: soft blue-to-purple wash with two quiet glows. */
+.login-brand {
+  background:
+    radial-gradient(60% 45% at 12% 8%, rgb(36 99 235 / 0.14), transparent 70%),
+    radial-gradient(55% 45% at 95% 92%, rgb(121 85 232 / 0.16), transparent 70%),
+    linear-gradient(160deg, #eef3ff 0%, #f3f0fe 55%, #f8fafc 100%);
+}
+
+/* Waveform */
+.login-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.login-wave span {
+  display: block;
+  width: 3px;
+  flex: none;
+  border-radius: 9999px;
+  transform-origin: center;
+  animation: login-wave 1.2s ease-in-out infinite;
+}
+@keyframes login-wave {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Floating status cards */
+.login-float {
+  animation: login-float 6s ease-in-out infinite;
+}
+@keyframes login-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* "Live" dot */
+.login-live {
+  animation: login-live 1.8s ease-out infinite;
+}
+@keyframes login-live {
+  0% {
+    box-shadow: 0 0 0 0 rgb(34 197 94 / 0.45);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 6px rgb(34 197 94 / 0);
+  }
+}
+
+/* Entrances */
+.login-rise {
+  animation: login-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--rise-delay, 0ms);
+}
+@keyframes login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.login-fade {
+  animation: login-fade 0.6s ease-out both;
+  animation-delay: var(--rise-delay, 0ms);
+}
+@keyframes login-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-wave span,
+  .login-float,
+  .login-live,
+  .login-rise,
+  .login-fade {
+    animation: none !important;
+  }
+  .login-wave span {
+    transform: scaleY(0.75);
+  }
+}

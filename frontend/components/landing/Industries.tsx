@@ -18,20 +18,28 @@ export default function Industries() {
   return (
     <section id="industries" className="section bg-mist">
       <div className="wrap">
-        <SectionHeading title="AI Voice Calling Built for Every Industry" />
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
+        <SectionHeading
+          title="AI Voice Calling Built for Every Industry"
+          eyebrow={
+            <>
+              <Building2 size={14} aria-hidden="true" />
+              Industries
+            </>
+          }
+        />
+        <ul className="grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
           {industries.map((industry, index) => {
             const Icon = industry.icon
             return (
               <motion.li
                 key={industry.name}
-                initial={{ opacity: 0, y: 24 }}
+                initial={{ opacity: 0, y: 16 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.3 }}
-                transition={{ duration: 0.65, delay: index * 0.07, ease: easeSoft }}
+                transition={{ duration: 0.6, delay: (index % 3) * 0.08, ease: easeSoft }}
               >
                 <article
-                  className="card lift group relative flex h-full gap-4 overflow-hidden p-5 lg:p-6"
+                  className="card group relative flex h-full gap-4 overflow-hidden p-5 transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-1 hover:shadow-lift motion-reduce:transition-none motion-reduce:hover:translate-y-0 lg:p-6"
                   style={{ '--accent-color': industry.color } as React.CSSProperties}
                 >
                   <span
@@ -39,7 +47,7 @@ export default function Industries() {
                     className="absolute inset-x-0 top-0 h-[3px] origin-left scale-x-0 bg-(--accent-color) transition-transform duration-500 ease-out-soft group-hover:scale-x-100"
                   />
                   <span
-                    className="grid h-12 w-12 flex-none place-items-center rounded-[14px] transition-transform duration-500 ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-110 group-hover:-rotate-6"
+                    className="grid h-12 w-12 flex-none place-items-center rounded-[14px] transition-transform duration-300 ease-out group-hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0"
                     style={{ backgroundColor: industry.tint, color: industry.color }}
                   >
                     <Icon size={23} aria-hidden="true" />

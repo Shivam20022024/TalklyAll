@@ -124,19 +124,20 @@ function Dashboard({ chartsReady }: { chartsReady: boolean }) {
           </p>
         </div>
 
-        <dl className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {/* A list of label/value tiles: the value reads first visually, the label stays fully visible (it used to be cut off on phones). */}
+        <ul className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {kpis.map(({ label, value, icon: Icon }) => (
-            <div key={label} className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-3.5">
-              <span className="tile-icon h-9! w-9! rounded-[10px]! max-sm:hidden">
-                <Icon size={17} aria-hidden="true" />
+            <li key={label} className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-3.5">
+              <span aria-hidden="true" className="tile-icon h-9! w-9! rounded-[10px]! max-sm:hidden">
+                <Icon size={17} />
               </span>
-              <div className="flex min-w-0 flex-col-reverse">
-                <dt className="truncate text-xs text-muted">{label}</dt>
-                <dd className="font-display text-lg font-semibold tabular-nums text-ink">{value}</dd>
-              </div>
-            </div>
+              <p className="flex min-w-0 flex-col-reverse">
+                <span className="text-xs leading-snug text-muted">{label}</span>
+                <span className="font-display text-lg font-semibold tabular-nums text-ink">{value}</span>
+              </p>
+            </li>
           ))}
-        </dl>
+        </ul>
 
         <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
           <Panel
@@ -168,13 +169,16 @@ function Dashboard({ chartsReady }: { chartsReady: boolean }) {
           <Panel title="Sentiment analysis">
             <div className="flex items-center gap-5">
               <div className="relative h-32 w-32 flex-none" role="img" aria-label="Donut chart of call sentiment. Sample data: 58% positive, 27% neutral, 15% negative.">
-                {chartsReady ? (
-                  <Suspense fallback={<ChartFallback />}>
-                    <SentimentChart />
-                  </Suspense>
-                ) : (
-                  <ChartFallback />
-                )}
+                {/* The wrapper's aria-label describes the chart; the drawn slices are hidden from assistive tech. */}
+                <div aria-hidden="true" className="h-full w-full">
+                  {chartsReady ? (
+                    <Suspense fallback={<ChartFallback />}>
+                      <SentimentChart />
+                    </Suspense>
+                  ) : (
+                    <ChartFallback />
+                  )}
+                </div>
               </div>
               <dl className="min-w-0 flex-1 space-y-2.5">
                 {data.sentiment.map((slice) => (
@@ -197,7 +201,7 @@ function Dashboard({ chartsReady }: { chartsReady: boolean }) {
 
         <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
           <Panel title="Recent call activity">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" role="region" aria-label="Recent call activity (sample data)" tabIndex={0}>
               <table className="w-full min-w-[22rem] text-left text-[0.8125rem]">
                 <thead>
                   <tr className="text-xs text-muted">

@@ -6,33 +6,26 @@ import { greetingTags } from './PromptEditor'
 /** Dynamic Variables panel: every supported {{tag}} for the selected template, each with an Insert control. */
 export function VariableReference({ template, onInsert }: { template: any; onInsert: (tag: string) => void }) {
   const standardKeys = new Set(['{{customer_name}}', '{{company_name}}', '{{offering}}', '{{location}}'])
-  const extraTags = ((template?.specific_variables || []) as { key: string; label: string }[])
+  const extraTags = ((template.specific_variables || []) as { key: string; label: string }[])
     .map((sv) => {
-      const cleanKey = (sv?.key || '').replace(/[{}]/g, '').trim()
+      const cleanKey = sv.key.replace(/^\{\{|\}\}$/g, '')
       return { tag: `{{${cleanKey}}}`, desc: sv.label }
     })
-    .filter((item) => item.tag !== '{{}}' && !standardKeys.has(item.tag))
+    .filter((item) => !standardKeys.has(item.tag))
   const rawList = [
     { tag: '{{customer_name}}', desc: 'Contact / lead name' },
     { tag: '{{company_name}}', desc: 'Your company name' },
-    { tag: '{{offering}}', desc: template?.default_offering_label || 'Offering' },
+    { tag: '{{offering}}', desc: template.default_offering_label },
     { tag: '{{location}}', desc: 'City, branch, or property location' },
     ...extraTags,
   ]
   // Any other tag the template declares stays insertable, as the greeting's quick-insert row used to offer.
   greetingTags(template).forEach((tag) => {
-    const cleanKey = String(tag || '').replace(/[{}]/g, '').trim()
-    const canonTag = `{{${cleanKey}}}`
-    if (canonTag !== '{{}}' && !rawList.some((r) => r.tag.toLowerCase() === canonTag.toLowerCase())) {
-      rawList.push({ tag: canonTag, desc: 'Template variable' })
-    }
+    if (!rawList.some((r) => r.tag === tag)) rawList.push({ tag, desc: 'Template variable' })
   })
   rawList.push({ tag: '{{any_csv_column}}', desc: 'Any extra CSV column (e.g. doctor, date)' })
   const seen = new Set<string>()
-  const list = rawList.filter((item) => {
-    const key = item.tag.toLowerCase()
-    return seen.has(key) ? false : (seen.add(key), true)
-  })
+  const list = rawList.filter((item) => (seen.has(item.tag) ? false : (seen.add(item.tag), true)))
 
   return (
     <section className="rounded-2xl border border-ds-line bg-ds-bg p-4 shadow-sm sm:p-5" aria-labelledby="vars-title">

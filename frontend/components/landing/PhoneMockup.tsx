@@ -10,10 +10,11 @@ import { easeSoft } from './Reveal'
 import Waveform from './Waveform'
 
 const outcomes = [
-  { label: 'Qualified Leads', icon: UserRoundCheck, tint: 'text-[#16855a] bg-[#e4f6ee]', pos: 'sm:top-[8%] sm:left-[calc(100%-22px)]' },
-  { label: 'Book Appointments', icon: CalendarCheck, tint: 'text-[#d03f5c] bg-[#fdebef]', pos: 'sm:top-[28%] sm:left-[calc(100%-4px)]' },
-  { label: 'Collect Payments', icon: IndianRupee, tint: 'text-[#b76b08] bg-[#fdf2dd]', pos: 'sm:top-[50%] sm:left-[calc(100%-14px)]' },
-  { label: 'WhatsApp Follow-ups', icon: MessageCircle, tint: 'text-[#16855a] bg-[#e4f6ee]', pos: 'sm:top-[72%] sm:left-[calc(100%-30px)]' },
+  // Even 22% vertical steps and one shared left edge that only overlaps the phone's bezel, never its screen content.
+  { label: 'Qualified Leads', icon: UserRoundCheck, tint: 'text-[#16855a] bg-[#e4f6ee]', pos: 'sm:top-[10%] sm:left-[calc(100%-8px)]' },
+  { label: 'Book Appointments', icon: CalendarCheck, tint: 'text-[#d03f5c] bg-[#fdebef]', pos: 'sm:top-[32%] sm:left-[calc(100%-8px)]' },
+  { label: 'Collect Payments', icon: IndianRupee, tint: 'text-[#b76b08] bg-[#fdf2dd]', pos: 'sm:top-[54%] sm:left-[calc(100%-8px)]' },
+  { label: 'WhatsApp Follow-ups', icon: MessageCircle, tint: 'text-[#16855a] bg-[#e4f6ee]', pos: 'sm:top-[76%] sm:left-[calc(100%-8px)]' },
 ]
 
 const LINE_MS = 3000
@@ -65,13 +66,26 @@ export default function PhoneMockup() {
 
   const shownLine = reduce ? lastLine : line
   const current = heroCall.lines[shownLine]
+  // The two most recent lines of the scripted call, oldest first, so it reads like a live chat.
+  const recent = heroCall.lines
+    .map((entry, index) => ({ entry, index }))
+    .slice(Math.max(0, shownLine - 1), shownLine + 1)
   const reached = heroCall.lines.slice(0, shownLine + 1).reduce(
     (latest, entry) => (entry.outcome === undefined ? latest : entry.outcome),
     -1,
   )
 
   return (
-    <div ref={ref} className="relative mx-auto w-full max-w-[33rem]">
+    // `isolate` keeps the -z-10 glow and waveform above the hero's own background layer.
+    <div ref={ref} className="relative isolate mx-auto w-full max-w-[33rem]">
+      {/* Soft blue-purple glow behind the phone; it breathes slowly only while the sample call runs. */}
+      <motion.div
+        aria-hidden="true"
+        className="absolute left-1/2 top-[44%] -z-10 aspect-square w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(36_99_235/0.22),rgb(121_85_232/0.16)_55%,transparent)] blur-2xl sm:w-[62%]"
+        initial={{ opacity: 0 }}
+        animate={revealed ? (running ? { opacity: [0.75, 1, 0.75], scale: [1, 1.06, 1] } : { opacity: 0.85, scale: 1 }) : { opacity: 0 }}
+        transition={running ? { duration: 6, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.8, ease: easeSoft }}
+      />
       <div aria-hidden="true" className="absolute left-1/2 top-[44%] -z-10 hidden w-[125%] -translate-x-1/2 -translate-y-1/2 sm:block">
         <div className="mx-auto aspect-square w-[64%] rounded-full bg-[radial-gradient(closest-side,rgb(36_99_235/0.09),rgb(121_85_232/0.05)_70%,transparent)]" />
         <div className="absolute inset-x-0 top-1/2 h-44 -translate-y-1/2 text-brand/25 [mask-image:linear-gradient(90deg,transparent,#000_30%,#000_70%,transparent)]">
@@ -96,7 +110,11 @@ export default function PhoneMockup() {
                   <p translate="no" className="mt-1.5 font-display text-[0.9375rem] font-semibold text-ink">
                     TalklyAI
                   </p>
-                  <p className="mt-2 inline-block rounded-full bg-haze px-2.5 py-0.5 text-[0.6875rem] font-medium text-brand-dark">
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-haze px-2.5 py-0.5 text-[0.6875rem] font-medium text-brand-dark">
+                    <span aria-hidden="true" className="relative flex h-1.5 w-1.5">
+                      {running && <span className="absolute inline-flex h-full w-full rounded-full bg-[#16a34a] opacity-70 motion-safe:animate-ping" />}
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
+                    </span>
                     Sample call
                   </p>
                   <p className="mt-2 text-sm font-medium text-ink">{heroCall.customer}</p>
@@ -110,27 +128,39 @@ export default function PhoneMockup() {
                   <Waveform bars={26} playing={running} still={Boolean(reduce)} barWidth={3} gap={3} />
                 </div>
 
-                {/* Fixed height, so the longest line never shifts the controls. */}
-                <div className="mt-2 flex-1" aria-live="off">
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.div
-                      key={shownLine}
-                      lang="hi-Latn"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.28 }}
-                      className={`rounded-2xl px-3 py-2.5 text-[0.8125rem] leading-snug ${
-                        current.speaker === 'ai'
-                          ? 'rounded-bl-sm border border-line bg-white text-ink'
-                          : 'ml-5 rounded-br-sm bg-[#efeafd] text-ink'
-                      }`}
-                    >
-                      <span className="mb-0.5 block text-[0.6875rem] font-semibold text-muted">
-                        {current.speaker === 'ai' ? 'TalklyAI' : 'Customer'}
-                      </span>
-                      {current.text}
-                    </motion.div>
+                {/* Fixed height, so a longer line never shifts the controls. Newest bubble sits at the
+                    bottom; the earlier one fades out under the top edge. */}
+                <div
+                  className="mt-2 flex min-h-0 flex-1 flex-col justify-end gap-2 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,#000_8%)]"
+                  aria-live="off"
+                >
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {recent.map(({ entry, index }) => {
+                      const latest = index === shownLine
+                      return (
+                        <motion.div
+                          key={index}
+                          layout={!reduce}
+                          data-call-bubble
+                          lang="hi-Latn"
+                          initial={{ opacity: 0, y: 14, scale: 0.96 }}
+                          // Both visible bubbles stay fully opaque so their text keeps full contrast.
+                          animate={{ opacity: 1, y: 0, scale: latest ? 1 : 0.98 }}
+                          exit={{ opacity: 0, y: -10, transition: { duration: 0.2 } }}
+                          transition={{ duration: 0.38, ease: easeSoft }}
+                          className={`shrink-0 rounded-2xl px-3 py-2.5 text-[0.8125rem] leading-snug ${
+                            entry.speaker === 'ai'
+                              ? 'mr-5 origin-bottom-left rounded-bl-sm border border-line bg-white text-ink'
+                              : 'ml-5 origin-bottom-right rounded-br-sm border border-[#d9cdfa] bg-[#ebe4fd] text-ink'
+                          }`}
+                        >
+                          <span className={`mb-0.5 block text-[0.6875rem] font-semibold ${entry.speaker === 'ai' ? 'text-brand-dark' : 'text-[#4a2ba3]'}`}>
+                            {entry.speaker === 'ai' ? 'TalklyAI' : 'Customer'}
+                          </span>
+                          {entry.text}
+                        </motion.div>
+                      )
+                    })}
                   </AnimatePresence>
                 </div>
 
@@ -176,12 +206,16 @@ export default function PhoneMockup() {
                       <Icon size={15} aria-hidden="true" />
                     </span>
                     <span className="min-w-0 max-sm:text-xs">{outcome.label}</span>
-                    <Check
-                      size={15}
-                      strokeWidth={2.5}
+                    {/* The tick pops in when the sample call reaches this outcome. */}
+                    <motion.span
                       aria-hidden="true"
-                      className={`flex-none text-brand transition-opacity duration-300 max-sm:hidden ${done ? 'opacity-100' : 'opacity-0'}`}
-                    />
+                      className="flex-none text-brand max-sm:hidden"
+                      initial={false}
+                      animate={done ? { opacity: 1, scale: reduce ? 1 : [0.4, 1.25, 1] } : { opacity: 0, scale: 0.6 }}
+                      transition={{ duration: 0.45, ease: easeSoft }}
+                    >
+                      <Check size={15} strokeWidth={2.5} />
+                    </motion.span>
                   </div>
                 </div>
               </motion.li>

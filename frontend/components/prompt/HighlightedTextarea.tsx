@@ -3,7 +3,7 @@
 import { useState, type Ref } from 'react'
 import { Maximize2, Minimize2 } from 'lucide-react'
 
-const PLACEHOLDER_RE = /(\{\{[^{}\n]+\}\}|\{[a-zA-Z0-9_]+\})/g
+const PLACEHOLDER_RE = /(\{\{[^{}\n]+\}\})/g
 
 /** Splits text so every {{placeholder}} can be drawn with its own colour. Display only. */
 function tokens(text: string) {

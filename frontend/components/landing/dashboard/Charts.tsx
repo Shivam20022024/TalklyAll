@@ -71,7 +71,8 @@ export function SentimentChart() {
   const reduce = useReducedMotion()
   return (
     <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 128, height: 128 }}>
-      <PieChart>
+      {/* The chart sits inside a labelled, aria-hidden wrapper in DashboardPreview, so it must not take keyboard focus. */}
+      <PieChart accessibilityLayer={false}>
         <Pie
           data={data.sentiment}
           dataKey="value"
@@ -84,6 +85,7 @@ export function SentimentChart() {
           stroke="none"
           isAnimationActive={!reduce}
           animationDuration={900}
+          rootTabIndex={-1}
         >
           {data.sentiment.map((slice) => (
             <Cell key={slice.name} fill={slice.color} />

@@ -43,16 +43,8 @@ export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
     headers: reqHeaders,
   };
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-  } catch (err: any) {
-    if (err?.name === 'TypeError' && (err?.message === 'Failed to fetch' || String(err?.message || '').toLowerCase().includes('fetch'))) {
-      throw new Error(`Unable to connect to Talkly backend server (${API_BASE_URL}). Please verify your connection or ensure backend is running.`);
-    }
-    throw err;
-  }
-
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+  
   if ((response.status === 401 || response.status === 403) && requireAuth) {
     removeAuthToken();
     if (typeof window !== 'undefined') {
@@ -105,15 +97,7 @@ export async function fetchBlob(endpoint: string, options: FetchOptions = {}): P
     (config.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-  } catch (err: any) {
-    if (err?.name === 'TypeError' && (err?.message === 'Failed to fetch' || String(err?.message || '').toLowerCase().includes('fetch'))) {
-      throw new Error(`Unable to connect to Talkly backend server (${API_BASE_URL}). Please verify your connection or ensure backend is running.`);
-    }
-    throw err;
-  }
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
 
   if ((response.status === 401 || response.status === 403) && requireAuth) {
     removeAuthToken();
@@ -127,7 +111,7 @@ export async function fetchBlob(endpoint: string, options: FetchOptions = {}): P
     try {
       const data = await response.json();
       message = data.detail || data.message || message;
-    } catch { }
+    } catch {}
     throw new Error(message);
   }
 

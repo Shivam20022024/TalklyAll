@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { ArrowRight, Play, Sparkles } from 'lucide-react'
 import Link from 'next/link'
-import { lazy, Suspense, useState } from 'react'
+import { Fragment, lazy, Suspense, useState } from 'react'
 import { introVideo } from '@/lib/landing-content'
 import { useIntroRevealed } from '@/lib/intro'
 import PhoneMockup from './PhoneMockup'
@@ -57,17 +57,20 @@ export default function Hero() {
                 {line.map((word) => {
                   wordIndex += 1
                   return (
-                    <span key={word} className="-mb-[0.14em] inline-block overflow-hidden pb-[0.14em] align-top">
-                      <motion.span
-                        className="inline-block"
-                        initial={{ y: '112%' }}
-                        animate={{ y: revealed ? 0 : '112%' }}
-                        transition={{ duration: 0.85, delay: 0.1 + wordIndex * 0.07, ease: easeSoft }}
-                      >
-                        {word}
-                      </motion.span>
-                      {' '}
-                    </span>
+                    // The space sits outside the clipping box: a trailing space inside an inline-block collapses,
+                    // which ran the words together ("TurnEveryLead").
+                    <Fragment key={word}>
+                      <span className="-mb-[0.14em] inline-block overflow-hidden pb-[0.14em] align-top">
+                        <motion.span
+                          className="inline-block"
+                          initial={{ y: '112%' }}
+                          animate={{ y: revealed ? 0 : '112%' }}
+                          transition={{ duration: 0.85, delay: 0.1 + wordIndex * 0.07, ease: easeSoft }}
+                        >
+                          {word}
+                        </motion.span>
+                      </span>{' '}
+                    </Fragment>
                   )
                 })}
               </span>

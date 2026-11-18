@@ -199,3 +199,38 @@ html.talkly-intro-active {
 @media (forced-colors: active) {
   .talkly-preloader-word { background: none; color: CanvasText; }
 }
+
+/* Entrance sequence, in CSS so it starts at first paint (before any script runs):
+   the waveform first, then the TalklyAI logo, then the progress bar and credit. */
+@keyframes talkly-intro-wave-in {
+  from { opacity: 0; transform: scaleY(0.35); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes talkly-intro-logo-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes talkly-intro-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.talkly-preloader-wave { animation: talkly-intro-wave-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.talkly-preloader-logo { animation: talkly-intro-logo-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
+.talkly-preloader-track { animation: talkly-intro-fade-in 0.4s ease-out 0.45s both; }
+.talkly-preloader-powered { animation: talkly-intro-fade-in 0.4s ease-out 0.55s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .talkly-preloader-wave,
+  .talkly-preloader-logo,
+  .talkly-preloader-track,
+  .talkly-preloader-powered {
+    animation: none;
+  }
+}
+
+/* Safety net: if scripts are slow or fail, the curtain still fades away by itself after ~3s
+   (normally the script removes it well before this). */
+@keyframes talkly-intro-failsafe {
+  to { opacity: 0; visibility: hidden; pointer-events: none; }
+}
+.talkly-preloader { animation: talkly-intro-failsafe 0.35s ease-out 3s forwards; }

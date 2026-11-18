@@ -19,7 +19,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
     <MotionConfig reducedMotion="user">
       <TalklyPreloader />
       {/* id="site-root": what TalklyPreloader makes inert while the intro curtain is up.
-          It portals to document.body, a sibling of this div, so it's never affected. */}
+          The preloader renders just before this div (a sibling), so it's never affected. */}
       <div id="site-root" className="landing-scope">
         <a
           href="#main"
